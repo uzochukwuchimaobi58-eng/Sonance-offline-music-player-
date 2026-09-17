@@ -1,0 +1,8 @@
+{
+  "name": "Music Player",
+  "description": "A high-fidelity offline music player featuring playlist management, Web Audio equalizer, dark mode themes, sleep timer, and folder scanning.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

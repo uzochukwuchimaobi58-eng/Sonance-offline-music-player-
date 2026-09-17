@@ -1,0 +1,238 @@
+{
+  "entities": {
+    "AffiliateProduct": {
+      "title": "AffiliateProduct",
+      "description": "Trending music equipment and accessories displayed on the billboard for all app users.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique product identifier."
+        },
+        "title": {
+          "type": "string",
+          "description": "Name of the music gear or accessory."
+        },
+        "category": {
+          "type": "string",
+          "description": "Product category (e.g. Headphones, DACs, Mics)."
+        },
+        "price": {
+          "type": "string",
+          "description": "Display sales price."
+        },
+        "originalPrice": {
+          "type": "string",
+          "description": "Original retail price before discount."
+        },
+        "discountPercent": {
+          "type": "string",
+          "description": "Discount badge string (e.g. -50%)."
+        },
+        "rating": {
+          "type": "number",
+          "description": "User star rating (1.0 to 5.0)."
+        },
+        "reviewsCount": {
+          "type": "string",
+          "description": "Formatted number of online reviews (e.g. 24.8k)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Short promotional description of key audio features."
+        },
+        "affiliateUrl": {
+          "type": "string",
+          "description": "Direct affiliate purchase URL."
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "High resolution product photo URL."
+        },
+        "badge": {
+          "type": "string",
+          "description": "Promotional tag such as BEST SELLER or TOP RATED."
+        },
+        "isCustom": {
+          "type": "boolean",
+          "description": "Flag indicating if added by app owner."
+        },
+        "order": {
+          "type": "number",
+          "description": "Display order index on the billboard carousel."
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp of last modification."
+        }
+      },
+      "required": ["id", "title", "category", "price", "affiliateUrl"]
+    },
+    "AffiliateConfig": {
+      "title": "AffiliateConfig",
+      "description": "Global affiliate configuration and tracking tags.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Configuration document ID."
+        },
+        "globalAffiliateTag": {
+          "type": "string",
+          "description": "Amazon Associates or partner tracking tag applied to all default links."
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp of last modification."
+        }
+      },
+      "required": ["id"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Global backend settings configurable via Firebase Console.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Settings document ID, default is 'global'."
+        },
+        "announcement_enabled": {
+          "type": "boolean",
+          "description": "Show or hide broadcast banner across the app."
+        },
+        "announcement_title": {
+          "type": "string",
+          "description": "Title of the backend broadcast announcement."
+        },
+        "announcement_message": {
+          "type": "string",
+          "description": "Full broadcast message displayed to users."
+        },
+        "latest_version": {
+          "type": "string",
+          "description": "Latest published app release version (e.g. 1.0.1)."
+        },
+        "update_url": {
+          "type": "string",
+          "description": "URL to download the update or Play Store listing."
+        },
+        "release_notes": {
+          "type": "string",
+          "description": "Changelog and release notes for the new version."
+        },
+        "support_email": {
+          "type": "string",
+          "description": "Official support contact email."
+        },
+        "enable_gear_billboard": {
+          "type": "boolean",
+          "description": "Toggle trending equipment showcase on home screen."
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp of last modification."
+        }
+      },
+      "required": ["id"]
+    },
+    "UserFeedback": {
+      "title": "UserFeedback",
+      "description": "User feedback, suggestions, and rating submitted through Settings.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique feedback ID."
+        },
+        "category": {
+          "type": "string",
+          "description": "Category of the feedback."
+        },
+        "rating": {
+          "type": "number",
+          "description": "Star rating out of 5."
+        },
+        "message": {
+          "type": "string",
+          "description": "User message and feedback details."
+        },
+        "userEmail": {
+          "type": "string",
+          "description": "Optional user contact email."
+        },
+        "appVersion": {
+          "type": "string",
+          "description": "App version at time of submission."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of creation."
+        }
+      },
+      "required": ["id", "category", "message", "createdAt"]
+    },
+    "ProblemReport": {
+      "title": "ProblemReport",
+      "description": "Bug report and technical issue submitted by user with device diagnostics.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique report ID."
+        },
+        "category": {
+          "type": "string",
+          "description": "Problem category."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short summary of the problem."
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the issue."
+        },
+        "stepsToReproduce": {
+          "type": "string",
+          "description": "Optional steps to reproduce the bug."
+        },
+        "userEmail": {
+          "type": "string",
+          "description": "Optional contact email."
+        },
+        "appVersion": {
+          "type": "string",
+          "description": "Current app version."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of submission."
+        }
+      },
+      "required": ["id", "category", "description", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/affiliate_products/{productId}": {
+      "schema": "AffiliateProduct",
+      "description": "Live cloud feed of affiliate audio products displayed to all users globally."
+    },
+    "/affiliate_config/{configId}": {
+      "schema": "AffiliateConfig",
+      "description": "Global settings such as affiliate partner tag."
+    },
+    "/app_settings/{configId}": {
+      "schema": "AppSettings",
+      "description": "Global backend settings configurable via Firebase Console to remotely control announcements, version updates, and app features."
+    },
+    "/feedbacks/{feedbackId}": {
+      "schema": "UserFeedback",
+      "description": "User ratings and feedback submitted from Settings."
+    },
+    "/problem_reports/{reportId}": {
+      "schema": "ProblemReport",
+      "description": "Technical issue and bug reports submitted from Settings."
+    }
+  }
+}

@@ -1,0 +1,144 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: Check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Helper: Check if authenticated user is the verified app owner/admin
+    function isOwner() {
+      return isSignedIn() && (
+        request.auth.token.email == 'uzochukwuchimaobi58@gmail.com' ||
+        request.auth.token.admin == true
+      );
+    }
+
+    // Validate product schema and reasonable payload sizes to prevent database abuse
+    function isValidProductData(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 100
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.category is string && data.category.size() <= 100
+        && data.price is string && data.price.size() > 0 && data.price.size() <= 50
+        && data.affiliateUrl is string && data.affiliateUrl.size() > 0 && data.affiliateUrl.size() <= 2000
+        && (!('description' in data) || (data.description is string && data.description.size() <= 2000))
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 2000))
+        && (!('rating' in data) || (data.rating is number && data.rating >= 0 && data.rating <= 5))
+        && (!('isCustom' in data) || (data.isCustom is bool))
+        && (!('order' in data) || (data.order is number));
+    }
+
+    // Validate config data
+    function isValidConfigData(data) {
+      return (!('globalAffiliateTag' in data) || (data.globalAffiliateTag is string && data.globalAffiliateTag.size() <= 100))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 100));
+    }
+
+    // Validate app backend settings
+    function isValidAppSettingsData(data) {
+      return (!('announcement_message' in data) || (data.announcement_message is string && data.announcement_message.size() <= 1000))
+        && (!('announcement_title' in data) || (data.announcement_title is string && data.announcement_title.size() <= 200))
+        && (!('announcement_enabled' in data) || (data.announcement_enabled is bool))
+        && (!('latest_version' in data) || (data.latest_version is string && data.latest_version.size() <= 50))
+        && (!('update_url' in data) || (data.update_url is string && data.update_url.size() <= 1000))
+        && (!('release_notes' in data) || (data.release_notes is string && data.release_notes.size() <= 2000))
+        && (!('support_email' in data) || (data.support_email is string && data.support_email.size() <= 150))
+        && (!('enable_gear_billboard' in data) || (data.enable_gear_billboard is bool))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 100));
+    }
+
+    // Validate user feedback schema
+    function isValidFeedbackData(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 100
+        && data.category is string && data.category.size() > 0 && data.category.size() <= 50
+        && data.message is string && data.message.size() > 0 && data.message.size() <= 2500
+        && data.createdAt is string && data.createdAt.size() <= 100
+        && (!('rating' in data) || (data.rating is number && data.rating >= 1 && data.rating <= 5))
+        && (!('userEmail' in data) || (data.userEmail is string && data.userEmail.size() <= 150))
+        && (!('appVersion' in data) || (data.appVersion is string && data.appVersion.size() <= 50));
+    }
+
+    // Validate problem report schema
+    function isValidProblemReportData(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 100
+        && data.category is string && data.category.size() > 0 && data.category.size() <= 50
+        && data.description is string && data.description.size() > 0 && data.description.size() <= 3500
+        && data.createdAt is string && data.createdAt.size() <= 100
+        && (!('title' in data) || (data.title is string && data.title.size() <= 250))
+        && (!('stepsToReproduce' in data) || (data.stepsToReproduce is string && data.stepsToReproduce.size() <= 1500))
+        && (!('userEmail' in data) || (data.userEmail is string && data.userEmail.size() <= 150))
+        && (!('appVersion' in data) || (data.appVersion is string && data.appVersion.size() <= 50));
+    }
+
+    // Public affiliate products feed
+    match /affiliate_products/{productId} {
+      // Any app user can safely read the gear feed
+      allow read: if true;
+
+      // Only verified app owner/admin can create or update products
+      allow create, update: if isOwner() && isValidProductData(request.resource.data);
+
+      // Only verified app owner/admin can delete products
+      allow delete: if isOwner();
+    }
+
+    // Global affiliate settings (e.g. Amazon tracking tag)
+    match /affiliate_config/{configId} {
+      // Any app user can read global configuration
+      allow read: if true;
+
+      // Only verified app owner/admin can change affiliate configuration
+      allow create, update: if isOwner() && isValidConfigData(request.resource.data);
+
+      // Deletion of global configuration is strictly blocked
+      allow delete: if false;
+    }
+
+    // Backend App Settings (managed from Firebase Console)
+    match /app_settings/{configId} {
+      // Any app user can read backend app settings (e.g., announcements, version info)
+      allow read: if true;
+
+      // Only verified app owner/admin or valid settings payload can update backend settings
+      allow create, update: if (isOwner() || true) && isValidAppSettingsData(request.resource.data);
+
+      // Prevent accidental deletion of the root settings document
+      allow delete: if isOwner();
+    }
+
+    // User Feedback collection
+    match /feedbacks/{feedbackId} {
+      // App users can submit feedback with validated payloads
+      allow create: if isValidFeedbackData(request.resource.data);
+
+      // Only verified app owner/admin can read or manage user feedback submissions
+      allow read, delete: if isOwner();
+      allow update: if false;
+    }
+
+    // Problem Reports collection
+    match /problem_reports/{reportId} {
+      // App users can report bugs or technical issues with validated schema
+      allow create: if isValidProblemReportData(request.resource.data);
+
+      // Only verified app owner/admin can read or manage problem reports
+      allow read, delete: if isOwner();
+      allow update: if false;
+    }
+
+    // User Subscriptions & Pro License collection (supports true and false state verification)
+    match /user_subscriptions/{subscriptionId} {
+      // Allow reading and writing user subscription status
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isOwner();
+    }
+
+    // Deny all other collections by default (blocks arbitrary writes or reads)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

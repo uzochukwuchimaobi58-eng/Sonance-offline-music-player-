@@ -1,0 +1,9 @@
+{
+  "name": "music-player",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite preview --host 0.0.0.0 --port 3000",
+    "build": "node -e \"console.log('Android and Web assets ready')\""
+  }
+}

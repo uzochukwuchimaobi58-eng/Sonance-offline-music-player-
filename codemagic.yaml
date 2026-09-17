@@ -1,0 +1,21 @@
+workflows:
+  android-release:
+    name: Android Release Build
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      java: 21
+      android_signing:
+        - sonance
+    scripts:
+      - name: Set up gradlew
+        script: |
+          chmod +x gradlew
+
+      - name: Build Android Release (AAB)
+        script: |
+          ./gradlew bundleRelease --stacktrace
+
+    artifacts:
+      - app/build/outputs/bundle/release/*.aab
+      - app/build/outputs/apk/release/*.apk
