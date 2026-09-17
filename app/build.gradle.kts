@@ -13,18 +13,27 @@ android {
         applicationId = "com.sonance.musicplayer"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 9
+        versionName = "1.0.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
         create("release") {
-            storeFile = file("${rootDir}/release.keystore")
-            storePassword = "sonanceapp"
-            keyAlias = "releasekey"
-            keyPassword = "sonanceapp"
+            val cmKeystore = System.getenv("CM_KEYSTORE")
+            val localReleaseKeystore = file("${rootDir}/release.keystore")
+            if (cmKeystore != null && file(cmKeystore).exists()) {
+                storeFile = file(cmKeystore)
+                storePassword = System.getenv("CM_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("CM_KEY_ALIAS")
+                keyPassword = System.getenv("CM_KEY_PASSWORD")
+            } else if (localReleaseKeystore.exists()) {
+                storeFile = localReleaseKeystore
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "sonanceapp"
+                keyAlias = System.getenv("KEY_ALIAS") ?: "releasekey"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: "sonanceapp"
+            }
         }
         getByName("debug") {
             storeFile = file("${rootDir}/debug.keystore")
@@ -36,7 +45,11 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            val cmKeystore = System.getenv("CM_KEYSTORE")
+            val localReleaseKeystore = file("${rootDir}/release.keystore")
+            if ((cmKeystore != null && file(cmKeystore).exists()) || localReleaseKeystore.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -57,6 +70,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

@@ -1069,7 +1069,8 @@ fun SettingsDialog(
                         Text("Verifying latest build from Firebase...", color = theme.textSecondary)
                     }
                 } else {
-                    val hasNewer = remoteSettings.latestVersion.isNotBlank() && remoteSettings.latestVersion != "1.0.0"
+                    val currentVersion = com.sonance.musicplayer.BuildConfig.VERSION_NAME
+                    val hasNewer = remoteSettings.latestVersion.isNotBlank() && remoteSettings.latestVersion != currentVersion
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -1079,14 +1080,14 @@ fun SettingsDialog(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (hasNewer) "Update Available: v${remoteSettings.latestVersion}" else "Sonance Music Player v1.0.0",
+                                text = if (hasNewer) "Update Available: v${remoteSettings.latestVersion}" else "Sonance Music Player v$currentVersion",
                                 color = theme.textPrimary,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                         if (hasNewer) {
                             Text(
-                                text = "Installed version: v1.0.0",
+                                text = "Installed version: v$currentVersion",
                                 color = theme.textSecondary,
                                 fontSize = 12.sp
                             )
@@ -1110,7 +1111,8 @@ fun SettingsDialog(
                 }
             },
             confirmButton = {
-                val hasNewer = remoteSettings.latestVersion.isNotBlank() && remoteSettings.latestVersion != "1.0.0"
+                val currentVersion = com.sonance.musicplayer.BuildConfig.VERSION_NAME
+                val hasNewer = remoteSettings.latestVersion.isNotBlank() && remoteSettings.latestVersion != currentVersion
                 if (!isCheckingUpdate && hasNewer && remoteSettings.updateUrl.isNotBlank()) {
                     Button(
                         onClick = {
