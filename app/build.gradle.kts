@@ -21,10 +21,10 @@ android {
 
     signingConfigs {
         create("release") {
-            val cmKeystore = System.getenv("CM_KEYSTORE")
+            val cmKeystorePath = System.getenv("CM_KEYSTORE_PATH") ?: System.getenv("CM_KEYSTORE")
             val localReleaseKeystore = file("${rootDir}/release.keystore")
-            if (cmKeystore != null && file(cmKeystore).exists()) {
-                storeFile = file(cmKeystore)
+            if (cmKeystorePath != null && file(cmKeystorePath).exists()) {
+                storeFile = file(cmKeystorePath)
                 storePassword = System.getenv("CM_KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("CM_KEY_ALIAS")
                 keyPassword = System.getenv("CM_KEY_PASSWORD")
@@ -45,9 +45,9 @@ android {
 
     buildTypes {
         release {
-            val cmKeystore = System.getenv("CM_KEYSTORE")
+            val cmKeystorePath = System.getenv("CM_KEYSTORE_PATH") ?: System.getenv("CM_KEYSTORE")
             val localReleaseKeystore = file("${rootDir}/release.keystore")
-            if ((cmKeystore != null && file(cmKeystore).exists()) || localReleaseKeystore.exists()) {
+            if ((cmKeystorePath != null && file(cmKeystorePath).exists()) || localReleaseKeystore.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
             isMinifyEnabled = false

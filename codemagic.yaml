@@ -14,6 +14,11 @@ workflows:
 
       - name: Build Android Release (AAB)
         script: |
+          if [ -n "$CM_KEYSTORE_PATH" ]; then
+            echo "Found Codemagic Keystore at $CM_KEYSTORE_PATH"
+          else
+            echo "WARNING: CM_KEYSTORE_PATH is not set. Check Codemagic code signing settings!"
+          fi
           ./gradlew bundleRelease --stacktrace
 
     artifacts:
