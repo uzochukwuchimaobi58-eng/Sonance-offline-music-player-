@@ -59,7 +59,7 @@ fun HomeScreen(
     val favoriteCount = tracks.count { it.isFavorite }
     val recentPlayCount = tracks.count { it.playCount > 0 || it.lastPlayed > 0 }
     val recentAddCount = tracks.size
-    val mostPlayCount = tracks.sumOf { it.playCount }
+    val mostPlayCount = tracks.count { it.playCount > 0 }
 
     Box(
         modifier = Modifier

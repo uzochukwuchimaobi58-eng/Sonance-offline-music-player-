@@ -69,8 +69,13 @@ fun FullPlayerSheet(
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showEffectDialog by remember { mutableStateOf(false) }
 
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true
+    )
+
     ModalBottomSheet(
         onDismissRequest = onClose,
+        sheetState = sheetState,
         containerColor = theme.bgCanvas,
         dragHandle = null,
         modifier = Modifier
@@ -124,13 +129,29 @@ fun FullPlayerSheet(
                     )
                 }
 
-                IconButton(onClick = { onOpenMusicTrim(track) }) {
-                    Icon(
-                        imageVector = Icons.Default.ContentCut,
-                        contentDescription = "Trim audio",
-                        tint = theme.textPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    IconButton(
+                        onClick = {
+                            com.sonance.musicplayer.util.RingtoneHelper.setAsRingtoneImmediately(context, track)
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.NotificationsActive,
+                            contentDescription = "Set as Ringtone immediately",
+                            tint = theme.accentColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    IconButton(onClick = { onOpenMusicTrim(track) }) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCut,
+                            contentDescription = "Trim audio",
+                            tint = theme.textPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
 

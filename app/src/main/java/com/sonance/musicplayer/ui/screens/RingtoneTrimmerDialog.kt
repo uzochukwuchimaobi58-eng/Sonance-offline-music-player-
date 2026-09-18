@@ -133,12 +133,10 @@ fun RingtoneTrimmerDialog(
 
                 Button(
                     onClick = {
-                        Toast.makeText(
-                            context,
-                            "Ringtone cut saved successfully (${(endTimeSec - startTimeSec).toInt()}s)",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        onClose()
+                        val success = com.sonance.musicplayer.util.RingtoneHelper.setAsRingtoneImmediately(context, track)
+                        if (success) {
+                            onClose()
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
                     modifier = Modifier.weight(1f)

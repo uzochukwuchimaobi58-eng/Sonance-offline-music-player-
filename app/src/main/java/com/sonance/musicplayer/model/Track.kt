@@ -78,6 +78,7 @@ data class Track(
     val sourceType: String = "built-in"
 ) {
     val addedDate: Long get() = dateAdded
+    val contentUri: String get() = url
 }
 
 @Serializable

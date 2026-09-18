@@ -10,6 +10,8 @@ class MediaNotificationReceiver : BroadcastReceiver() {
         const val ACTION_PREV = "com.sonance.musicplayer.ACTION_PREV"
         const val ACTION_TOGGLE_PLAY = "com.sonance.musicplayer.ACTION_TOGGLE_PLAY"
         const val ACTION_NEXT = "com.sonance.musicplayer.ACTION_NEXT"
+        const val ACTION_FAVORITE = "com.sonance.musicplayer.ACTION_FAVORITE"
+        const val ACTION_CLOSE = "com.sonance.musicplayer.ACTION_CLOSE"
     }
 
     override fun onReceive(context: Context?, intent: Intent?) {
@@ -19,6 +21,8 @@ class MediaNotificationReceiver : BroadcastReceiver() {
             ACTION_PREV -> playbackManager.skipToPrevious()
             ACTION_TOGGLE_PLAY -> playbackManager.togglePlayPause()
             ACTION_NEXT -> playbackManager.skipToNext()
+            ACTION_FAVORITE -> playbackManager.toggleFavoriteCurrent()
+            ACTION_CLOSE -> playbackManager.stopPlaybackAndDismiss()
         }
     }
 }

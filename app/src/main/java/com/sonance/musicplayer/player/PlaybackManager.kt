@@ -87,6 +87,9 @@ class PlaybackManager(
     private val _isKaraokeMode = MutableStateFlow(false)
     val isKaraokeMode: StateFlow<Boolean> = _isKaraokeMode.asStateFlow()
 
+    private val _isBeatInstrumentalMode = MutableStateFlow(false)
+    val isBeatInstrumentalMode: StateFlow<Boolean> = _isBeatInstrumentalMode.asStateFlow()
+
     private val _sleepTimerRemainingSec = MutableStateFlow<Int?>(null)
     val sleepTimerRemainingSec: StateFlow<Int?> = _sleepTimerRemainingSec.asStateFlow()
     val sleepTimerSeconds: StateFlow<Int?> get() = sleepTimerRemainingSec
@@ -103,6 +106,7 @@ class PlaybackManager(
     private var lastShakeTime = 0L
     private var headsetReceiver: BroadcastReceiver? = null
     private val notificationManager = PlaybackNotificationManager(context)
+    var repository: com.sonance.musicplayer.data.MusicRepository? = null
 
     init {
         startProgressTracker()
@@ -115,7 +119,7 @@ class PlaybackManager(
             kotlinx.coroutines.flow.combine(_currentTrack, _isPlaying) { track, isPlaying ->
                 Pair(track, isPlaying)
             }.collect { (track, isPlaying) ->
-                notificationManager.updateNotification(track, isPlaying)
+                notificationManager.updateNotification(track, isPlaying, _currentPositionMs.value, _durationMs.value)
             }
         }
     }
@@ -225,7 +229,7 @@ class PlaybackManager(
     fun cycleRepeatMode() = toggleRepeat()
     fun toggleKaraokeMode() = toggleKaraoke()
 
-    fun playTrack(track: Track, newQueue: List<Track>? = null) {
+    fun playTrack(track: Track, newQueue: List<Track>? = null, startPositionMs: Long = 0L) {
         if (newQueue != null && newQueue.isNotEmpty()) {
             _queue.value = newQueue
             val idx = newQueue.indexOfFirst { it.id == track.id }
@@ -239,10 +243,10 @@ class PlaybackManager(
         }
 
         _currentTrack.value = track
-        loadAndPlay(track)
+        loadAndPlay(track, startPositionMs)
     }
 
-    private fun loadAndPlay(track: Track) {
+    private fun loadAndPlay(track: Track, startPositionMs: Long = 0L) {
         releasePlayer()
         try {
             val mp = MediaPlayer()
@@ -267,9 +271,15 @@ class PlaybackManager(
                 attachAudioEffects(player.audioSessionId)
                 applySpeedInternal(player, _playbackSpeed.value)
                 applyVolumeInternal(player, _volume.value)
+                if (startPositionMs > 0L) {
+                    player.seekTo(startPositionMs.toInt())
+                    _currentPositionMs.value = startPositionMs
+                }
                 player.start()
                 _isPlaying.value = true
+                repository?.recordTrackPlayed(track.id)
                 onTrackCompletedCallback?.invoke(track)
+                notificationManager.updateNotification(track, true, if (startPositionMs > 0L) startPositionMs else 0L, _durationMs.value)
             }
 
             mp.setOnCompletionListener {
@@ -315,6 +325,14 @@ class PlaybackManager(
             if (mp.isPlaying) {
                 mp.pause()
                 _isPlaying.value = false
+                _currentTrack.value?.let { track ->
+                    repository?.saveLastPlaybackState(
+                        track.id,
+                        _currentPositionMs.value,
+                        _queue.value.map { it.id },
+                        _queueIndex.value
+                    )
+                }
             } else {
                 mp.start()
                 _isPlaying.value = true
@@ -322,7 +340,7 @@ class PlaybackManager(
         } else {
             val track = _currentTrack.value ?: _queue.value.firstOrNull()
             if (track != null) {
-                playTrack(track)
+                loadAndPlay(track, _currentPositionMs.value)
             }
         }
     }
@@ -408,10 +426,19 @@ class PlaybackManager(
     }
 
     fun seekTo(positionMs: Long) {
+        val clamped = positionMs.coerceIn(0L, _durationMs.value.coerceAtLeast(1000L))
         mediaPlayer?.let {
-            val clamped = positionMs.coerceIn(0L, _durationMs.value.coerceAtLeast(1000L))
             it.seekTo(clamped.toInt())
-            _currentPositionMs.value = clamped
+        }
+        _currentPositionMs.value = clamped
+        notificationManager.updateNotification(_currentTrack.value, _isPlaying.value, clamped, _durationMs.value)
+        _currentTrack.value?.let { track ->
+            repository?.saveLastPlaybackState(
+                track.id,
+                clamped,
+                _queue.value.map { it.id },
+                _queueIndex.value
+            )
         }
     }
 
@@ -485,6 +512,63 @@ class PlaybackManager(
             }
         }
     }
+
+    fun setBeatInstrumentalProcessing(
+        enabled: Boolean,
+        vocalLevel: Float = 0f,
+        drumsLevel: Float = 120f,
+        bassLevel: Float = 130f,
+        melodyLevel: Float = 100f
+    ) {
+        _isBeatInstrumentalMode.value = enabled
+        equalizer?.let { eq ->
+            eq.enabled = true
+            val numBands = eq.numberOfBands
+            val levelRange = eq.bandLevelRange
+            val minLevel = levelRange[0]
+            val maxLevel = levelRange[1]
+
+            for (i in 0 until numBands) {
+                val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
+                val targetLevel: Short = if (enabled) {
+                    when {
+                        centerFreqHz < 350 -> {
+                            val boostFrac = ((bassLevel - 100f) / 100f).coerceIn(-1f, 1f)
+                            ((boostFrac * maxLevel) + (maxLevel * 0.4f)).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+                        }
+                        centerFreqHz in 650..3500 -> {
+                            val attenuationFrac = (1f - (vocalLevel / 100f)).coerceIn(0f, 1f)
+                            (-1500 * attenuationFrac).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+                        }
+                        else -> {
+                            val drumFrac = ((drumsLevel - 100f) / 100f).coerceIn(-1f, 1f)
+                            ((drumFrac * maxLevel) + (maxLevel * 0.25f)).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+                        }
+                    }
+                } else {
+                    0.toShort()
+                }
+                eq.setBandLevel(i.toShort(), targetLevel)
+            }
+        }
+
+        bassBoost?.let { bb ->
+            if (enabled) {
+                bb.enabled = true
+                val strength = ((bassLevel / 150f) * 1000).toInt().coerceIn(300, 1000)
+                bb.setStrength(strength.toShort())
+            } else {
+                bb.enabled = currentEqSettings.bassBoost > 0
+                val strength = ((currentEqSettings.bassBoost / 100f) * 1000).toInt().coerceIn(0, 1000)
+                bb.setStrength(strength.toShort())
+            }
+        }
+
+        if (!enabled) {
+            applyEqualizerSettings(currentEqSettings)
+        }
+    }
+
 
     fun setSleepTimer(minutes: Int?) {
         sleepTimerJob?.cancel()
@@ -633,18 +717,84 @@ class PlaybackManager(
         }
     }
 
+    private var lastSaveTime = 0L
+
     private fun startProgressTracker() {
         progressJob?.cancel()
         progressJob = scope.launch {
             while (isActive) {
                 mediaPlayer?.let { mp ->
                     if (_isPlaying.value && mp.isPlaying) {
-                        _currentPositionMs.value = mp.currentPosition.toLong()
+                        val pos = mp.currentPosition.toLong()
+                        _currentPositionMs.value = pos
+                        val now = System.currentTimeMillis()
+                        if (now - lastSaveTime > 2000L) {
+                            lastSaveTime = now
+                            _currentTrack.value?.let { track ->
+                                repository?.saveLastPlaybackState(
+                                    track.id,
+                                    pos,
+                                    _queue.value.map { it.id },
+                                    _queueIndex.value
+                                )
+                            }
+                        }
                     }
                 }
                 delay(200L)
             }
         }
+    }
+
+    fun restoreLastPlaybackState(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        if (_currentTrack.value != null) return
+
+        val repo = repository ?: return
+        val lastTrackId = repo.getLastPlaybackTrackId() ?: return
+        val track = tracks.find { it.id == lastTrackId } ?: return
+        val lastPos = repo.getLastPlaybackPositionMs()
+        val queueIds = repo.getLastQueueIds()
+        val queueIdx = repo.getLastQueueIndex()
+
+        val restoredQueue = if (queueIds.isNotEmpty()) {
+            val q = queueIds.mapNotNull { qId -> tracks.find { it.id == qId } }
+            if (q.isNotEmpty()) q else listOf(track)
+        } else listOf(track)
+
+        _queue.value = restoredQueue
+        _queueIndex.value = queueIdx.coerceIn(0, restoredQueue.size - 1)
+        _currentTrack.value = track
+        _currentPositionMs.value = lastPos
+        _durationMs.value = track.duration * 1000L
+        notificationManager.updateNotification(track, false, lastPos, _durationMs.value)
+    }
+
+    fun toggleFavoriteCurrent() {
+        val track = _currentTrack.value ?: return
+        val newFav = !track.isFavorite
+        repository?.toggleFavorite(track.id)
+        val updatedTrack = track.copy(isFavorite = newFav)
+        _currentTrack.value = updatedTrack
+        _queue.value = _queue.value.map { if (it.id == track.id) updatedTrack else it }
+        notificationManager.updateNotification(updatedTrack, _isPlaying.value, _currentPositionMs.value, _durationMs.value)
+    }
+
+    fun stopPlaybackAndDismiss() {
+        try {
+            mediaPlayer?.pause()
+            mediaPlayer?.stop()
+        } catch (_: Exception) {}
+        _isPlaying.value = false
+        _currentTrack.value?.let { track ->
+            repository?.saveLastPlaybackState(
+                track.id,
+                _currentPositionMs.value,
+                _queue.value.map { it.id },
+                _queueIndex.value
+            )
+        }
+        notificationManager.cancelNotification()
     }
 
     private fun releasePlayer() {
@@ -687,11 +837,15 @@ class PlaybackManager(
             context: Context,
             repository: com.sonance.musicplayer.data.MusicRepository? = null
         ): PlaybackManager {
-            return instance ?: synchronized(this) {
+            val inst = instance ?: synchronized(this) {
                 instance ?: PlaybackManager(context.applicationContext) { completedTrack ->
-                    repository?.incrementPlayCount(completedTrack.id)
+                    instance?.repository?.incrementPlayCount(completedTrack.id)
                 }.also { instance = it }
             }
+            if (repository != null) {
+                inst.repository = repository
+            }
+            return inst
         }
     }
 }

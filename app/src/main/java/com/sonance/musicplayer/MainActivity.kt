@@ -25,6 +25,7 @@ import com.sonance.musicplayer.player.PlaybackManager
 import com.sonance.musicplayer.ui.components.*
 import com.sonance.musicplayer.ui.screens.*
 import com.sonance.musicplayer.ui.theme.SonanceTheme
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -44,6 +45,12 @@ class MainActivity : ComponentActivity() {
 
             // State from repository & playback manager
             val tracks by repository.tracksFlow.collectAsState()
+
+            LaunchedEffect(tracks) {
+                if (tracks.isNotEmpty()) {
+                    playbackManager.restoreLastPlaybackState(tracks)
+                }
+            }
             val playlists by repository.playlistsFlow.collectAsState()
             val appTheme by repository.themeFlow.collectAsState()
             val eqSettings by repository.equalizerFlow.collectAsState()
@@ -200,12 +207,18 @@ class MainActivity : ComponentActivity() {
                         ActiveView.DRIVE_MODE -> tracks
                         ActiveView.LYRICS_MODE -> tracks
                         ActiveView.FAVORITE -> tracks.filter { it.isFavorite }
-                        ActiveView.RECENT_PLAY -> tracks.filter { (it.playCount > 0 || it.lastPlayed > 0) && (cutoffTime == 0L || it.lastPlayed >= cutoffTime) }
-                            .sortedByDescending { it.lastPlayed }
+                        ActiveView.RECENT_PLAY -> {
+                            val recents = tracks.filter { (it.playCount > 0 || it.lastPlayed > 0) && (cutoffTime == 0L || it.lastPlayed >= cutoffTime) }
+                                .sortedByDescending { it.lastPlayed }
+                            recents.ifEmpty { tracks.sortedByDescending { it.lastPlayed } }
+                        }
                         ActiveView.RECENT_ADD -> tracks.filter { cutoffTime == 0L || it.addedDate >= cutoffTime }
                             .sortedByDescending { it.addedDate }
-                        ActiveView.MOST_PLAY -> tracks.filter { it.playCount > 0 && (cutoffTime == 0L || it.lastPlayed >= cutoffTime) }
-                            .sortedByDescending { it.playCount }
+                        ActiveView.MOST_PLAY -> {
+                            val mostly = tracks.filter { it.playCount > 0 && (cutoffTime == 0L || it.lastPlayed >= cutoffTime) }
+                                .sortedByDescending { it.playCount }
+                            mostly.ifEmpty { tracks.sortedByDescending { it.playCount } }
+                        }
                         ActiveView.PLAYLIST_DETAIL -> {
                             val pl = playlists.find { it.id == activePlaylistId }
                             if (pl != null) {
@@ -226,8 +239,17 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                var showSplashScreen by remember { mutableStateOf(true) }
+
+                LaunchedEffect(Unit) {
+                    kotlinx.coroutines.delay(1200L)
+                    showSplashScreen = false
+                }
+
                 // Drive mode screen replaces the normal UI
-                if (isDriveModeOpen) {
+                if (showSplashScreen) {
+                    SplashScreen()
+                } else if (isDriveModeOpen) {
                     DriveModeScreen(
                         track = currentTrack,
                         isPlaying = isPlaying,
@@ -249,7 +271,10 @@ class MainActivity : ComponentActivity() {
                         theme = theme,
                         isPro = isProEffective,
                         admobEnabled = remoteSettings.admobEnabled,
-                        onOpenProUpgrade = { isProUpgradeOpen = true }
+                        onOpenProUpgrade = { isProUpgradeOpen = true },
+                        onUpdateLyrics = { lyrics ->
+                            currentTrack?.let { repository.updateLyrics(it.id, lyrics) }
+                        }
                     )
                 } else {
                     Scaffold(
@@ -275,16 +300,13 @@ class MainActivity : ComponentActivity() {
                             )
                         },
                         bottomBar = {
-                            Column {
-                                // AdMob Banner (shown when user is free tier & ads enabled)
-                                AdMobBanner(
-                                    isPro = isProEffective,
-                                    admobEnabled = remoteSettings.admobEnabled,
-                                    onOpenProUpgrade = { isProUpgradeOpen = true },
-                                    theme = theme
-                                )
-
-                                // Mini Player
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(theme.miniPlayerBg)
+                                    .navigationBarsPadding()
+                            ) {
+                                // Mini Player (Lifted on top of AdMobBanner)
                                 AnimatedVisibility(
                                     visible = currentTrack != null,
                                     enter = slideInVertically(initialOffsetY = { it }),
@@ -302,6 +324,14 @@ class MainActivity : ComponentActivity() {
                                         theme = theme
                                     )
                                 }
+
+                                // AdMob Banner (positioned under the playing music bar at area 2)
+                                AdMobBanner(
+                                    isPro = isProEffective,
+                                    admobEnabled = remoteSettings.admobEnabled,
+                                    onOpenProUpgrade = { isProUpgradeOpen = true },
+                                    theme = theme
+                                )
                             }
                         },
                         containerColor = theme.bgCanvas
@@ -369,25 +399,27 @@ class MainActivity : ComponentActivity() {
                                     admobEnabled = remoteSettings.admobEnabled,
                                     onOpenProUpgrade = { isProUpgradeOpen = true },
                                     onPlayTrack = { track, list ->
-                                        if (playerSettings.replayTheSong && currentTrack?.id == track.id) {
-                                            playbackManager.seekTo(0L)
-                                        } else if (searchQuery.isNotBlank()) {
-                                            when (playerSettings.queueAfterSearching) {
-                                                "Play immediately & replace queue" -> playbackManager.setQueue(listOf(track), 0)
-                                                "Add to current queue" -> playbackManager.addToQueue(track)
-                                                "Play next" -> playbackManager.playNext(track)
-                                                else -> {
-                                                    val idx = list.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                                                    playbackManager.setQueue(list, idx)
-                                                }
-                                            }
-                                        } else if (playerSettings.clickTracksAddToCurrentQueue) {
-                                            playbackManager.addToQueue(track)
+                                        if (currentTrack?.id == track.id) {
+                                            // Tapping currently playing music brings up the full player interface directly
+                                            isFullPlayerOpen = true
                                         } else {
-                                            val idx = list.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                                            playbackManager.setQueue(list, idx)
-                                        }
-                                        if (playerSettings.openNowPlayingOnPlay) {
+                                            if (searchQuery.isNotBlank()) {
+                                                when (playerSettings.queueAfterSearching) {
+                                                    "Play immediately & replace queue" -> playbackManager.setQueue(listOf(track), 0)
+                                                    "Add to current queue" -> playbackManager.addToQueue(track)
+                                                    "Play next" -> playbackManager.playNext(track)
+                                                    else -> {
+                                                        val idx = list.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                                                        playbackManager.setQueue(list, idx)
+                                                    }
+                                                }
+                                            } else if (playerSettings.clickTracksAddToCurrentQueue) {
+                                                playbackManager.addToQueue(track)
+                                            } else {
+                                                val idx = list.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                                                playbackManager.setQueue(list, idx)
+                                            }
+                                            // Open the full player interface directly
                                             isFullPlayerOpen = true
                                         }
                                     },
@@ -398,7 +430,11 @@ class MainActivity : ComponentActivity() {
                                         repository.addTrackToPlaylist(trId, plId)
                                     },
                                     onDeleteTrack = { trId ->
+                                        if (playbackManager.currentTrack.value?.id == trId) {
+                                            playbackManager.skipToNext()
+                                        }
                                         repository.deleteTrack(trId)
+                                        android.widget.Toast.makeText(applicationContext, "Music deleted permanently from device", android.widget.Toast.LENGTH_SHORT).show()
                                     },
                                     onOpenMusicTrim = { tr ->
                                         executeWithInterstitialAd { trimmingTrack = tr }
@@ -409,6 +445,7 @@ class MainActivity : ComponentActivity() {
                                     onShuffleAll = { list ->
                                         if (list.isNotEmpty()) {
                                             playbackManager.setQueue(list.shuffled(), 0)
+                                            isFullPlayerOpen = true
                                         }
                                     },
                                     onSelectView = { targetView ->
@@ -538,6 +575,8 @@ class MainActivity : ComponentActivity() {
                     onClose = { isBeatInstrumentalOpen = false },
                     track = currentTrack,
                     theme = theme,
+                    playbackManager = playbackManager,
+                    repository = repository,
                     onConversionFinished = {
                         executeWithInterstitialAd {}
                     }
@@ -654,8 +693,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch {
+            repository.scanMediaStore()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        playbackManager.release()
+        // Do NOT stop playback if music is currently active so background playback continues even when user swipes away app!
+        if (!playbackManager.isPlaying.value) {
+            playbackManager.release()
+        }
     }
 }

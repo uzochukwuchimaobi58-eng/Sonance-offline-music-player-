@@ -3,7 +3,10 @@ package com.sonance.musicplayer.data
 import android.content.ContentUris
 import android.content.Context
 import android.content.SharedPreferences
+import android.database.ContentObserver
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.util.Log
 import com.sonance.musicplayer.model.AppTheme
@@ -153,9 +156,38 @@ class MusicRepository(private val context: Context) {
     }
 
     private val coroutineScope = CoroutineScope(Dispatchers.IO)
+    private var mediaObserver: ContentObserver? = null
 
     init {
         loadPersistedData()
+        startMediaStoreObserver()
+    }
+
+    private fun startMediaStoreObserver() {
+        if (mediaObserver != null) return
+        val handler = Handler(Looper.getMainLooper())
+        mediaObserver = object : ContentObserver(handler) {
+            private var lastScanTime = 0L
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                super.onChange(selfChange, uri)
+                val now = System.currentTimeMillis()
+                if (now - lastScanTime > 1500L) {
+                    lastScanTime = now
+                    coroutineScope.launch {
+                        scanMediaStore()
+                    }
+                }
+            }
+        }
+        try {
+            context.contentResolver.registerContentObserver(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                true,
+                mediaObserver!!
+            )
+        } catch (e: Exception) {
+            Log.e("MusicRepository", "Failed to register MediaStore ContentObserver", e)
+        }
     }
 
     private fun loadPersistedData() {
@@ -302,17 +334,28 @@ class MusicRepository(private val context: Context) {
         val existingTracks = _tracks.value
         val existingFavorites = existingTracks.filter { it.isFavorite }.map { it.id }.toSet()
         val playCounts = existingTracks.associate { it.id to it.playCount }
+        val lastPlayedMap = existingTracks.associate { it.id to it.lastPlayed }
+        val lyricsMap = existingTracks.filter { it.lyrics.isNotBlank() }.associate { it.id to it.lyrics }
 
         val newTrackList = if (deviceTracks.isNotEmpty()) {
             val updatedDeviceTracks = deviceTracks.map { t ->
                 t.copy(
                     isFavorite = existingFavorites.contains(t.id),
-                    playCount = playCounts[t.id] ?: 0
+                    playCount = playCounts[t.id] ?: 0,
+                    lastPlayed = lastPlayedMap[t.id] ?: 0L,
+                    lyrics = lyricsMap[t.id] ?: t.lyrics
                 )
             }
             // Keep built-in tracks too if user has only few songs, or prepend local tracks
             updatedDeviceTracks + DefaultTracks.initialTracks.filter { def ->
                 deviceTracks.none { it.title.equals(def.title, ignoreCase = true) }
+            }.map { def ->
+                def.copy(
+                    isFavorite = existingFavorites.contains(def.id),
+                    playCount = playCounts[def.id] ?: def.playCount,
+                    lastPlayed = lastPlayedMap[def.id] ?: def.lastPlayed,
+                    lyrics = lyricsMap[def.id] ?: def.lyrics
+                )
             }
         } else {
             existingTracks.ifEmpty { DefaultTracks.initialTracks }
@@ -331,16 +374,40 @@ class MusicRepository(private val context: Context) {
         persistTracks(updated)
     }
 
-    fun incrementPlayCount(trackId: String) {
+    fun recordTrackPlayed(trackId: String) {
+        val now = System.currentTimeMillis()
         val updated = _tracks.value.map {
             if (it.id == trackId) it.copy(
                 playCount = it.playCount + 1,
-                lastPlayed = System.currentTimeMillis()
+                lastPlayed = now
             ) else it
         }
         _tracks.value = updated
         persistTracks(updated)
     }
+
+    fun incrementPlayCount(trackId: String) {
+        recordTrackPlayed(trackId)
+    }
+
+    fun saveLastPlaybackState(trackId: String, positionMs: Long, queueIds: List<String>, queueIndex: Int) {
+        try {
+            prefs.edit()
+                .putString("last_played_track_id", trackId)
+                .putLong("last_played_position_ms", positionMs)
+                .putString("last_queue_ids", queueIds.joinToString(","))
+                .putInt("last_queue_index", queueIndex)
+                .apply()
+        } catch (_: Exception) {}
+    }
+
+    fun getLastPlaybackTrackId(): String? = prefs.getString("last_played_track_id", null)
+    fun getLastPlaybackPositionMs(): Long = prefs.getLong("last_played_position_ms", 0L)
+    fun getLastQueueIds(): List<String> {
+        val str = prefs.getString("last_queue_ids", null) ?: return emptyList()
+        return str.split(",").filter { it.isNotBlank() }
+    }
+    fun getLastQueueIndex(): Int = prefs.getInt("last_queue_index", 0)
 
     fun updateLyrics(trackId: String, lyrics: String) {
         val updated = _tracks.value.map {
@@ -350,10 +417,39 @@ class MusicRepository(private val context: Context) {
         persistTracks(updated)
     }
 
+    fun addTrack(track: Track) {
+        val updated = listOf(track) + _tracks.value.filter { it.id != track.id }
+        _tracks.value = updated
+        persistTracks(updated)
+    }
+
     fun deleteTrack(trackId: String) {
+        val track = _tracks.value.find { it.id == trackId }
+        if (track != null) {
+            try {
+                if (track.contentUri.startsWith("content://")) {
+                    val uri = Uri.parse(track.contentUri)
+                    context.contentResolver.delete(uri, null, null)
+                } else if (track.contentUri.isNotBlank()) {
+                    val file = File(track.contentUri)
+                    if (file.exists()) {
+                        file.delete()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
         val updated = _tracks.value.filter { it.id != trackId }
         _tracks.value = updated
         persistTracks(updated)
+
+        // Remove from playlists
+        val updatedPlaylists = _playlists.value.map { pl ->
+            pl.copy(trackIds = pl.trackIds.filter { it != trackId })
+        }
+        _playlists.value = updatedPlaylists
+        persistPlaylists(updatedPlaylists)
     }
 
     fun createPlaylist(name: String, color: String = "#38bdf8") {

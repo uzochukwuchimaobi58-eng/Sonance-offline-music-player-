@@ -50,7 +50,7 @@ fun MiniPlayerBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(theme.miniPlayerBg)
-            .navigationBarsPadding()
+            .clickable(onClick = onOpenFullPlayer)
             .testTag("mini_player_bar")
     ) {
         // Top progress line

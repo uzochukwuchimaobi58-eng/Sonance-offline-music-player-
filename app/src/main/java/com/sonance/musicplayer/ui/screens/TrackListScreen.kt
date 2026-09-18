@@ -52,10 +52,12 @@ fun TrackListScreen(
     onSelectView: ((ActiveView) -> Unit)? = null,
     activeSortBy: String = "default"
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var selectedFolder by remember { mutableStateOf<String?>(null) }
     var sortBy by remember(activeSortBy) { mutableStateOf(activeSortBy) } // default, title, artist, duration, plays
     var activeTrackForMenu by remember { mutableStateOf<Track?>(null) }
     var showPlaylistPickerForTrack by remember { mutableStateOf<Track?>(null) }
+    var trackToDeletePermanently by remember { mutableStateOf<Track?>(null) }
 
     // Folder view logic
     val folderGroups = remember(tracks) {
@@ -471,6 +473,16 @@ fun TrackListScreen(
                         )
 
                         TrackActionRow(
+                            icon = Icons.Default.NotificationsActive,
+                            title = "Set as Ringtone",
+                            onClick = {
+                                activeTrackForMenu = null
+                                com.sonance.musicplayer.util.RingtoneHelper.setAsRingtoneImmediately(context, tr)
+                            },
+                            theme = theme
+                        )
+
+                        TrackActionRow(
                             icon = Icons.Default.ContentCut,
                             title = "Music Trim (Ringtone)",
                             onClick = {
@@ -492,10 +504,10 @@ fun TrackListScreen(
 
                         TrackActionRow(
                             icon = Icons.Default.Delete,
-                            title = "Delete from Library",
+                            title = "Delete Music",
                             onClick = {
                                 activeTrackForMenu = null
-                                onDeleteTrack(tr.id)
+                                trackToDeletePermanently = tr
                             },
                             theme = theme,
                             tint = Color(0xFFF43F5E)
@@ -505,6 +517,53 @@ fun TrackListScreen(
                 confirmButton = {
                     TextButton(onClick = { activeTrackForMenu = null }) {
                         Text("Close", color = theme.accentColor)
+                    }
+                }
+            )
+        }
+
+        // Permanent Delete Confirmation Dialog
+        trackToDeletePermanently?.let { tr ->
+            AlertDialog(
+                onDismissRequest = { trackToDeletePermanently = null },
+                containerColor = theme.sidebarBg,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.DeleteForever,
+                        contentDescription = null,
+                        tint = Color(0xFFF43F5E),
+                        modifier = Modifier.size(32.dp)
+                    )
+                },
+                title = {
+                    Text(
+                        text = "Delete Music Permanently?",
+                        color = theme.textPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Do you want to delete '${tr.title}' permanently from your device? This file will be removed permanently and cannot be recovered.",
+                        color = theme.textSecondary,
+                        fontSize = 14.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            trackToDeletePermanently = null
+                            onDeleteTrack(tr.id)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF43F5E))
+                    ) {
+                        Text("Yes, Delete Permanently", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { trackToDeletePermanently = null }) {
+                        Text("Cancel", color = theme.textSecondary)
                     }
                 }
             )
