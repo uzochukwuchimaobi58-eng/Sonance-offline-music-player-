@@ -15,6 +15,7 @@ import com.sonance.musicplayer.model.EqualizerSettings
 import com.sonance.musicplayer.model.PlayerSettings
 import com.sonance.musicplayer.model.Playlist
 import com.sonance.musicplayer.model.Track
+import com.sonance.musicplayer.model.UserProfile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,10 +51,29 @@ class MusicRepository(private val context: Context) {
     val equalizerSettings: StateFlow<EqualizerSettings> = _equalizerSettings.asStateFlow()
 
     val firebaseService = FirebaseBackendService(context)
+    val billingManager = com.sonance.musicplayer.billing.GooglePlayBillingManager.getInstance(context)
+
     val remoteSettings: StateFlow<com.sonance.musicplayer.model.RemoteBackendSettings> =
         firebaseService.remoteSettings
     val userSubscription: StateFlow<com.sonance.musicplayer.model.UserSubscription> =
         firebaseService.userSubscription
+    val userProfile: StateFlow<UserProfile> = firebaseService.userProfile
+
+    init {
+        billingManager.onPurchaseCompleted = { plan, price, orderId, purchaseToken ->
+            val email = userProfile.value.email.ifBlank {
+                userSubscription.value.userEmail.ifBlank { "uzochukwuchimaobi58@gmail.com" }
+            }
+            subscribePro(
+                plan = plan,
+                price = price,
+                email = email,
+                provider = "google_play",
+                orderId = orderId,
+                purchaseToken = purchaseToken
+            )
+        }
+    }
 
     val tracksFlow: StateFlow<List<Track>> get() = tracks
     val playlistsFlow: StateFlow<List<Playlist>> get() = playlists
@@ -62,6 +82,7 @@ class MusicRepository(private val context: Context) {
     val equalizerFlow: StateFlow<EqualizerSettings> get() = equalizerSettings
     val remoteSettingsFlow: StateFlow<com.sonance.musicplayer.model.RemoteBackendSettings> get() = remoteSettings
     val userSubscriptionFlow: StateFlow<com.sonance.musicplayer.model.UserSubscription> get() = userSubscription
+    val userProfileFlow: StateFlow<UserProfile> get() = userProfile
 
     fun saveTheme(theme: AppTheme) = setTheme(theme)
     fun saveEqualizer(eq: EqualizerSettings) = updateEqualizerSettings(eq)
@@ -70,9 +91,10 @@ class MusicRepository(private val context: Context) {
     fun syncFirebaseSettings() {
         coroutineScope.launch {
             firebaseService.fetchSettingsFromCloud()
-            val email = userSubscription.value.userEmail
+            val email = userProfile.value.email.ifBlank { userSubscription.value.userEmail }
             if (email.isNotBlank()) {
                 firebaseService.fetchSubscriptionFromCloud(email)
+                firebaseService.fetchUserProfileFromFirestore(email)
             }
         }
     }
@@ -80,7 +102,90 @@ class MusicRepository(private val context: Context) {
     suspend fun updateFirebaseSettings(remote: com.sonance.musicplayer.model.RemoteBackendSettings) =
         firebaseService.pushSettingsToCloud(remote)
 
-    fun subscribePro(plan: String, price: String, email: String, provider: String = "google") {
+    fun signInWithEmail(email: String, password: String, onResult: (Result<UserProfile>) -> Unit) {
+        coroutineScope.launch {
+            val res = firebaseService.signInWithEmail(email, password)
+            if (res.isSuccess) {
+                val profile = res.getOrNull()!!
+                if (profile.isPro) {
+                    firebaseService.updateSubscriptionLocal(
+                        userSubscription.value.copy(
+                            isPro = true,
+                            plan = profile.plan,
+                            userEmail = profile.email,
+                            userName = profile.displayName,
+                            authProvider = "email"
+                        )
+                    )
+                }
+            }
+            withContext(Dispatchers.Main) {
+                onResult(res)
+            }
+        }
+    }
+
+    fun signUpWithEmail(email: String, password: String, displayName: String, onResult: (Result<UserProfile>) -> Unit) {
+        coroutineScope.launch {
+            val res = firebaseService.signUpWithEmail(email, password, displayName)
+            withContext(Dispatchers.Main) {
+                onResult(res)
+            }
+        }
+    }
+
+    fun signInWithGoogle(email: String, displayName: String = "", onResult: (Result<UserProfile>) -> Unit) {
+        coroutineScope.launch {
+            val res = firebaseService.signInWithGoogle(email, displayName)
+            if (res.isSuccess) {
+                val profile = res.getOrNull()!!
+                if (profile.isPro) {
+                    firebaseService.updateSubscriptionLocal(
+                        userSubscription.value.copy(
+                            isPro = true,
+                            plan = profile.plan,
+                            userEmail = profile.email,
+                            userName = profile.displayName,
+                            authProvider = "google"
+                        )
+                    )
+                }
+            }
+            withContext(Dispatchers.Main) {
+                onResult(res)
+            }
+        }
+    }
+
+    fun sendPasswordReset(email: String, onResult: (Result<Unit>) -> Unit) {
+        coroutineScope.launch {
+            val res = firebaseService.sendPasswordReset(email)
+            withContext(Dispatchers.Main) {
+                onResult(res)
+            }
+        }
+    }
+
+    fun syncUserProfileToFirebaseConsole(onResult: ((Result<UserProfile>) -> Unit)? = null) {
+        coroutineScope.launch {
+            val current = userProfile.value
+            val playlistCount = _playlists.value.size
+            val favoriteCount = _tracks.value.count { it.isFavorite }
+            val res = firebaseService.pushUserProfileToFirestore(current, playlistCount, favoriteCount)
+            withContext(Dispatchers.Main) {
+                onResult?.invoke(res)
+            }
+        }
+    }
+
+    fun subscribePro(
+        plan: String,
+        price: String,
+        email: String,
+        provider: String = "google_play",
+        orderId: String = "",
+        purchaseToken: String = ""
+    ) {
         coroutineScope.launch {
             val now = System.currentTimeMillis()
             val expiry = if (plan.equals("yearly", ignoreCase = true)) {
@@ -96,10 +201,27 @@ class MusicRepository(private val context: Context) {
                 authProvider = provider,
                 purchaseTimestamp = now,
                 expiryTimestamp = expiry,
-                syncStatus = "Active Pro ($plan)"
+                syncStatus = "Active Pro ($plan)",
+                orderId = orderId,
+                purchaseToken = purchaseToken,
+                productId = if (plan == "yearly") com.sonance.musicplayer.billing.GooglePlayBillingManager.PRODUCT_YEARLY else com.sonance.musicplayer.billing.GooglePlayBillingManager.PRODUCT_LIFETIME
             )
             firebaseService.updateSubscriptionLocal(sub)
             firebaseService.pushSubscriptionToCloud(sub)
+
+            // Also update user profile
+            val currentProfile = userProfile.value
+            if (currentProfile.isSignedIn) {
+                val updatedProfile = currentProfile.copy(isPro = true, plan = plan)
+                firebaseService.updateProfileLocal(updatedProfile)
+                firebaseService.pushUserProfileToFirestore(updatedProfile, _playlists.value.size, _tracks.value.count { it.isFavorite })
+            }
+        }
+    }
+
+    fun restorePurchases(onResult: (Boolean, String) -> Unit) {
+        billingManager.queryExistingPurchases { success, message ->
+            onResult(success, message)
         }
     }
 
@@ -123,6 +245,13 @@ class MusicRepository(private val context: Context) {
             }
             firebaseService.updateSubscriptionLocal(updated)
             firebaseService.pushSubscriptionToCloud(updated)
+
+            val profile = userProfile.value
+            if (profile.isSignedIn) {
+                val updatedProf = profile.copy(isPro = isPro, plan = if (isPro) "yearly" else "free")
+                firebaseService.updateProfileLocal(updatedProf)
+                firebaseService.pushUserProfileToFirestore(updatedProf)
+            }
         }
     }
 
@@ -137,21 +266,13 @@ class MusicRepository(private val context: Context) {
             )
             firebaseService.updateSubscriptionLocal(updated)
             firebaseService.fetchSubscriptionFromCloud(email)
+            firebaseService.signInWithGoogle(email, name)
         }
     }
 
     fun signOutUser() {
         coroutineScope.launch {
-            val guest = com.sonance.musicplayer.model.UserSubscription(
-                isPro = false,
-                plan = "free",
-                price = "",
-                userEmail = "",
-                userName = "",
-                authProvider = "guest",
-                syncStatus = "Guest (No sign-in required)"
-            )
-            firebaseService.updateSubscriptionLocal(guest)
+            firebaseService.signOutProfile()
         }
     }
 

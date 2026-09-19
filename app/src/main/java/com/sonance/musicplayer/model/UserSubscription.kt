@@ -13,7 +13,10 @@ data class UserSubscription(
     val purchaseTimestamp: Long = 0L,
     val expiryTimestamp: Long = 0L,     // 0 for lifetime or free, unix timestamp for yearly
     val syncStatus: String = "Guest (No sign-in required)",
-    val lastSyncedAt: Long = 0L
+    val lastSyncedAt: Long = 0L,
+    val orderId: String = "",
+    val purchaseToken: String = "",
+    val productId: String = ""
 ) {
     val isGuest: Boolean get() = userEmail.isBlank()
     val isYearly: Boolean get() = plan.equals("yearly", ignoreCase = true)

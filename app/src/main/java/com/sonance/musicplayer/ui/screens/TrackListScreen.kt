@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.sonance.musicplayer.model.ActiveView
 import com.sonance.musicplayer.model.Playlist
+import com.sonance.musicplayer.model.RepeatMode
 import com.sonance.musicplayer.model.ThemeConfig
 import com.sonance.musicplayer.model.Track
 import java.io.File
@@ -39,6 +41,10 @@ fun TrackListScreen(
     isPlaying: Boolean,
     theme: ThemeConfig,
     showShuffleButton: Boolean = true,
+    repeatMode: RepeatMode = RepeatMode.OFF,
+    onToggleRepeat: () -> Unit = {},
+    isShuffle: Boolean = false,
+    onToggleShuffle: () -> Unit = {},
     isPro: Boolean = false,
     admobEnabled: Boolean = true,
     onOpenProUpgrade: () -> Unit = {},
@@ -156,11 +162,11 @@ fun TrackListScreen(
                 }
             }
 
-            // Header stats & Play All / Shuffle All toolbar
+            // Header stats & Play All / Shuffle All / Repeat toolbar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -185,7 +191,8 @@ fun TrackListScreen(
                         Text(
                             text = "${displayTracks.size} songs",
                             color = theme.textSecondary,
-                            fontSize = 13.sp
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 }
@@ -213,17 +220,56 @@ fun TrackListScreen(
                     }
 
                     if (showShuffleButton) {
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
 
-                        IconButton(
-                            onClick = { onShuffleAll(displayTracks) },
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isShuffle) theme.accentColor.copy(alpha = 0.25f) else theme.headerBg,
+                            border = if (isShuffle) androidx.compose.foundation.BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.7f)) else null,
                             modifier = Modifier.size(36.dp)
                         ) {
+                            IconButton(
+                                onClick = {
+                                    if (onToggleShuffle != {}) {
+                                        onToggleShuffle()
+                                    } else {
+                                        onShuffleAll(displayTracks)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize().testTag("btn_library_shuffle")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Shuffle,
+                                    contentDescription = "Shuffle",
+                                    tint = if (isShuffle) theme.accentColor else theme.textPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    // Prominent Repeat Button matching the toolbar style
+                    Surface(
+                        shape = CircleShape,
+                        color = if (repeatMode != RepeatMode.OFF) theme.accentColor.copy(alpha = 0.25f) else theme.headerBg,
+                        border = if (repeatMode != RepeatMode.OFF) androidx.compose.foundation.BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.7f)) else null,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        IconButton(
+                            onClick = onToggleRepeat,
+                            modifier = Modifier.fillMaxSize().testTag("btn_library_repeat")
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.Shuffle,
-                                contentDescription = "Shuffle",
-                                tint = theme.textPrimary,
-                                modifier = Modifier.size(20.dp)
+                                imageVector = when (repeatMode) {
+                                    RepeatMode.ONE -> Icons.Default.RepeatOne
+                                    RepeatMode.ALL -> Icons.Default.Repeat
+                                    RepeatMode.OFF -> Icons.Default.Repeat
+                                },
+                                contentDescription = "Repeat",
+                                tint = if (repeatMode != RepeatMode.OFF) theme.accentColor else theme.textPrimary,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
@@ -302,7 +348,7 @@ fun TrackListScreen(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 12.dp)
+                            .padding(horizontal = 8.dp)
                     ) {
                         itemsIndexed(displayTracks, key = { _, it -> it.id }) { index, track ->
                             val isCurrent = track.id == currentTrackId
@@ -310,10 +356,10 @@ fun TrackListScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(RoundedCornerShape(6.dp))
                                     .background(if (isCurrent) theme.accentColor.copy(alpha = 0.12f) else Color.Transparent)
                                     .clickable { onPlayTrack(track, displayTracks) }
-                                    .padding(horizontal = 8.dp, vertical = 8.dp)
+                                    .padding(horizontal = 6.dp, vertical = 3.dp)
                                     .testTag("track_item_${track.id}"),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
@@ -322,11 +368,11 @@ fun TrackListScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    // Artwork
+                                    // Artwork (Compact 38dp thumbnail)
                                     Box(
                                         modifier = Modifier
-                                            .size(46.dp)
-                                            .clip(RoundedCornerShape(6.dp))
+                                            .size(38.dp)
+                                            .clip(RoundedCornerShape(5.dp))
                                             .background(Color(0xFF27272A)),
                                         contentAlignment = Alignment.Center
                                     ) {
@@ -342,7 +388,7 @@ fun TrackListScreen(
                                                 imageVector = Icons.Default.MusicNote,
                                                 contentDescription = null,
                                                 tint = Color.White.copy(alpha = 0.7f),
-                                                modifier = Modifier.size(24.dp)
+                                                modifier = Modifier.size(20.dp)
                                             )
                                         }
 
@@ -357,19 +403,22 @@ fun TrackListScreen(
                                                     imageVector = Icons.Default.Equalizer,
                                                     contentDescription = "Playing",
                                                     tint = theme.accentColor,
-                                                    modifier = Modifier.size(22.dp)
+                                                    modifier = Modifier.size(18.dp)
                                                 )
                                             }
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Spacer(modifier = Modifier.width(10.dp))
 
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
                                         Text(
                                             text = track.title,
                                             color = if (isCurrent) theme.accentColor else theme.textPrimary,
-                                            fontSize = 14.sp,
+                                            fontSize = 13.5.sp,
                                             fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
@@ -377,12 +426,12 @@ fun TrackListScreen(
 
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
                                             Text(
                                                 text = if (track.artist == "<unknown>") "Unknown Artist" else track.artist,
                                                 color = theme.textSecondary,
-                                                fontSize = 12.sp,
+                                                fontSize = 11.5.sp,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                                 modifier = Modifier.weight(1f, fill = false)
@@ -393,7 +442,7 @@ fun TrackListScreen(
                                             Text(
                                                 text = "• ${String.format("%d:%02d", m, s)}",
                                                 color = theme.textSecondary.copy(alpha = 0.7f),
-                                                fontSize = 11.sp
+                                                fontSize = 10.5.sp
                                             )
                                         }
                                     }
@@ -403,25 +452,25 @@ fun TrackListScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     IconButton(
                                         onClick = { onToggleFavorite(track.id) },
-                                        modifier = Modifier.size(34.dp)
+                                        modifier = Modifier.size(30.dp)
                                     ) {
                                         Icon(
                                             imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                             contentDescription = "Favorite",
                                             tint = if (track.isFavorite) Color(0xFFF43F5E) else theme.textSecondary,
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
 
                                     IconButton(
                                         onClick = { activeTrackForMenu = track },
-                                        modifier = Modifier.size(34.dp)
+                                        modifier = Modifier.size(30.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.MoreVert,
                                             contentDescription = "Track options",
                                             tint = theme.textSecondary,
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
                                 }

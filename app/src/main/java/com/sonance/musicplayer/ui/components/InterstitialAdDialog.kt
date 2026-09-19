@@ -122,7 +122,7 @@ fun InterstitialAdDialog(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "• Google AdMob Interstitial",
+                                    text = "• Google AdMob (Unit: ...2395)",
                                     color = Color.White.copy(alpha = 0.7f),
                                     fontSize = 10.sp
                                 )

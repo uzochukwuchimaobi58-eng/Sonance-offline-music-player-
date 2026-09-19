@@ -22,7 +22,9 @@ data class RemoteBackendSettings(
     val forceProOverride: String = "none", // "none", "force_true", "force_false"
     val proYearlyPrice: String = "$1.00",
     val proLifetimePrice: String = "$2.00",
-    val admobBannerUnitId: String = "ca-app-pub-3940256099942544/6300978111",
+    val admobAppId: String = "ca-app-pub-6322953088287505~5972613999",
+    val admobBannerUnitId: String = "ca-app-pub-6322953088287505/5517813262",
+    val admobInterstitialUnitId: String = "ca-app-pub-6322953088287505/2734992395",
     val lastSyncedAt: Long = 0L,
     val syncStatus: String = "Ready"
 )

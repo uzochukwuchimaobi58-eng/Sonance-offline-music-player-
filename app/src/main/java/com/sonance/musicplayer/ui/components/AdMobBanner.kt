@@ -243,7 +243,7 @@ fun AdMobBanner(
                         fontSize = 13.sp
                     )
                     Text(
-                        "Unit: ca-app-pub-3940256099942544/6300978111\nPrivacy: Ad personalization complies with Google Play policy.",
+                        "Unit: ca-app-pub-6322953088287505/5517813262\nPrivacy: Ad personalization complies with Google Play policy.",
                         color = theme.textSecondary.copy(alpha = 0.7f),
                         fontSize = 11.sp
                     )

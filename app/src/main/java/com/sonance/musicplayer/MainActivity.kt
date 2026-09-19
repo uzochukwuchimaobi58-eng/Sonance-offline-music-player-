@@ -26,6 +26,7 @@ import com.sonance.musicplayer.ui.components.*
 import com.sonance.musicplayer.ui.screens.*
 import com.sonance.musicplayer.ui.theme.SonanceTheme
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -39,6 +40,14 @@ class MainActivity : ComponentActivity() {
 
         repository = MusicRepository.getInstance(applicationContext)
         playbackManager = PlaybackManager.getInstance(applicationContext, repository)
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                com.google.android.gms.ads.MobileAds.initialize(applicationContext) {}
+            } catch (e: Exception) {
+                android.util.Log.w("MainActivity", "MobileAds init: ${e.message}")
+            }
+        }
 
         setContent {
             val scope = rememberCoroutineScope()
@@ -57,6 +66,7 @@ class MainActivity : ComponentActivity() {
             val playerSettings by repository.settingsFlow.collectAsState()
             val remoteSettings by repository.remoteSettingsFlow.collectAsState()
             val userSubscription by repository.userSubscriptionFlow.collectAsState()
+            val userProfile by repository.userProfileFlow.collectAsState()
 
             val currentTrack by playbackManager.currentTrack.collectAsState()
             val isPlaying by playbackManager.isPlaying.collectAsState()
@@ -90,6 +100,7 @@ class MainActivity : ComponentActivity() {
             var isDriveModeOpen by remember { mutableStateOf(false) }
             var isLyricsModeOpen by remember { mutableStateOf(false) }
             var isProUpgradeOpen by remember { mutableStateOf(false) }
+            var isAccountAuthOpen by remember { mutableStateOf(false) }
             var trimmingTrack by remember { mutableStateOf<Track?>(null) }
             var isKaraokeStudioOpen by remember { mutableStateOf(false) }
             var isBeatInstrumentalOpen by remember { mutableStateOf(false) }
@@ -292,6 +303,8 @@ class MainActivity : ComponentActivity() {
                                 onSearchChange = { searchQuery = it },
                                 isPro = isProEffective,
                                 onOpenPro = { isProUpgradeOpen = true },
+                                userProfile = userProfile,
+                                onOpenAccount = { isAccountAuthOpen = true },
                                 onOpenScanModal = { isScanModalOpen = true },
                                 onOpenEqualizer = { isEqualizerOpen = true },
                                 onOpenSettings = { isSettingsOpen = true },
@@ -395,6 +408,10 @@ class MainActivity : ComponentActivity() {
                                     isPlaying = isPlaying,
                                     theme = theme,
                                     showShuffleButton = playerSettings.showShuffleButton,
+                                    repeatMode = repeatMode,
+                                    onToggleRepeat = { playbackManager.cycleRepeatMode() },
+                                    isShuffle = isShuffle,
+                                    onToggleShuffle = { playbackManager.toggleShuffle() },
                                     isPro = isProEffective,
                                     admobEnabled = remoteSettings.admobEnabled,
                                     onOpenProUpgrade = { isProUpgradeOpen = true },
@@ -488,6 +505,8 @@ class MainActivity : ComponentActivity() {
                     onOpenSettings = { isSettingsOpen = true },
                     isPro = isProEffective,
                     onOpenPro = { isProUpgradeOpen = true },
+                    userProfile = userProfile,
+                    onOpenAccount = { isAccountAuthOpen = true },
                     theme = theme
                 )
 
@@ -622,6 +641,8 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     userSubscription = userSubscription,
+                    userProfile = userProfile,
+                    onOpenAccount = { isAccountAuthOpen = true },
                     onOpenProUpgrade = { isProUpgradeOpen = true },
                     onSetDevProState = { isPro -> repository.setDevProState(isPro) },
                     theme = theme
@@ -667,6 +688,36 @@ class MainActivity : ComponentActivity() {
                     },
                     onSetDevProState = { isPro ->
                         repository.setDevProState(isPro)
+                    },
+                    onOpenAccount = { isAccountAuthOpen = true },
+                    onRestorePurchases = { onRes ->
+                        repository.restorePurchases(onRes)
+                    },
+                    theme = theme
+                )
+
+                // Auth & Account / Firebase Console Sync Dialog
+                AuthAndAccountDialog(
+                    isOpen = isAccountAuthOpen,
+                    onClose = { isAccountAuthOpen = false },
+                    userProfile = userProfile,
+                    onSignInWithEmail = { email, password, onRes ->
+                        repository.signInWithEmail(email, password, onRes)
+                    },
+                    onSignUpWithEmail = { email, password, displayName, onRes ->
+                        repository.signUpWithEmail(email, password, displayName, onRes)
+                    },
+                    onSignInWithGoogle = { email, displayName, onRes ->
+                        repository.signInWithGoogle(email, displayName, onRes)
+                    },
+                    onSendPasswordReset = { email, onRes ->
+                        repository.sendPasswordReset(email, onRes)
+                    },
+                    onSyncNow = { onRes ->
+                        repository.syncUserProfileToFirebaseConsole(onRes)
+                    },
+                    onSignOut = {
+                        repository.signOutUser()
                     },
                     theme = theme
                 )

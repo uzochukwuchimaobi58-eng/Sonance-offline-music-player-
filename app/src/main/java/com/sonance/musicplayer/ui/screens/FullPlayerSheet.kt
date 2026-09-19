@@ -300,16 +300,25 @@ fun FullPlayerSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                IconButton(
-                    onClick = onToggleShuffle,
-                    modifier = Modifier.testTag("btn_full_shuffle")
+                Surface(
+                    shape = CircleShape,
+                    color = if (isShuffle) theme.accentColor.copy(alpha = 0.22f) else theme.headerBg,
+                    border = if (isShuffle) androidx.compose.foundation.BorderStroke(1.5.dp, theme.accentColor) else null,
+                    modifier = Modifier.size(44.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Shuffle,
-                        contentDescription = "Shuffle",
-                        tint = if (isShuffle) theme.accentColor else theme.textSecondary,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    IconButton(
+                        onClick = onToggleShuffle,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("btn_full_shuffle")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = "Shuffle",
+                            tint = if (isShuffle) theme.accentColor else theme.textSecondary,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
                 }
 
                 IconButton(
@@ -382,20 +391,29 @@ fun FullPlayerSheet(
                     )
                 }
 
-                IconButton(
-                    onClick = onToggleRepeat,
-                    modifier = Modifier.testTag("btn_full_repeat")
+                Surface(
+                    shape = CircleShape,
+                    color = if (repeatMode != RepeatMode.OFF) theme.accentColor.copy(alpha = 0.22f) else theme.headerBg,
+                    border = if (repeatMode != RepeatMode.OFF) androidx.compose.foundation.BorderStroke(1.5.dp, theme.accentColor) else null,
+                    modifier = Modifier.size(44.dp)
                 ) {
-                    Icon(
-                        imageVector = when (repeatMode) {
-                            RepeatMode.ONE -> Icons.Default.RepeatOne
-                            RepeatMode.ALL -> Icons.Default.Repeat
-                            RepeatMode.OFF -> Icons.Default.Repeat
-                        },
-                        contentDescription = "Repeat",
-                        tint = if (repeatMode != RepeatMode.OFF) theme.accentColor else theme.textSecondary,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    IconButton(
+                        onClick = onToggleRepeat,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("btn_full_repeat")
+                    ) {
+                        Icon(
+                            imageVector = when (repeatMode) {
+                                RepeatMode.ONE -> Icons.Default.RepeatOne
+                                RepeatMode.ALL -> Icons.Default.Repeat
+                                RepeatMode.OFF -> Icons.Default.Repeat
+                            },
+                            contentDescription = "Repeat",
+                            tint = if (repeatMode != RepeatMode.OFF) theme.accentColor else theme.textSecondary,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
                 }
             }
 

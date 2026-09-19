@@ -20,11 +20,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sonance.musicplayer.model.Playlist
 import com.sonance.musicplayer.model.RepeatMode
 import com.sonance.musicplayer.model.ThemeConfig
+import com.sonance.musicplayer.model.UserProfile
 
 @Composable
 fun SidebarDrawer(
@@ -46,6 +48,8 @@ fun SidebarDrawer(
     onOpenSettings: () -> Unit,
     isPro: Boolean = false,
     onOpenPro: () -> Unit = {},
+    userProfile: UserProfile = UserProfile(),
+    onOpenAccount: () -> Unit = {},
     theme: ThemeConfig
 ) {
     if (!isOpen) return
@@ -117,6 +121,88 @@ fun SidebarDrawer(
                         .verticalScroll(rememberScrollState())
                         .padding(vertical = 8.dp, horizontal = 12.dp)
                 ) {
+                    // User Account Profile Card in Sidebar
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                onClose()
+                                onOpenAccount()
+                            }
+                            .border(
+                                1.dp,
+                                if (userProfile.isSignedIn) Color(0xFF4CAF50).copy(alpha = 0.5f) else theme.cardBorder,
+                                RoundedCornerShape(12.dp)
+                            )
+                            .testTag("sidebar_account_card"),
+                        color = if (userProfile.isSignedIn) Color(0xFF1E293B) else theme.bgCanvas
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = if (userProfile.isSignedIn) theme.accentColor else theme.cardBorder,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (userProfile.isSignedIn) {
+                                        Text(
+                                            text = userProfile.initials,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.PersonOutline,
+                                            contentDescription = null,
+                                            tint = theme.textSecondary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (userProfile.isSignedIn) userProfile.displayName.ifBlank { userProfile.email } else "Sign In / Login",
+                                    color = theme.textPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(if (userProfile.isSignedIn) Color(0xFF4CAF50) else Color(0xFFF58220))
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (userProfile.isSignedIn) (if (userProfile.isGoogle) "Google • Firebase" else "Email • Firebase") else "Email or Google Account",
+                                        color = if (userProfile.isSignedIn) Color(0xFF4CAF50) else theme.textSecondary,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = theme.textSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
                     // PRO Banner in Sidebar
                     Surface(
                         modifier = Modifier
@@ -171,6 +257,17 @@ fun SidebarDrawer(
                             }
                         }
                     }
+
+                    // Account & Firebase Console
+                    SidebarItem(
+                        icon = Icons.Default.CloudSync,
+                        title = "Account & Cloud Sync",
+                        badge = if (userProfile.isSignedIn) "Synced" else "Sign In",
+                        iconColor = Color(0xFFF58220),
+                        onClick = { onClose(); onOpenAccount() },
+                        tag = "menu_account_cloud",
+                        theme = theme
+                    )
 
                     // Web Browser
                     SidebarItem(

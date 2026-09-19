@@ -13,8 +13,8 @@ android {
         applicationId = "com.sonance.musicplayer"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "1.1.0"
+        versionCode = 12
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -93,6 +93,8 @@ dependencies {
     implementation(libs.androidx.media3.common)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media)
+    implementation(libs.play.billing.ktx)
+    implementation(libs.play.services.ads)
 
     debugImplementation(libs.androidx.ui.tooling)
 }

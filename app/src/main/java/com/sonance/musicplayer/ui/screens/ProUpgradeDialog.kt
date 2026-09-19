@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.sonance.musicplayer.billing.GooglePlayBillingManager
 import com.sonance.musicplayer.model.ThemeConfig
 import com.sonance.musicplayer.model.UserSubscription
 import kotlinx.coroutines.delay
@@ -46,15 +47,21 @@ fun ProUpgradeDialog(
     onSignIn: (email: String, name: String, provider: String) -> Unit,
     onSignOut: () -> Unit,
     onSetDevProState: (Boolean) -> Unit,
+    onOpenAccount: () -> Unit = {},
+    onRestorePurchases: ((Boolean, String) -> Unit) -> Unit = {},
     theme: ThemeConfig
 ) {
     if (!isOpen) return
 
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val billingManager = remember { GooglePlayBillingManager.getInstance(context) }
+    val isBillingConnected by billingManager.isConnected.collectAsState()
+    val billingStatusMsg by billingManager.statusMessage.collectAsState()
 
     // 0: Yearly ($1.00/yr), 1: Lifetime ($2.00)
     var selectedPlanIndex by remember { mutableIntStateOf(1) }
+    var isRestoringPurchases by remember { mutableStateOf(false) }
     var inputEmail by remember { mutableStateOf("") }
     var isSigningIn by remember { mutableStateOf(false) }
     var showGooglePlaySheet by remember { mutableStateOf(false) }
@@ -66,6 +73,7 @@ fun ProUpgradeDialog(
 
     val selectedPlan = if (selectedPlanIndex == 0) "yearly" else "lifetime"
     val selectedPrice = if (selectedPlanIndex == 0) "$1.00/yr" else "$2.00"
+    val selectedProductId = if (selectedPlanIndex == 0) GooglePlayBillingManager.PRODUCT_YEARLY else GooglePlayBillingManager.PRODUCT_LIFETIME
 
     Dialog(
         onDismissRequest = onClose,
@@ -397,6 +405,37 @@ fun ProUpgradeDialog(
                                     Text("Link", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 }
                             }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Or open full Account & Firebase Dialog
+                            OutlinedButton(
+                                onClick = {
+                                    onClose()
+                                    onOpenAccount()
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(38.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF58220).copy(alpha = 0.5f))
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.CloudSync,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF58220),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Existing Account? Sign In / Login & Sync",
+                                        color = Color(0xFFF58220),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
                         } else {
                             // Already signed in
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -436,14 +475,85 @@ fun ProUpgradeDialog(
 
                 Spacer(modifier = Modifier.height(18.dp))
 
-                // Main CTA Button
+                // Google Play Billing Status & Product Banner
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF0F172A),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.ShoppingBag,
+                                    contentDescription = null,
+                                    tint = Color(0xFF34A853),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Google Play In-App Billing",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isBillingConnected) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFF3B82F6).copy(alpha = 0.2f),
+                                border = androidx.compose.foundation.BorderStroke(0.8.dp, if (isBillingConnected) Color(0xFF10B981) else Color(0xFF3B82F6))
+                            ) {
+                                Text(
+                                    text = if (isBillingConnected) "CONNECTED" else "READY (AAB)",
+                                    color = if (isBillingConnected) Color(0xFF10B981) else Color(0xFF60A5FA),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Product SKU: $selectedProductId",
+                                color = theme.textSecondary,
+                                fontSize = 11.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+                            Text(
+                                text = "Play Library v7.1.1",
+                                color = theme.textSecondary.copy(alpha = 0.7f),
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Main Google Play Purchase CTA Button
                 Button(
                     onClick = {
                         val email = if (subscription.userEmail.isNotBlank()) subscription.userEmail else "user@sonance.pro"
                         if (subscription.isGuest) {
                             onSignIn(email, "Guest Subscriber", "google")
                         }
-                        showGooglePlaySheet = true
+                        val activity = context as? android.app.Activity
+                        if (activity != null) {
+                            billingManager.launchPurchaseFlow(activity, isYearly = selectedPlanIndex == 0) {
+                                showGooglePlaySheet = true
+                            }
+                        } else {
+                            showGooglePlaySheet = true
+                        }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -463,11 +573,51 @@ fun ProUpgradeDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (subscription.isPro) "Switch / Renew Plan ($selectedPrice)" else "Upgrade & Remove Ads ($selectedPrice)",
+                            text = if (subscription.isPro) "Switch / Renew Plan ($selectedPrice)" else "Pay with Google Play ($selectedPrice)",
                             color = Color.Black,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Restore Google Play Purchases Button
+                OutlinedButton(
+                    onClick = {
+                        isRestoringPurchases = true
+                        onRestorePurchases { success, msg ->
+                            isRestoringPurchases = false
+                            val toastMsg = if (success) "Restored! $msg" else "Restore status: $msg"
+                            Toast.makeText(context, toastMsg, Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .testTag("btn_restore_purchases"),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = theme.textSecondary)
+                ) {
+                    if (isRestoringPurchases) {
+                        CircularProgressIndicator(
+                            color = goldAccent,
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Querying Google Play purchases...", fontSize = 12.sp, color = theme.textSecondary)
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            tint = theme.textSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Restore Google Play Purchases", fontSize = 12.sp, color = theme.textPrimary)
                     }
                 }
 
@@ -541,8 +691,9 @@ fun ProUpgradeDialog(
         }
     }
 
-    // Google Play Payment Simulation Modal
+    // Google Play Payment Sheet Modal
     if (showGooglePlaySheet) {
+        val simulatedOrderId = remember { "GPA.3392-${(1000..9999).random()}-${(10000..99999).random()}" }
         AlertDialog(
             onDismissRequest = { if (!isProcessingPayment) showGooglePlaySheet = false },
             containerColor = Color(0xFF1E293B),
@@ -565,6 +716,26 @@ fun ProUpgradeDialog(
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp
                     )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF0F172A),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155))
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Product ID:", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                                Text(selectedProductId, color = goldAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Order Reference:", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                                Text(simulatedOrderId, color = Color.White, fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Billing Library:", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                                Text("v7.1.1 (Official)", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
                     Text(
                         text = "Plan: ${if (selectedPlanIndex == 0) "Yearly Subscription ($1.00/year)" else "Lifetime Purchase ($2.00)"}",
                         color = goldAccent,
