@@ -110,7 +110,6 @@ class MainActivity : ComponentActivity() {
             var isDriveModeOpen by remember { mutableStateOf(false) }
             var isLyricsModeOpen by remember { mutableStateOf(false) }
             var isProUpgradeOpen by remember { mutableStateOf(false) }
-            var isAccountAuthOpen by remember { mutableStateOf(false) }
             var trimmingTrack by remember { mutableStateOf<Track?>(null) }
             var isKaraokeStudioOpen by remember { mutableStateOf(false) }
             var isBeatInstrumentalOpen by remember { mutableStateOf(false) }
@@ -233,8 +232,11 @@ class MainActivity : ComponentActivity() {
                                 .sortedByDescending { it.lastPlayed }
                             recents.ifEmpty { tracks.sortedByDescending { it.lastPlayed } }
                         }
-                        ActiveView.RECENT_ADD -> tracks.filter { cutoffTime == 0L || it.addedDate >= cutoffTime }
-                            .sortedByDescending { it.addedDate }
+                        ActiveView.RECENT_ADD -> {
+                            val recents = tracks.filter { cutoffTime == 0L || it.addedDate >= cutoffTime }
+                                .sortedByDescending { it.addedDate }
+                            recents.ifEmpty { tracks.sortedByDescending { it.addedDate } }
+                        }
                         ActiveView.MOST_PLAY -> {
                             val mostly = tracks.filter { it.playCount > 0 && (cutoffTime == 0L || it.lastPlayed >= cutoffTime) }
                                 .sortedByDescending { it.playCount }
@@ -313,8 +315,6 @@ class MainActivity : ComponentActivity() {
                                 onSearchChange = { searchQuery = it },
                                 isPro = isProEffective,
                                 onOpenPro = { isProUpgradeOpen = true },
-                                userProfile = userProfile,
-                                onOpenAccount = { isAccountAuthOpen = true },
                                 onOpenScanModal = { isScanModalOpen = true },
                                 onOpenEqualizer = { isEqualizerOpen = true },
                                 onOpenSettings = { isSettingsOpen = true },
@@ -515,8 +515,6 @@ class MainActivity : ComponentActivity() {
                     onOpenSettings = { isSettingsOpen = true },
                     isPro = isProEffective,
                     onOpenPro = { isProUpgradeOpen = true },
-                    userProfile = userProfile,
-                    onOpenAccount = { isAccountAuthOpen = true },
                     theme = theme
                 )
 
@@ -651,8 +649,6 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     userSubscription = userSubscription,
-                    userProfile = userProfile,
-                    onOpenAccount = { isAccountAuthOpen = true },
                     onOpenProUpgrade = { isProUpgradeOpen = true },
                     onSetDevProState = { isPro -> repository.setDevProState(isPro) },
                     theme = theme
@@ -690,44 +686,8 @@ class MainActivity : ComponentActivity() {
                     onSubscribe = { plan, price, email, provider ->
                         repository.subscribePro(plan, price, email, provider)
                     },
-                    onSignIn = { email, name, provider ->
-                        repository.signInUser(email, name, provider)
-                    },
-                    onSignOut = {
-                        repository.signOutUser()
-                    },
-                    onSetDevProState = { isPro ->
-                        repository.setDevProState(isPro)
-                    },
-                    onOpenAccount = { isAccountAuthOpen = true },
                     onRestorePurchases = { onRes ->
                         repository.restorePurchases(onRes)
-                    },
-                    theme = theme
-                )
-
-                // Auth & Account / Firebase Console Sync Dialog
-                AuthAndAccountDialog(
-                    isOpen = isAccountAuthOpen,
-                    onClose = { isAccountAuthOpen = false },
-                    userProfile = userProfile,
-                    onSignInWithEmail = { email, password, onRes ->
-                        repository.signInWithEmail(email, password, onRes)
-                    },
-                    onSignUpWithEmail = { email, password, displayName, onRes ->
-                        repository.signUpWithEmail(email, password, displayName, onRes)
-                    },
-                    onSignInWithGoogle = { email, displayName, onRes ->
-                        repository.signInWithGoogle(email, displayName, onRes)
-                    },
-                    onSendPasswordReset = { email, onRes ->
-                        repository.sendPasswordReset(email, onRes)
-                    },
-                    onSyncNow = { onRes ->
-                        repository.syncUserProfileToFirebaseConsole(onRes)
-                    },
-                    onSignOut = {
-                        repository.signOutUser()
                     },
                     theme = theme
                 )

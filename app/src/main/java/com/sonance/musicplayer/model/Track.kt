@@ -68,7 +68,7 @@ data class Track(
     val folder: String = "Phone Storage",
     val isFavorite: Boolean = false,
     val playCount: Int = 0,
-    val dateAdded: Long = System.currentTimeMillis(),
+    val dateAdded: Long = 1672531200000L, // Jan 1, 2023 - built-in tracks default to past timestamp
     val lastPlayed: Long = 0L,
     val isOffline: Boolean = true,
     val lyrics: String = "",

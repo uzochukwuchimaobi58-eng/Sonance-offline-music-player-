@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,6 +30,7 @@ import com.sonance.musicplayer.model.Playlist
 import com.sonance.musicplayer.model.RepeatMode
 import com.sonance.musicplayer.model.ThemeConfig
 import com.sonance.musicplayer.model.Track
+import com.sonance.musicplayer.ui.components.AlphabetFastScroller
 import java.io.File
 
 @Composable
@@ -102,7 +104,7 @@ fun TrackListScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = 76.dp)
+                .padding(bottom = 8.dp)
         ) {
             // Category navigation tabs (SONGS, FOLDERS, PLAYLISTS, FAVORITES, RECENT)
             if (onSelectView != null) {
@@ -345,12 +347,17 @@ fun TrackListScreen(
                         )
                     }
                 } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 8.dp)
-                    ) {
-                        itemsIndexed(displayTracks, key = { _, it -> it.id }) { index, track ->
+                    val listState = rememberLazyListState()
+                    val showAlphabetScroller = displayTracks.size >= 4
+
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(start = 8.dp, end = if (showAlphabetScroller) 26.dp else 8.dp)
+                        ) {
+                            itemsIndexed(displayTracks, key = { _, it -> it.id }) { index, track ->
                             val isCurrent = track.id == currentTrackId
 
                             Row(
@@ -487,9 +494,21 @@ fun TrackListScreen(
                             }
                         }
                     }
+
+                    if (showAlphabetScroller) {
+                        AlphabetFastScroller(
+                            tracks = displayTracks,
+                            listState = listState,
+                            theme = theme,
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(vertical = 4.dp)
+                        )
+                    }
                 }
             }
         }
+    }
 
         // Track Options Bottom Sheet / Dialog
         activeTrackForMenu?.let { tr ->

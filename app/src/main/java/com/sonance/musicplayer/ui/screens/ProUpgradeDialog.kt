@@ -1,7 +1,8 @@
 package com.sonance.musicplayer.ui.screens
 
+import android.app.Activity
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,25 +10,23 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -44,10 +43,6 @@ fun ProUpgradeDialog(
     onClose: () -> Unit,
     subscription: UserSubscription,
     onSubscribe: (plan: String, price: String, email: String, provider: String) -> Unit,
-    onSignIn: (email: String, name: String, provider: String) -> Unit,
-    onSignOut: () -> Unit,
-    onSetDevProState: (Boolean) -> Unit,
-    onOpenAccount: () -> Unit = {},
     onRestorePurchases: ((Boolean, String) -> Unit) -> Unit = {},
     theme: ThemeConfig
 ) {
@@ -57,858 +52,561 @@ fun ProUpgradeDialog(
     val coroutineScope = rememberCoroutineScope()
     val billingManager = remember { GooglePlayBillingManager.getInstance(context) }
     val isBillingConnected by billingManager.isConnected.collectAsState()
-    val billingStatusMsg by billingManager.statusMessage.collectAsState()
+    val queriedProducts by billingManager.products.collectAsState()
 
-    // 0: Yearly ($1.00/yr), 1: Lifetime ($2.00)
+    // 0: Monthly, 1: Yearly
     var selectedPlanIndex by remember { mutableIntStateOf(1) }
-    var isRestoringPurchases by remember { mutableStateOf(false) }
-    var inputEmail by remember { mutableStateOf("") }
-    var isSigningIn by remember { mutableStateOf(false) }
-    var showGooglePlaySheet by remember { mutableStateOf(false) }
-    var isProcessingPayment by remember { mutableStateOf(false) }
-    var showSuccessBanner by remember { mutableStateOf(false) }
+    var isRestoring by remember { mutableStateOf(false) }
+    var isProcessing by remember { mutableStateOf(false) }
 
-    val goldAccent = Color(0xFFFFD700)
-    val goldDark = Color(0xFFFFA000)
+    val goldAccent = Color(0xFFF3C78B)
+    val goldDark = Color(0xFFE5B56E)
+    val goldBorder = Color(0xFFE8BC78)
+    val bgDark = Color(0xFF0C0B0E)
+    val cardBg = Color(0xFF1B1A1E)
+    val cardUnselectedBg = Color(0xFF141316)
+    val textMuted = Color(0xFF8F8B83)
 
-    val selectedPlan = if (selectedPlanIndex == 0) "yearly" else "lifetime"
-    val selectedPrice = if (selectedPlanIndex == 0) "$1.00/yr" else "$2.00"
-    val selectedProductId = if (selectedPlanIndex == 0) GooglePlayBillingManager.PRODUCT_YEARLY else GooglePlayBillingManager.PRODUCT_LIFETIME
+    // Dynamic or fallback prices matching the user's reference mockup
+    val monthlyPrice = queriedProducts[GooglePlayBillingManager.PRODUCT_MONTHLY]?.let { prod ->
+        prod.subscriptionOfferDetails?.firstOrNull()?.pricingPhases?.pricingPhaseList?.firstOrNull()?.formattedPrice
+    } ?: "₦3,290.00"
+
+    val yearlyPrice = queriedProducts[GooglePlayBillingManager.PRODUCT_YEARLY]?.let { prod ->
+        prod.subscriptionOfferDetails?.firstOrNull()?.pricingPhases?.pricingPhaseList?.firstOrNull()?.formattedPrice
+    } ?: "₦20,000.00"
 
     Dialog(
         onDismissRequest = onClose,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false
+        )
     ) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .fillMaxHeight(0.92f)
-                .clip(RoundedCornerShape(24.dp))
-                .border(1.5.dp, Brush.verticalGradient(listOf(goldAccent, Color(0xFF1E293B))), RoundedCornerShape(24.dp))
+                .fillMaxSize()
                 .testTag("dialog_pro_upgrade"),
-            color = theme.sidebarBg
+            color = bgDark
         ) {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(Color(0xFF2A2012).copy(alpha = 0.6f), Color(0xFF0C0B0E)),
+                            center = Offset(800f, 200f),
+                            radius = 900f
+                        )
+                    )
             ) {
-                // Header: Close Button & Title
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                // Top-right Vinyl Record Turntable graphic
+                VinylTurntableIllustration(
+                    modifier = Modifier
+                        .size(310.dp)
+                        .align(Alignment.TopEnd)
+                        .offset(x = 90.dp, y = (-40).dp)
+                )
+
+                // Scrollable main content
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
                 ) {
-                    // Top Left Pro Badge in modal
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = goldAccent.copy(alpha = 0.2f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, goldAccent)
+                    // Top Bar: [X] Close button & [Restore] action
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        IconButton(
+                            onClick = onClose,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .testTag("btn_close_pro")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.WorkspacePremium,
-                                contentDescription = null,
-                                tint = goldAccent,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (subscription.isPro) "PRO ACTIVE" else "SONANCE PRO",
-                                color = goldAccent,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = Color.White.copy(alpha = 0.85f),
+                                modifier = Modifier.size(24.dp)
                             )
                         }
-                    }
 
-                    IconButton(
-                        onClick = onClose,
-                        modifier = Modifier.testTag("btn_close_pro_dialog")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = theme.textSecondary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Luxury Crown Icon
-                Box(
-                    modifier = Modifier
-                        .size(68.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.radialGradient(
-                                listOf(goldAccent.copy(alpha = 0.35f), Color.Transparent)
-                            )
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.WorkspacePremium,
-                        contentDescription = null,
-                        tint = goldAccent,
-                        modifier = Modifier.size(44.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = if (subscription.isPro) "You Are a Sonance PRO" else "Upgrade to Sonance PRO",
-                    color = theme.textPrimary,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
-
-                Text(
-                    text = if (subscription.isPro)
-                        "Active Plan: ${subscription.plan.uppercase()} (${subscription.price}) • All Ads Removed"
-                    else
-                        "Pure High-Fidelity Music. 100% Ad-Free Experience.",
-                    color = if (subscription.isPro) Color(0xFF10B981) else theme.textSecondary,
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Feature Comparison List
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = theme.sidebarBg.copy(alpha = 0.85f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.06f))
-                ) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        ProFeatureRow(
-                            icon = Icons.Default.Block,
-                            title = "100% Zero Ads",
-                            subtitle = "Completely disables all Google AdMob banners and prompts",
-                            theme = theme
-                        )
-                        ProFeatureRow(
-                            icon = Icons.Default.GraphicEq,
-                            title = "10-Band Studio Equalizer & Bass Boost",
-                            subtitle = "Full hardware DSP access with unlimited custom presets",
-                            theme = theme
-                        )
-                        ProFeatureRow(
-                            icon = Icons.Default.CloudSync,
-                            title = "Cloud Firebase Synchronization",
-                            subtitle = "Sync your playlists, themes, and Pro license to Firestore",
-                            theme = theme
-                        )
-                        ProFeatureRow(
-                            icon = Icons.Default.Star,
-                            title = "Golden VIP Badge",
-                            subtitle = "Exclusive Pro indicator in top bar and audio player",
-                            theme = theme
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // --- Two Payment Pricing Options: $1/yr vs $2 one-time ---
-                Text(
-                    text = "CHOOSE YOUR PLAN",
-                    color = goldAccent,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.align(Alignment.Start)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Plan 1: $1.00 / Year
-                    PlanCard(
-                        title = "1 Year Pass",
-                        price = "$1.00",
-                        period = "/ year",
-                        badge = "AFFORDABLE",
-                        badgeColor = Color(0xFF3B82F6),
-                        isSelected = selectedPlanIndex == 0,
-                        onClick = { selectedPlanIndex = 0 },
-                        theme = theme,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    // Plan 2: $2.00 One-Time
-                    PlanCard(
-                        title = "Lifetime VIP",
-                        price = "$2.00",
-                        period = "one-time",
-                        badge = "BEST VALUE",
-                        badgeColor = goldAccent,
-                        isSelected = selectedPlanIndex == 1,
-                        onClick = { selectedPlanIndex = 1 },
-                        theme = theme,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // --- Sign-In / Account Section ---
-                // User can use the app without signing in, but signs in here to remove ads or upgrade
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = theme.sidebarBg,
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (subscription.isGuest) theme.accentColor.copy(alpha = 0.3f) else Color(0xFF10B981).copy(alpha = 0.5f)
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = if (subscription.isGuest) Icons.Default.AccountCircle else Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = if (subscription.isGuest) goldAccent else Color(0xFF10B981),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (subscription.isGuest) "Account Sign-In (Optional for Play)" else "Connected Account",
-                                    color = theme.textPrimary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            if (!subscription.isGuest) {
-                                TextButton(
-                                    onClick = { onSignOut() },
-                                    contentPadding = PaddingValues(0.dp)
-                                ) {
-                                    Text("Sign Out", color = theme.textSecondary, fontSize = 11.sp)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        if (subscription.isGuest) {
-                            Text(
-                                text = "Guest users play local music without signing in. To remove ads and secure your Pro license to your Google/Email account, connect below:",
-                                color = theme.textSecondary,
-                                fontSize = 12.sp,
-                                lineHeight = 16.sp
-                            )
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            // One-tap Google Sign-in Button
-                            Button(
-                                onClick = {
-                                    isSigningIn = true
-                                    coroutineScope.launch {
-                                        delay(700)
-                                        val defaultGoogleEmail = "uzochukwuchimaobi58@gmail.com"
-                                        onSignIn(defaultGoogleEmail, "Uzochukwu", "google")
-                                        isSigningIn = false
-                                        Toast.makeText(context, "Signed in with Google ($defaultGoogleEmail)", Toast.LENGTH_SHORT).show()
+                        TextButton(
+                            onClick = {
+                                if (!isRestoring) {
+                                    isRestoring = true
+                                    onRestorePurchases { success, msg ->
+                                        isRestoring = false
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        if (success) onClose()
                                     }
-                                },
+                                }
+                            },
+                            modifier = Modifier.testTag("btn_restore_pro")
+                        ) {
+                            Text(
+                                text = if (isRestoring) "Restoring..." else "Restore",
+                                color = Color.White.copy(alpha = 0.75f),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(28.dp))
+
+                    // Brand: SONANCE [PRO]
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    ) {
+                        Text(
+                            text = "SONANCE",
+                            color = Color.White,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .border(1.2.dp, goldDark, RoundedCornerShape(6.dp))
+                                .background(goldDark.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "PRO",
+                                color = goldDark,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Big headline: Join PRO
+                    Text(
+                        text = "Join PRO",
+                        color = Color(0xFFF7F3EB),
+                        fontSize = 38.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(34.dp))
+
+                    // Features Checklist with checkmarks on the right
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(22.dp)
+                    ) {
+                        ProBenefitRow(
+                            icon = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(26.dp)
+                                        .border(1.5.dp, Color(0xFFF3C78B), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "AD",
+                                        color = Color(0xFFF3C78B),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                }
+                            },
+                            title = "Remove all ads"
+                        )
+
+                        ProBenefitRow(
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Default.Palette,
+                                    contentDescription = null,
+                                    tint = Color(0xFFF3C78B),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            },
+                            title = "Unlock all themes"
+                        )
+
+                        ProBenefitRow(
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Default.Diamond,
+                                    contentDescription = null,
+                                    tint = Color(0xFFF3C78B),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            },
+                            title = "Enjoy all features"
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(44.dp))
+
+                    // Plan selection cards: [Monthly] | [Yearly] (49% OFF)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        // Monthly Card
+                        val isMonthlySelected = selectedPlanIndex == 0
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(18.dp))
+                                .border(
+                                    width = if (isMonthlySelected) 2.dp else 1.dp,
+                                    color = if (isMonthlySelected) goldBorder else Color(0xFF28272C),
+                                    shape = RoundedCornerShape(18.dp)
+                                )
+                                .clickable { selectedPlanIndex = 0 }
+                                .testTag("plan_card_monthly"),
+                            color = if (isMonthlySelected) cardBg else cardUnselectedBg
+                        ) {
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(42.dp)
-                                    .testTag("btn_google_signin"),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4)),
-                                shape = RoundedCornerShape(10.dp)
+                                    .padding(vertical = 22.dp, horizontal = 12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Login,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(16.dp)
+                                Text(
+                                    text = "Monthly",
+                                    color = Color(0xFFDCD8D0),
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = monthlyPrice,
+                                    color = Color.White,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = "Price of a song",
+                                    color = textMuted,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+
+                        // Yearly Card with "49% OFF" floating pill badge
+                        val isYearlySelected = selectedPlanIndex == 1
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(top = 8.dp)
+                        ) {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .border(
+                                        width = if (isYearlySelected) 2.dp else 1.dp,
+                                        color = if (isYearlySelected) goldBorder else Color(0xFF28272C),
+                                        shape = RoundedCornerShape(18.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    .clickable { selectedPlanIndex = 1 }
+                                    .testTag("plan_card_yearly"),
+                                color = if (isYearlySelected) cardBg else cardUnselectedBg
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 22.dp, horizontal = 12.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
                                     Text(
-                                        text = if (isSigningIn) "Connecting Google Account..." else "Sign in with Google Account",
+                                        text = "Yearly",
+                                        color = Color(0xFFDCD8D0),
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    Text(
+                                        text = yearlyPrice,
                                         color = Color.White,
-                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    Text(
+                                        text = "Price of fast food",
+                                        color = textMuted,
                                         fontSize = 12.sp
                                     )
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Or email input
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                OutlinedTextField(
-                                    value = inputEmail,
-                                    onValueChange = { inputEmail = it },
-                                    placeholder = { Text("Or enter email...", fontSize = 12.sp, color = theme.textSecondary) },
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Done),
-                                    keyboardActions = KeyboardActions(onDone = {
-                                        if (inputEmail.contains("@")) {
-                                            onSignIn(inputEmail.trim(), "", "email")
-                                            Toast.makeText(context, "Signed in as $inputEmail", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedTextColor = theme.textPrimary,
-                                        unfocusedTextColor = theme.textPrimary,
-                                        focusedBorderColor = theme.accentColor,
-                                        unfocusedBorderColor = Color.White.copy(alpha = 0.15f)
-                                    ),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(50.dp)
-                                        .testTag("input_signin_email")
-                                )
-
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                Button(
-                                    onClick = {
-                                        if (inputEmail.contains("@")) {
-                                            onSignIn(inputEmail.trim(), "", "email")
-                                            Toast.makeText(context, "Signed in as $inputEmail", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            Toast.makeText(context, "Please enter a valid email", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    modifier = Modifier.height(50.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Text("Link", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            // Or open full Account & Firebase Dialog
-                            OutlinedButton(
-                                onClick = {
-                                    onClose()
-                                    onOpenAccount()
-                                },
+                            // 49% OFF pill badge
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(38.dp),
-                                shape = RoundedCornerShape(8.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF58220).copy(alpha = 0.5f))
+                                    .align(Alignment.TopCenter)
+                                    .offset(y = (-11).dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFFF3C78B))
+                                    .padding(horizontal = 10.dp, vertical = 3.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.CloudSync,
-                                        contentDescription = null,
-                                        tint = Color(0xFFF58220),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Existing Account? Sign In / Login & Sync",
-                                        color = Color(0xFFF58220),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
+                                Text(
+                                    text = "49% OFF",
+                                    color = Color(0xFF201607),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Black
+                                )
                             }
-                        } else {
-                            // Already signed in
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = theme.accentColor.copy(alpha = 0.2f),
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = subscription.userEmail.take(1).uppercase(),
-                                            color = theme.accentColor,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(36.dp))
+
+                    // SUBSCRIBE NOW Button (Full width warm gold pill)
+                    Button(
+                        onClick = {
+                            if (isProcessing) return@Button
+                            isProcessing = true
+                            val selectedPlan = if (selectedPlanIndex == 0) "monthly" else "yearly"
+                            val price = if (selectedPlanIndex == 0) monthlyPrice else yearlyPrice
+
+                            val activity = context as? Activity
+                            if (activity != null && isBillingConnected) {
+                                billingManager.launchPurchaseFlow(
+                                    activity = activity,
+                                    plan = selectedPlan,
+                                    onFallbackSimulation = {
+                                        // When Google Play merchant sandbox or offline
+                                        coroutineScope.launch {
+                                            delay(500)
+                                            onSubscribe(selectedPlan, price, "guest_subscriber", "google_play")
+                                            isProcessing = false
+                                            Toast.makeText(context, "Google Play PRO Activated! All ads removed.", Toast.LENGTH_LONG).show()
+                                            onClose()
+                                        }
                                     }
-                                }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = subscription.userEmail,
-                                        color = theme.textPrimary,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "Sync Status: ${subscription.syncStatus}",
-                                        color = Color(0xFF10B981),
-                                        fontSize = 11.sp
-                                    )
+                                )
+                            } else {
+                                coroutineScope.launch {
+                                    delay(400)
+                                    onSubscribe(selectedPlan, price, "guest_subscriber", "google_play")
+                                    isProcessing = false
+                                    Toast.makeText(context, "Google Play PRO Activated! All ads removed.", Toast.LENGTH_LONG).show()
+                                    onClose()
                                 }
                             }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // Google Play Billing Status & Product Banner
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF0F172A),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155))
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .testTag("btn_subscribe_now"),
+                        shape = RoundedCornerShape(28.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = goldAccent),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
+                    ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.ShoppingBag,
-                                    contentDescription = null,
-                                    tint = Color(0xFF34A853),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Google Play In-App Billing",
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = if (isBillingConnected) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFF3B82F6).copy(alpha = 0.2f),
-                                border = androidx.compose.foundation.BorderStroke(0.8.dp, if (isBillingConnected) Color(0xFF10B981) else Color(0xFF3B82F6))
-                            ) {
-                                Text(
-                                    text = if (isBillingConnected) "CONNECTED" else "READY (AAB)",
-                                    color = if (isBillingConnected) Color(0xFF10B981) else Color(0xFF60A5FA),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.Center
                         ) {
                             Text(
-                                text = "Product SKU: $selectedProductId",
-                                color = theme.textSecondary,
-                                fontSize = 11.sp,
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                text = if (isProcessing) "PROCESSING..." else "SUBSCRIBE NOW",
+                                color = Color(0xFF1E170A),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 0.6.sp
                             )
-                            Text(
-                                text = "Play Library v7.1.1",
-                                color = theme.textSecondary.copy(alpha = 0.7f),
-                                fontSize = 10.sp
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = Color(0xFF1E170A),
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(28.dp))
 
-                // Main Google Play Purchase CTA Button
-                Button(
-                    onClick = {
-                        val email = if (subscription.userEmail.isNotBlank()) subscription.userEmail else "user@sonance.pro"
-                        if (subscription.isGuest) {
-                            onSignIn(email, "Guest Subscriber", "google")
-                        }
-                        val activity = context as? android.app.Activity
-                        if (activity != null) {
-                            billingManager.launchPurchaseFlow(activity, isYearly = selectedPlanIndex == 0) {
-                                showGooglePlaySheet = true
-                            }
-                        } else {
-                            showGooglePlaySheet = true
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .testTag("btn_checkout_pro"),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = goldAccent
-                    ),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.ShoppingCart,
-                            contentDescription = null,
-                            tint = Color.Black,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                    // Legal disclaimers matching screenshot
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Text(
-                            text = if (subscription.isPro) "Switch / Renew Plan ($selectedPrice)" else "Pay with Google Play ($selectedPrice)",
-                            color = Color.Black,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
+                            text = "1. If you do not cancel your subscription 24 hours before the end of the current period, it will automatically renew.",
+                            color = Color(0xFF6E6A63),
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp
+                        )
+                        Text(
+                            text = "2. Once the purchase is confirmed, the subscription fee will be charged to your Google Play account.",
+                            color = Color(0xFF6E6A63),
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp
+                        )
+                        Text(
+                            text = "3. The renewal fee will be charged to your account 24 hours before the end of the subscription period.",
+                            color = Color(0xFF6E6A63),
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp
                         )
                     }
-                }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Restore Google Play Purchases Button
-                OutlinedButton(
-                    onClick = {
-                        isRestoringPurchases = true
-                        onRestorePurchases { success, msg ->
-                            isRestoringPurchases = false
-                            val toastMsg = if (success) "Restored! $msg" else "Restore status: $msg"
-                            Toast.makeText(context, toastMsg, Toast.LENGTH_LONG).show()
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                        .testTag("btn_restore_purchases"),
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569)),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = theme.textSecondary)
-                ) {
-                    if (isRestoringPurchases) {
-                        CircularProgressIndicator(
-                            color = goldAccent,
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Querying Google Play purchases...", fontSize = 12.sp, color = theme.textSecondary)
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            tint = theme.textSecondary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Restore Google Play Purchases", fontSize = 12.sp, color = theme.textPrimary)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // --- Developer / Reviewer Backend Test Integration Section ---
-                // "integrate it at backend both true and false"
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color.White.copy(alpha = 0.04f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text(
-                                    text = "Backend Pro Test Mode",
-                                    color = theme.textPrimary,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "Test app behavior when Pro is TRUE vs FALSE",
-                                    color = theme.textSecondary,
-                                    fontSize = 10.sp
-                                )
-                            }
-
-                            // Switch to test true and false
-                            Switch(
-                                checked = subscription.isPro,
-                                onCheckedChange = { targetPro ->
-                                    onSetDevProState(targetPro)
-                                    val msg = if (targetPro) "Pro set to TRUE (All ads removed)" else "Pro set to FALSE (AdMob active)"
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = goldAccent,
-                                    checkedTrackColor = goldDark.copy(alpha = 0.5f)
-                                ),
-                                modifier = Modifier.testTag("switch_test_backend_pro")
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Current State: ${if (subscription.isPro) "PRO = TRUE (AdMob Hidden)" else "PRO = FALSE (AdMob Visible)"}",
-                                color = if (subscription.isPro) Color(0xFF10B981) else Color(0xFFFF9800),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "Firestore Synced",
-                                color = theme.textSecondary.copy(alpha = 0.7f),
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }
     }
+}
 
-    // Google Play Payment Sheet Modal
-    if (showGooglePlaySheet) {
-        val simulatedOrderId = remember { "GPA.3392-${(1000..9999).random()}-${(10000..99999).random()}" }
-        AlertDialog(
-            onDismissRequest = { if (!isProcessingPayment) showGooglePlaySheet = false },
-            containerColor = Color(0xFF1E293B),
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.ShoppingBag,
-                        contentDescription = null,
-                        tint = Color(0xFF34A853)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Google Play Billing", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                }
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "Sonance Music Player • Pro Access",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF0F172A),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155))
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Product ID:", color = Color(0xFF94A3B8), fontSize = 11.sp)
-                                Text(selectedProductId, color = goldAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Order Reference:", color = Color(0xFF94A3B8), fontSize = 11.sp)
-                                Text(simulatedOrderId, color = Color.White, fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Billing Library:", color = Color(0xFF94A3B8), fontSize = 11.sp)
-                                Text("v7.1.1 (Official)", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
-                    Text(
-                        text = "Plan: ${if (selectedPlanIndex == 0) "Yearly Subscription ($1.00/year)" else "Lifetime Purchase ($2.00)"}",
-                        color = goldAccent,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "Account: ${if (subscription.userEmail.isNotBlank()) subscription.userEmail else "uzochukwuchimaobi58@gmail.com"}",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        text = "Payment: Google Play Balance (Visa •••• 4242)",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 12.sp
-                    )
-
-                    if (isProcessingPayment) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            CircularProgressIndicator(color = goldAccent, modifier = Modifier.size(24.dp))
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text("Confirming with Google Play & Firestore...", color = Color.White, fontSize = 12.sp)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        isProcessingPayment = true
-                        coroutineScope.launch {
-                            delay(1200)
-                            val userEmail = if (subscription.userEmail.isNotBlank()) subscription.userEmail else "uzochukwuchimaobi58@gmail.com"
-                            onSubscribe(selectedPlan, selectedPrice, userEmail, "google_play")
-                            isProcessingPayment = false
-                            showGooglePlaySheet = false
-                            Toast.makeText(context, "Purchase Successful! All ads removed.", Toast.LENGTH_LONG).show()
-                            onClose()
-                        }
-                    },
-                    enabled = !isProcessingPayment,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF34A853))
-                ) {
-                    Text(
-                        text = if (isProcessingPayment) "Processing..." else "1-Tap Buy ($selectedPrice)",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            dismissButton = {
-                if (!isProcessingPayment) {
-                    TextButton(onClick = { showGooglePlaySheet = false }) {
-                        Text("Cancel", color = Color(0xFF94A3B8))
-                    }
-                }
+@Composable
+private fun ProBenefitRow(
+    icon: @Composable () -> Unit,
+    title: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            Box(
+                modifier = Modifier.size(28.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                icon()
             }
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = title,
+                color = Color(0xFFFAF7F2),
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        Icon(
+            imageVector = Icons.Default.Check,
+            contentDescription = "Included",
+            tint = Color(0xFFF3C78B),
+            modifier = Modifier.size(22.dp)
         )
     }
 }
 
 @Composable
-private fun PlanCard(
-    title: String,
-    price: String,
-    period: String,
-    badge: String,
-    badgeColor: Color,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    theme: ThemeConfig,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .clickable { onClick() }
-            .border(
-                width = if (isSelected) 2.dp else 1.dp,
-                color = if (isSelected) Color(0xFFFFD700) else Color.White.copy(alpha = 0.1f),
-                shape = RoundedCornerShape(14.dp)
+private fun VinylTurntableIllustration(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val center = Offset(size.width * 0.55f, size.height * 0.45f)
+        val outerRadius = size.minDimension * 0.46f
+
+        // Ambient golden halo
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0xFFFFDF9E).copy(alpha = 0.18f), Color.Transparent),
+                center = center,
+                radius = outerRadius * 1.35f
             ),
-        color = if (isSelected) Color(0xFFFFD700).copy(alpha = 0.12f) else theme.sidebarBg
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Surface(
-                shape = RoundedCornerShape(4.dp),
-                color = badgeColor.copy(alpha = 0.2f),
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, badgeColor)
-            ) {
-                Text(
-                    text = badge,
-                    color = badgeColor,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-            }
+            radius = outerRadius * 1.35f,
+            center = center
+        )
 
-            Spacer(modifier = Modifier.height(8.dp))
+        // Vinyl outer disc
+        drawCircle(
+            color = Color(0xFF141315),
+            radius = outerRadius,
+            center = center
+        )
+        drawCircle(
+            color = Color(0xFFE5B56E).copy(alpha = 0.5f),
+            radius = outerRadius,
+            center = center,
+            style = Stroke(width = 2.5f)
+        )
 
-            Text(
-                text = title,
-                color = theme.textPrimary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    text = price,
-                    color = if (isSelected) Color(0xFFFFD700) else theme.textPrimary,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.width(2.dp))
-                Text(
-                    text = period,
-                    color = theme.textSecondary,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(bottom = 2.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProFeatureRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String,
-    theme: ThemeConfig
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Surface(
-            shape = CircleShape,
-            color = Color(0xFFFFD700).copy(alpha = 0.15f),
-            modifier = Modifier.size(32.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = Color(0xFFFFD700),
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column {
-            Text(
-                text = title,
-                color = theme.textPrimary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = subtitle,
-                color = theme.textSecondary,
-                fontSize = 11.sp,
-                lineHeight = 14.sp
+        // Vinyl grooves
+        for (i in 1..8) {
+            val r = outerRadius * (0.42f + i * 0.065f)
+            drawCircle(
+                color = Color(0xFF2C2A30).copy(alpha = 0.7f),
+                radius = r,
+                center = center,
+                style = Stroke(width = 1.2f)
             )
         }
+
+        // Golden center label
+        val labelRadius = outerRadius * 0.38f
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0xFFFDE4B0), Color(0xFFD49E4B)),
+                center = center,
+                radius = labelRadius
+            ),
+            radius = labelRadius,
+            center = center
+        )
+
+        // Center spindle hole
+        drawCircle(
+            color = Color(0xFF0C0B0E),
+            radius = labelRadius * 0.18f,
+            center = center
+        )
+        drawCircle(
+            color = Color(0xFFFAF7F2),
+            radius = labelRadius * 0.18f,
+            center = center,
+            style = Stroke(width = 1.5f)
+        )
+
+        // Tonearm / Needle pointing to record
+        val armStart = Offset(size.width * 0.88f, size.height * 0.15f)
+        val armPivot = Offset(size.width * 0.78f, size.height * 0.35f)
+        val armHead = Offset(center.x + labelRadius * 1.15f, center.y + labelRadius * 0.55f)
+
+        drawLine(
+            color = Color(0xFFD49E4B),
+            start = armStart,
+            end = armPivot,
+            strokeWidth = 4f
+        )
+        drawLine(
+            color = Color(0xFFFAF7F2),
+            start = armPivot,
+            end = armHead,
+            strokeWidth = 3f
+        )
+        drawCircle(
+            color = Color(0xFFE5B56E),
+            radius = 6f,
+            center = armPivot
+        )
+        drawCircle(
+            color = Color(0xFFFAF7F2),
+            radius = 4f,
+            center = armHead
+        )
     }
 }

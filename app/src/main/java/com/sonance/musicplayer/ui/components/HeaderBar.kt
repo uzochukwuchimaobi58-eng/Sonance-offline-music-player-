@@ -26,7 +26,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sonance.musicplayer.model.ThemeConfig
-import com.sonance.musicplayer.model.UserProfile
 
 @Composable
 fun HeaderBar(
@@ -38,8 +37,6 @@ fun HeaderBar(
     onSearchChange: (String) -> Unit,
     isPro: Boolean = false,
     onOpenPro: () -> Unit = {},
-    userProfile: UserProfile = UserProfile(),
-    onOpenAccount: () -> Unit = {},
     onOpenScanModal: () -> Unit = {},
     onOpenEqualizer: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
@@ -212,44 +209,6 @@ fun HeaderBar(
                     )
                 }
 
-                // Account Avatar / Icon Button (Firebase Connect)
-                IconButton(
-                    onClick = onOpenAccount,
-                    modifier = Modifier.testTag("btn_header_account")
-                ) {
-                    if (userProfile.isSignedIn) {
-                        Box(contentAlignment = Alignment.BottomEnd) {
-                            Surface(
-                                shape = CircleShape,
-                                color = theme.accentColor,
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = userProfile.initials,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp
-                                    )
-                                }
-                            }
-                            // Live connected dot
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF4CAF50))
-                            )
-                        }
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.AccountCircle,
-                            contentDescription = "Account & Login",
-                            tint = theme.textPrimary
-                        )
-                    }
-                }
-
                 // 3-Dots Overflow Menu
                 Box {
                     IconButton(
@@ -268,32 +227,6 @@ fun HeaderBar(
                         onDismissRequest = { showOverflowMenu = false },
                         modifier = Modifier.background(theme.sidebarBg)
                     ) {
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(
-                                        text = if (userProfile.isSignedIn) userProfile.displayName.ifBlank { "My Account" } else "Sign In / Register",
-                                        color = theme.textPrimary,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        text = if (userProfile.isSignedIn) "Connected to Firebase" else "Email or Google Login",
-                                        color = if (userProfile.isSignedIn) Color(0xFF4CAF50) else theme.textSecondary,
-                                        fontSize = 11.sp
-                                    )
-                                }
-                            },
-                            onClick = {
-                                showOverflowMenu = false
-                                onOpenAccount()
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.CloudSync, contentDescription = null, tint = Color(0xFFF58220))
-                            }
-                        )
-
-                        HorizontalDivider(color = theme.headerBorder.copy(alpha = 0.5f))
-
                         DropdownMenuItem(
                             text = { Text("Sort by Title", color = theme.textPrimary) },
                             onClick = {

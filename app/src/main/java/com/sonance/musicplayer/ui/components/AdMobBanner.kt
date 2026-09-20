@@ -34,16 +34,18 @@ import kotlinx.coroutines.delay
 private data class AdCreative(
     val brand: String,
     val headline: String,
+    val subtitle: String,
     val cta: String,
     val rating: String,
-    val accentColor: Color
+    val accentColor: Color,
+    val logoText: String
 )
 
 private val SAMPLE_ADS = listOf(
-    AdCreative("Sony Audio", "WH-1000XM5 Noise Canceling Hi-Res Headphones", "Shop Now", "4.8 ★", Color(0xFF4285F4)),
-    AdCreative("Sennheiser", "HD 660S2 Audiophile Studio Reference Open-Back", "Learn More", "4.9 ★", Color(0xFF34A853)),
-    AdCreative("Audio-Technica", "ATH-M50x Professional Studio Monitor Headphones", "View Deal", "4.7 ★", Color(0xFFEA4335)),
-    AdCreative("Bose Sound", "QuietComfort Ultra Spatial Audio Earbuds", "Discover", "4.8 ★", Color(0xFFFBBC05))
+    AdCreative("Betway NG", "Betway NG - Sports Betting", "Get way more with Betway!", "Bet Now", "4.8 ★", Color(0xFF00A651), "betway"),
+    AdCreative("Sony Audio", "Sony WH-1000XM5 ANC", "Industry leading noise cancellation", "Shop", "4.8 ★", Color(0xFF4285F4), "SONY"),
+    AdCreative("Sennheiser", "HD 660S2 Studio Reference", "Pure sound for audiophiles", "Explore", "4.9 ★", Color(0xFF34A853), "SENN"),
+    AdCreative("Audio-Technica", "ATH-M50x Studio Monitor", "Critically acclaimed performance", "View", "4.7 ★", Color(0xFFEA4335), "A-T")
 )
 
 @Composable
@@ -79,142 +81,106 @@ fun AdMobBanner(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                .padding(horizontal = 8.dp, vertical = 2.dp)
+                .height(50.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .border(0.8.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
                 .testTag("admob_banner_container"),
-            color = theme.sidebarBg.copy(alpha = 0.95f),
+            color = Color(0xFF141416),
             tonalElevation = 2.dp
         ) {
-            Column(
+            Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                    .fillMaxSize()
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Header: Ad Tag + AdMob label + Remove Ads Button
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                // Left: Logo with tiny Ad tag (Matching Image 1)
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF222226)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Google "Ad" badge
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFFF1F3F4),
-                            modifier = Modifier.padding(end = 6.dp)
-                        ) {
-                            Text(
-                                text = "Ad",
-                                color = Color(0xFF202124),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                            )
-                        }
-
-                        Text(
-                            text = "Google AdMob",
-                            color = theme.textSecondary.copy(alpha = 0.7f),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-
-                        Spacer(modifier = Modifier.width(4.dp))
-
-                        IconButton(
-                            onClick = { showAdInfoDialog = true },
-                            modifier = Modifier.size(16.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = "Ad info",
-                                tint = theme.textSecondary.copy(alpha = 0.5f),
-                                modifier = Modifier.size(13.dp)
-                            )
-                        }
-                    }
-
-                    // "Remove Ads" action pill that opens Pro dialog
+                    Text(
+                        text = ad.logoText,
+                        color = Color.White,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                    // Tiny Ad badge on bottom-left corner of logo
                     Surface(
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .clickable { onOpenProUpgrade() }
-                            .testTag("btn_remove_ads_pill"),
-                        color = Color(0xFFFFD700).copy(alpha = 0.15f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.5f))
+                        shape = RoundedCornerShape(topEnd = 3.dp, bottomStart = 6.dp),
+                        color = Color(0xFFFFB300),
+                        modifier = Modifier.align(Alignment.BottomStart)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.WorkspacePremium,
-                                contentDescription = null,
-                                tint = Color(0xFFFFD700),
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Remove Ads",
-                                color = Color(0xFFFFD700),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Text(
+                            text = "Ad",
+                            color = Color.Black,
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(horizontal = 2.5.dp, vertical = 0.5.dp)
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
-                // Ad Content Body
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                // Center: Headline + Subtitle
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 6.dp),
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = ad.brand,
-                                color = ad.accentColor,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = ad.rating,
-                                color = Color(0xFFFFB300),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        Text(
-                            text = ad.headline,
-                            color = theme.textPrimary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                    Text(
+                        text = ad.headline,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = ad.subtitle,
+                        color = Color.White.copy(alpha = 0.65f),
+                        fontSize = 10.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                // Right: Sleek rounded CTA pill button (Matching Image 1)
+                Button(
+                    onClick = { showAdInfoDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2E)),
+                    border = androidx.compose.foundation.BorderStroke(0.8.dp, Color.White.copy(alpha = 0.18f)),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(
+                        text = ad.cta,
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
 
-                    Button(
-                        onClick = { showAdInfoDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = ad.accentColor),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.height(30.dp),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = ad.cta,
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                IconButton(
+                    onClick = { showAdInfoDialog = true },
+                    modifier = Modifier
+                        .size(18.dp)
+                        .padding(start = 2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "Ad choices",
+                        tint = Color.White.copy(alpha = 0.45f),
+                        modifier = Modifier.size(12.dp)
+                    )
                 }
             }
         }

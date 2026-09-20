@@ -60,8 +60,6 @@ fun SettingsDialog(
     onSyncFirebase: () -> Unit = {},
     onUpdateFirebaseSettings: (RemoteBackendSettings) -> Unit = {},
     userSubscription: com.sonance.musicplayer.model.UserSubscription = com.sonance.musicplayer.model.UserSubscription(),
-    userProfile: UserProfile = UserProfile(),
-    onOpenAccount: () -> Unit = {},
     onOpenProUpgrade: () -> Unit = {},
     onSetDevProState: (Boolean) -> Unit = {},
     theme: ThemeConfig
@@ -156,78 +154,6 @@ fun SettingsDialog(
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
-                    // --- User Account & Firebase Console Section ---
-                    SettingsSectionHeader(title = "Account & Cloud Sync", color = Color(0xFFF58220))
-
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .border(
-                                1.dp,
-                                if (userProfile.isSignedIn) Color(0xFF4CAF50).copy(alpha = 0.5f) else Color(0xFFF58220).copy(alpha = 0.4f),
-                                RoundedCornerShape(12.dp)
-                            )
-                            .clickable { onOpenAccount() }
-                            .testTag("settings_account_card"),
-                        color = theme.sidebarBg
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = if (userProfile.isSignedIn) theme.accentColor else Color(0xFFF58220).copy(alpha = 0.2f),
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    if (userProfile.isSignedIn) {
-                                        Text(
-                                            text = userProfile.initials,
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 15.sp
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Default.CloudSync,
-                                            contentDescription = null,
-                                            tint = Color(0xFFF58220),
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (userProfile.isSignedIn) userProfile.displayName.ifBlank { userProfile.email } else "Sign In / Register",
-                                    color = theme.textPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = if (userProfile.isSignedIn) "Connected to Firebase Console • ${if (userProfile.isGoogle) "Google Account" else "Email Account"}" else "Link email or Google account to sync data",
-                                    color = if (userProfile.isSignedIn) Color(0xFF4CAF50) else theme.textSecondary,
-                                    fontSize = 11.sp
-                                )
-                            }
-
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = theme.textSecondary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
                     // --- General Section ---
                     SettingSwitchItem(
                         title = "Forward and backward",

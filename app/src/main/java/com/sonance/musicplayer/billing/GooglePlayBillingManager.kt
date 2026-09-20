@@ -32,6 +32,7 @@ class GooglePlayBillingManager private constructor(private val context: Context)
         // Google Play Console Product IDs
         const val PRODUCT_LIFETIME = "sonance_pro_lifetime"
         const val PRODUCT_YEARLY = "sonance_pro_yearly"
+        const val PRODUCT_MONTHLY = "sonance_pro_monthly"
 
         @Volatile
         private var instance: GooglePlayBillingManager? = null
@@ -159,12 +160,16 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                     }
                 }
 
-                // 2. Query yearly (SUBS)
+                // 2. Query monthly & yearly (SUBS)
                 val subsParams = QueryProductDetailsParams.newBuilder()
                     .setProductList(
                         listOf(
                             QueryProductDetailsParams.Product.newBuilder()
                                 .setProductId(PRODUCT_YEARLY)
+                                .setProductType(BillingClient.ProductType.SUBS)
+                                .build(),
+                            QueryProductDetailsParams.Product.newBuilder()
+                                .setProductId(PRODUCT_MONTHLY)
                                 .setProductType(BillingClient.ProductType.SUBS)
                                 .build()
                         )
@@ -189,15 +194,20 @@ class GooglePlayBillingManager private constructor(private val context: Context)
     }
 
     /**
-     * Launch the native Google Play purchase sheet
+     * Launch the native Google Play purchase sheet for selected plan ("monthly", "yearly", or "lifetime")
      */
     fun launchPurchaseFlow(
         activity: Activity,
-        isYearly: Boolean,
+        plan: String = "yearly",
         onFallbackSimulation: () -> Unit
     ) {
         val client = billingClient
-        val targetProductId = if (isYearly) PRODUCT_YEARLY else PRODUCT_LIFETIME
+        val targetProductId = when (plan.lowercase()) {
+            "monthly" -> PRODUCT_MONTHLY
+            "yearly" -> PRODUCT_YEARLY
+            else -> PRODUCT_LIFETIME
+        }
+        val isSubscription = plan.lowercase() == "monthly" || plan.lowercase() == "yearly"
         val productDetails = _products.value[targetProductId]
 
         if (client != null && client.isReady && productDetails != null) {
@@ -206,7 +216,7 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                     .setProductDetails(productDetails)
 
                 // For subscriptions, select the first offer token if available
-                if (isYearly) {
+                if (isSubscription) {
                     val offerToken = productDetails.subscriptionOfferDetails?.firstOrNull()?.offerToken
                     if (offerToken != null) {
                         productDetailsParamsBuilder.setOfferToken(offerToken)
@@ -231,6 +241,17 @@ class GooglePlayBillingManager private constructor(private val context: Context)
             Log.i(TAG, "Google Play productDetails not active yet; running fallback transaction flow")
             onFallbackSimulation()
         }
+    }
+
+    /**
+     * Overload for backward compatibility with boolean isYearly
+     */
+    fun launchPurchaseFlow(
+        activity: Activity,
+        isYearly: Boolean,
+        onFallbackSimulation: () -> Unit
+    ) {
+        launchPurchaseFlow(activity, if (isYearly) "yearly" else "lifetime", onFallbackSimulation)
     }
 
     override fun onPurchasesUpdated(billingResult: BillingResult, purchases: MutableList<Purchase>?) {
