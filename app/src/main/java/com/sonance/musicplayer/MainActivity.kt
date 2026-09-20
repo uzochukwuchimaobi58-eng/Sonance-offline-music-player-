@@ -38,16 +38,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        try {
-            repository = MusicRepository.getInstance(applicationContext)
-            playbackManager = PlaybackManager.getInstance(applicationContext, repository)
-        } catch (t: Throwable) {
-            android.util.Log.e("MainActivity", "Failed initializing core managers", t)
-        }
+        repository = MusicRepository.getInstance(applicationContext)
+        playbackManager = PlaybackManager.getInstance(applicationContext, repository)
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                com.google.android.gms.ads.MobileAds.initialize(applicationContext) {}
+                if (isRunningOnEmulator()) {
+                    android.util.Log.i("MainActivity", "Emulator environment detected: skipping MobileAds measurement daemon")
+                    return@launch
+                }
+                val gmsAvailability = com.google.android.gms.common.GoogleApiAvailability.getInstance()
+                val resultCode = gmsAvailability.isGooglePlayServicesAvailable(applicationContext)
+                if (resultCode == com.google.android.gms.common.ConnectionResult.SUCCESS) {
+                    com.google.android.gms.ads.MobileAds.initialize(applicationContext) {}
+                } else {
+                    android.util.Log.i("MainActivity", "Skipping MobileAds init (Play Services status: $resultCode)")
+                }
             } catch (t: Throwable) {
                 android.util.Log.w("MainActivity", "MobileAds init safe catch: ${t.message}")
             }
@@ -753,6 +759,27 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repository.scanMediaStore()
         }
+    }
+
+    private fun isRunningOnEmulator(): Boolean {
+        val finger = android.os.Build.FINGERPRINT.lowercase()
+        val model = android.os.Build.MODEL.lowercase()
+        val brand = android.os.Build.BRAND.lowercase()
+        val device = android.os.Build.DEVICE.lowercase()
+        val product = android.os.Build.PRODUCT.lowercase()
+        val hardware = android.os.Build.HARDWARE.lowercase()
+        return finger.startsWith("generic")
+            || finger.startsWith("unknown")
+            || model.contains("google_sdk")
+            || model.contains("emulator")
+            || model.contains("android sdk built for x86")
+            || hardware.contains("goldfish")
+            || hardware.contains("ranchu")
+            || product.contains("sdk_gphone")
+            || product.contains("google_sdk")
+            || product.contains("sdk")
+            || product.contains("vbox86p")
+            || (brand.startsWith("generic") && device.startsWith("generic"))
     }
 
     override fun onDestroy() {
