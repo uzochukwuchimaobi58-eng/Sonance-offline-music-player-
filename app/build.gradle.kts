@@ -7,14 +7,14 @@ plugins {
 
 android {
     namespace = "com.sonance.musicplayer"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.sonance.musicplayer"
         minSdk = 26
-        targetSdk = 36
-        versionCode = 13
-        versionName = "1.3.0"
+        targetSdk = 35
+        versionCode = 17
+        versionName = "1.7.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

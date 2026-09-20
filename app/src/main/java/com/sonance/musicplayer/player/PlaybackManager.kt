@@ -156,9 +156,14 @@ class PlaybackManager(
             addAction(Intent.ACTION_HEADSET_PLUG)
         }
         try {
-            context.registerReceiver(headsetReceiver, filter)
-        } catch (e: Exception) {
-            Log.e(tag, "Failed to register headset receiver", e)
+            androidx.core.content.ContextCompat.registerReceiver(
+                context,
+                headsetReceiver,
+                filter,
+                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+        } catch (t: Throwable) {
+            Log.e(tag, "Failed to register headset receiver", t)
         }
     }
 

@@ -16,8 +16,10 @@ import com.sonance.musicplayer.model.PlayerSettings
 import com.sonance.musicplayer.model.Playlist
 import com.sonance.musicplayer.model.Track
 import com.sonance.musicplayer.model.UserProfile
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -276,7 +278,10 @@ class MusicRepository(private val context: Context) {
         }
     }
 
-    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+    private val coroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        Log.e("MusicRepository", "Background coroutine error: ${throwable.message}", throwable)
+    }
+    private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + coroutineExceptionHandler)
     private var mediaObserver: ContentObserver? = null
 
     init {

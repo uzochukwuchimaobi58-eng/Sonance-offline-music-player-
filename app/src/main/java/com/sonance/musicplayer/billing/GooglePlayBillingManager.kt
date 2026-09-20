@@ -4,8 +4,10 @@ import android.app.Activity
 import android.content.Context
 import android.util.Log
 import com.android.billingclient.api.*
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,7 +43,10 @@ class GooglePlayBillingManager private constructor(private val context: Context)
         }
     }
 
-    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+    private val coroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        Log.e(TAG, "Unhandled billing coroutine error safely intercepted: ${throwable.message}", throwable)
+    }
+    private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + coroutineExceptionHandler)
 
     private var billingClient: BillingClient? = null
 
@@ -88,27 +93,33 @@ class GooglePlayBillingManager private constructor(private val context: Context)
             return
         }
 
-        client.startConnection(object : BillingClientStateListener {
-            override fun onBillingSetupFinished(billingResult: BillingResult) {
-                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                    Log.d(TAG, "BillingClient connected successfully")
-                    _isConnected.value = true
-                    _statusMessage.value = "Connected to Google Play Billing"
-                    queryProducts()
-                    queryExistingPurchases()
-                } else {
-                    Log.w(TAG, "BillingClient setup failed with code: ${billingResult.responseCode}, ${billingResult.debugMessage}")
-                    _isConnected.value = false
-                    _statusMessage.value = "Google Play setup: ${billingResult.debugMessage.ifBlank { "Code ${billingResult.responseCode}" }}"
+        try {
+            client.startConnection(object : BillingClientStateListener {
+                override fun onBillingSetupFinished(billingResult: BillingResult) {
+                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                        Log.d(TAG, "BillingClient connected successfully")
+                        _isConnected.value = true
+                        _statusMessage.value = "Connected to Google Play Billing"
+                        queryProducts()
+                        queryExistingPurchases()
+                    } else {
+                        Log.w(TAG, "BillingClient setup failed with code: ${billingResult.responseCode}, ${billingResult.debugMessage}")
+                        _isConnected.value = false
+                        _statusMessage.value = "Google Play setup: ${billingResult.debugMessage.ifBlank { "Code ${billingResult.responseCode}" }}"
+                    }
                 }
-            }
 
-            override fun onBillingServiceDisconnected() {
-                Log.w(TAG, "Billing service disconnected")
-                _isConnected.value = false
-                _statusMessage.value = "Google Play Billing disconnected"
-            }
-        })
+                override fun onBillingServiceDisconnected() {
+                    Log.w(TAG, "Billing service disconnected")
+                    _isConnected.value = false
+                    _statusMessage.value = "Google Play Billing disconnected"
+                }
+            })
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error initiating BillingClient connection", t)
+            _isConnected.value = false
+            _statusMessage.value = "Billing connection error: ${t.message}"
+        }
     }
 
     /**
@@ -122,30 +133,57 @@ class GooglePlayBillingManager private constructor(private val context: Context)
         }
 
         coroutineScope.launch {
-            val productList = listOf(
-                QueryProductDetailsParams.Product.newBuilder()
-                    .setProductId(PRODUCT_LIFETIME)
-                    .setProductType(BillingClient.ProductType.INAPP)
-                    .build(),
-                QueryProductDetailsParams.Product.newBuilder()
-                    .setProductId(PRODUCT_YEARLY)
-                    .setProductType(BillingClient.ProductType.SUBS)
+            try {
+                // In Google Play Billing, all products in a single QueryProductDetailsParams MUST be of the same type
+                // 1. Query lifetime (INAPP)
+                val inAppParams = QueryProductDetailsParams.newBuilder()
+                    .setProductList(
+                        listOf(
+                            QueryProductDetailsParams.Product.newBuilder()
+                                .setProductId(PRODUCT_LIFETIME)
+                                .setProductType(BillingClient.ProductType.INAPP)
+                                .build()
+                        )
+                    )
                     .build()
-            )
 
-            val params = QueryProductDetailsParams.newBuilder()
-                .setProductList(productList)
-                .build()
-
-            client.queryProductDetailsAsync(params) { billingResult, queryProductDetailsResult ->
-                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                    val list = queryProductDetailsResult.productDetailsList ?: emptyList()
-                    val map = list.associateBy { it.productId }
-                    _products.value = map
-                    Log.d(TAG, "Products queried: ${map.keys}")
-                } else {
-                    Log.w(TAG, "queryProductDetailsAsync failed: ${billingResult.debugMessage}")
+                client.queryProductDetailsAsync(inAppParams) { billingResult, queryProductDetailsResult ->
+                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                        val list = queryProductDetailsResult.productDetailsList ?: emptyList()
+                        val current = _products.value.toMutableMap()
+                        list.forEach { current[it.productId] = it }
+                        _products.value = current
+                        Log.d(TAG, "INAPP products queried successfully: ${list.map { it.productId }}")
+                    } else {
+                        Log.w(TAG, "queryProductDetailsAsync (INAPP) code: ${billingResult.responseCode}, msg: ${billingResult.debugMessage}")
+                    }
                 }
+
+                // 2. Query yearly (SUBS)
+                val subsParams = QueryProductDetailsParams.newBuilder()
+                    .setProductList(
+                        listOf(
+                            QueryProductDetailsParams.Product.newBuilder()
+                                .setProductId(PRODUCT_YEARLY)
+                                .setProductType(BillingClient.ProductType.SUBS)
+                                .build()
+                        )
+                    )
+                    .build()
+
+                client.queryProductDetailsAsync(subsParams) { billingResult, queryProductDetailsResult ->
+                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                        val list = queryProductDetailsResult.productDetailsList ?: emptyList()
+                        val current = _products.value.toMutableMap()
+                        list.forEach { current[it.productId] = it }
+                        _products.value = current
+                        Log.d(TAG, "SUBS products queried successfully: ${list.map { it.productId }}")
+                    } else {
+                        Log.w(TAG, "queryProductDetailsAsync (SUBS) code: ${billingResult.responseCode}, msg: ${billingResult.debugMessage}")
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Safe catch during queryProducts", t)
             }
         }
     }
@@ -266,44 +304,51 @@ class GooglePlayBillingManager private constructor(private val context: Context)
         }
 
         coroutineScope.launch {
-            var foundPro = false
-            var details = "No active Google Play purchases found"
+            try {
+                var foundPro = false
+                var details = "No active Google Play purchases found"
 
-            // Check In-App (Lifetime)
-            val inAppParams = QueryPurchasesParams.newBuilder()
-                .setProductType(BillingClient.ProductType.INAPP)
-                .build()
-
-            client.queryPurchasesAsync(inAppParams) { res, purchases ->
-                if (res.responseCode == BillingClient.BillingResponseCode.OK) {
-                    val valid = purchases.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
-                    val lifetime = valid.find { it.products.contains(PRODUCT_LIFETIME) }
-                    if (lifetime != null) {
-                        foundPro = true
-                        details = "Restored Lifetime Pro license"
-                        handlePurchase(lifetime)
-                    }
-                }
-
-                // Check Subs (Yearly)
-                val subsParams = QueryPurchasesParams.newBuilder()
-                    .setProductType(BillingClient.ProductType.SUBS)
+                // Check In-App (Lifetime)
+                val inAppParams = QueryPurchasesParams.newBuilder()
+                    .setProductType(BillingClient.ProductType.INAPP)
                     .build()
 
-                client.queryPurchasesAsync(subsParams) { subRes, subPurchases ->
-                    if (subRes.responseCode == BillingClient.BillingResponseCode.OK) {
-                        val validSubs = subPurchases.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
-                        val yearly = validSubs.find { it.products.contains(PRODUCT_YEARLY) }
-                        if (yearly != null) {
+                client.queryPurchasesAsync(inAppParams) { res, purchases ->
+                    if (res.responseCode == BillingClient.BillingResponseCode.OK) {
+                        val valid = purchases.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
+                        val lifetime = valid.find { it.products.contains(PRODUCT_LIFETIME) }
+                        if (lifetime != null) {
                             foundPro = true
-                            details = "Restored Yearly Pro subscription"
-                            handlePurchase(yearly)
+                            details = "Restored Lifetime Pro license"
+                            handlePurchase(lifetime)
                         }
                     }
 
-                    coroutineScope.launch(Dispatchers.Main) {
-                        onResult?.invoke(foundPro, details)
+                    // Check Subs (Yearly)
+                    val subsParams = QueryPurchasesParams.newBuilder()
+                        .setProductType(BillingClient.ProductType.SUBS)
+                        .build()
+
+                    client.queryPurchasesAsync(subsParams) { subRes, subPurchases ->
+                        if (subRes.responseCode == BillingClient.BillingResponseCode.OK) {
+                            val validSubs = subPurchases.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
+                            val yearly = validSubs.find { it.products.contains(PRODUCT_YEARLY) }
+                            if (yearly != null) {
+                                foundPro = true
+                                details = "Restored Yearly Pro subscription"
+                                handlePurchase(yearly)
+                            }
+                        }
+
+                        coroutineScope.launch(Dispatchers.Main) {
+                            onResult?.invoke(foundPro, details)
+                        }
                     }
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Safe catch during queryExistingPurchases", t)
+                coroutineScope.launch(Dispatchers.Main) {
+                    onResult?.invoke(false, "Error restoring purchases: ${t.message}")
                 }
             }
         }

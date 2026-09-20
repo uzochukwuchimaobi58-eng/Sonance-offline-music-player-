@@ -38,14 +38,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        repository = MusicRepository.getInstance(applicationContext)
-        playbackManager = PlaybackManager.getInstance(applicationContext, repository)
+        try {
+            repository = MusicRepository.getInstance(applicationContext)
+            playbackManager = PlaybackManager.getInstance(applicationContext, repository)
+        } catch (t: Throwable) {
+            android.util.Log.e("MainActivity", "Failed initializing core managers", t)
+        }
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 com.google.android.gms.ads.MobileAds.initialize(applicationContext) {}
-            } catch (e: Exception) {
-                android.util.Log.w("MainActivity", "MobileAds init: ${e.message}")
+            } catch (t: Throwable) {
+                android.util.Log.w("MainActivity", "MobileAds init safe catch: ${t.message}")
             }
         }
 
