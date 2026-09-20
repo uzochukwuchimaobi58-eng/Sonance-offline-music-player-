@@ -10,7 +10,7 @@ kotlinxSerialization = "1.7.3"
 coil = "2.7.0"
 materialIconsExtended = "1.7.5"
 media3 = "1.5.1"
-playBilling = "7.1.1"
+playBilling = "8.0.0"
 playServicesAds = "23.6.0"
 
 [libraries]

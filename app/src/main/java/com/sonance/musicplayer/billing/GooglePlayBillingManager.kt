@@ -70,6 +70,7 @@ class GooglePlayBillingManager private constructor(private val context: Context)
             billingClient = BillingClient.newBuilder(context)
                 .setListener(this)
                 .enablePendingPurchases(pendingParams)
+                .enableAutoServiceReconnection()
                 .build()
 
             startConnection()
@@ -138,7 +139,8 @@ class GooglePlayBillingManager private constructor(private val context: Context)
 
             client.queryProductDetailsAsync(params) { billingResult, queryProductDetailsResult ->
                 if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                    val map = queryProductDetailsResult.associateBy { it.productId }
+                    val list = queryProductDetailsResult.productDetailsList ?: emptyList()
+                    val map = list.associateBy { it.productId }
                     _products.value = map
                     Log.d(TAG, "Products queried: ${map.keys}")
                 } else {
