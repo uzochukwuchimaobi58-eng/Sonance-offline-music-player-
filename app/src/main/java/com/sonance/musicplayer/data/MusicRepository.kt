@@ -505,8 +505,8 @@ class MusicRepository(private val context: Context) {
                     lyrics = lyricsMap[t.id] ?: t.lyrics
                 )
             }
-            // Sort device tracks by dateAdded descending so recently added/downloaded files appear first
-            val sortedDevice = updatedDeviceTracks.sortedByDescending { it.dateAdded }
+            // Default order for library tracks is A to Z by title
+            val sortedDevice = updatedDeviceTracks.sortedWith(com.sonance.musicplayer.util.TrackComparators.TitleComparator)
 
             // Keep built-in tracks too if user has only few songs, placed after local device tracks
             sortedDevice + DefaultTracks.initialTracks.filter { def ->
@@ -725,17 +725,63 @@ class MusicRepository(private val context: Context) {
     }
 
     fun addTrackToPlaylist(trackId: String, playlistId: String) {
+        addTracksToPlaylist(listOf(trackId), playlistId)
+    }
+
+    fun addTracksToPlaylist(trackIds: Collection<String>, playlistId: String) {
+        if (trackIds.isEmpty()) return
         val insertTop = _settings.value.addMusicToPlaylistPosition == "Top"
         val updated = _playlists.value.map { pl ->
             if (pl.id == playlistId) {
-                if (!pl.trackIds.contains(trackId)) {
-                    val newTracks = if (insertTop) listOf(trackId) + pl.trackIds else pl.trackIds + trackId
-                    pl.copy(trackIds = newTracks)
-                } else pl
+                val existing = pl.trackIds.toSet()
+                val toAdd = trackIds.filterNot { existing.contains(it) }
+                val newTracks = if (insertTop) toAdd + pl.trackIds else pl.trackIds + toAdd
+                pl.copy(trackIds = newTracks)
             } else pl
         }
         _playlists.value = updated
         persistPlaylists(updated)
+    }
+
+    fun addTracksToFavorites(trackIds: Collection<String>) {
+        if (trackIds.isEmpty()) return
+        val idSet = trackIds.toSet()
+        val updated = _tracks.value.map {
+            if (it.id in idSet) it.copy(isFavorite = true) else it
+        }
+        _tracks.value = updated
+        persistTracks(updated)
+    }
+
+    fun deleteTracks(trackIds: Collection<String>) {
+        if (trackIds.isEmpty()) return
+        val idSet = trackIds.toSet()
+        val toDelete = _tracks.value.filter { it.id in idSet }
+        toDelete.forEach { track ->
+            try {
+                if (track.contentUri.startsWith("content://")) {
+                    val uri = Uri.parse(track.contentUri)
+                    context.contentResolver.delete(uri, null, null)
+                } else if (track.contentUri.isNotBlank()) {
+                    val file = File(track.contentUri)
+                    if (file.exists()) {
+                        file.delete()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        val updated = _tracks.value.filter { it.id !in idSet }
+        _tracks.value = updated
+        persistTracks(updated)
+
+        // Remove from playlists
+        val updatedPlaylists = _playlists.value.map { pl ->
+            pl.copy(trackIds = pl.trackIds.filter { it !in idSet })
+        }
+        _playlists.value = updatedPlaylists
+        persistPlaylists(updatedPlaylists)
     }
 
     fun removeTrackFromPlaylist(trackId: String, playlistId: String) {

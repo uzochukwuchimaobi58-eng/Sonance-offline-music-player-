@@ -212,6 +212,19 @@ class PlaybackManager(
         }
     }
 
+    fun addTracksToQueue(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        val current = _queue.value.toMutableList()
+        val existingIds = current.map { it.id }.toSet()
+        val newTracks = tracks.filterNot { existingIds.contains(it.id) }
+        if (newTracks.isNotEmpty()) {
+            _queue.value = current + newTracks
+        }
+        if (_currentTrack.value == null && _queue.value.isNotEmpty()) {
+            playTrack(_queue.value.first())
+        }
+    }
+
     fun playNext(track: Track) {
         val current = _queue.value.toMutableList()
         val currentIndex = _queueIndex.value

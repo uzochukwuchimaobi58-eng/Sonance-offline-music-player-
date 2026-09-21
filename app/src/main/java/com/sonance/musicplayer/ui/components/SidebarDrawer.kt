@@ -169,7 +169,7 @@ fun SidebarDrawer(
                                     fontSize = 13.sp
                                 )
                                 Text(
-                                    text = if (isPro) "Ad-free listening enabled" else "Remove all ads • From ₦3,290",
+                                    text = if (isPro) "Ad-free listening enabled" else "Remove all ads • From $1/yr",
                                     color = theme.textSecondary,
                                     fontSize = 11.sp
                                 )

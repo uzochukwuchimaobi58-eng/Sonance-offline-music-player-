@@ -94,7 +94,7 @@ class MainActivity : ComponentActivity() {
             var activeView by remember { mutableStateOf(ActiveView.HOME) }
             var activePlaylistId by remember { mutableStateOf<String?>(null) }
             var searchQuery by remember { mutableStateOf("") }
-            var currentSortBy by remember { mutableStateOf("default") }
+            var currentSortBy by remember { mutableStateOf("title") }
 
             // Modals and dialogs
             var isSidebarOpen by remember { mutableStateOf(false) }
@@ -222,7 +222,7 @@ class MainActivity : ComponentActivity() {
 
                     val base: List<Track> = when (activeView) {
                         ActiveView.HOME -> tracks
-                        ActiveView.LIBRARY -> tracks
+                        ActiveView.LIBRARY -> tracks.sortedWith(com.sonance.musicplayer.util.TrackComparators.TitleComparator)
                         ActiveView.FOLDER -> tracks
                         ActiveView.DRIVE_MODE -> tracks
                         ActiveView.LYRICS_MODE -> tracks
@@ -463,6 +463,29 @@ class MainActivity : ComponentActivity() {
                                         repository.deleteTrack(trId)
                                         android.widget.Toast.makeText(applicationContext, "Music deleted permanently from device", android.widget.Toast.LENGTH_SHORT).show()
                                     },
+                                    onPlayTracks = { selTracks ->
+                                        if (selTracks.isNotEmpty()) {
+                                            playbackManager.setQueue(selTracks, 0)
+                                            isFullPlayerOpen = true
+                                        }
+                                    },
+                                    onAddTracksToPlaylist = { trackIds, plId ->
+                                        repository.addTracksToPlaylist(trackIds, plId)
+                                    },
+                                    onAddTracksToFavorites = { trackIds ->
+                                        repository.addTracksToFavorites(trackIds)
+                                    },
+                                    onDeleteTracks = { trackIds ->
+                                        if (playbackManager.currentTrack.value?.id in trackIds) {
+                                            playbackManager.skipToNext()
+                                        }
+                                        repository.deleteTracks(trackIds)
+                                        android.widget.Toast.makeText(applicationContext, "${trackIds.size} songs deleted permanently from device", android.widget.Toast.LENGTH_SHORT).show()
+                                    },
+                                    onEnqueueTracks = { selTracks ->
+                                        playbackManager.addTracksToQueue(selTracks)
+                                        android.widget.Toast.makeText(applicationContext, "Added ${selTracks.size} songs to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                    },
                                     onOpenMusicTrim = { tr ->
                                         executeWithInterstitialAd { trimmingTrack = tr }
                                     },
@@ -689,7 +712,9 @@ class MainActivity : ComponentActivity() {
                     onRestorePurchases = { onRes ->
                         repository.restorePurchases(onRes)
                     },
-                    theme = theme
+                    theme = theme,
+                    defaultYearlyPrice = remoteSettings.proYearlyPrice.ifBlank { "$1.00" },
+                    defaultOneTimePrice = remoteSettings.proLifetimePrice.ifBlank { "$5.00" }
                 )
 
                 // Full-Screen Interstitial Ad Dialog (non-blocking for background music)

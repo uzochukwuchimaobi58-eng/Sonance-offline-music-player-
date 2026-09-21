@@ -282,8 +282,9 @@ class GooglePlayBillingManager private constructor(private val context: Context)
     private fun handlePurchase(purchase: Purchase) {
         if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
             val isYearly = purchase.products.contains(PRODUCT_YEARLY)
-            val plan = if (isYearly) "yearly" else "lifetime"
-            val price = if (isYearly) "$1.00/yr" else "$2.00"
+            val isMonthly = purchase.products.contains(PRODUCT_MONTHLY)
+            val plan = if (isYearly) "yearly" else if (isMonthly) "monthly" else "lifetime"
+            val price = if (isYearly) "$1.00/yr" else if (isMonthly) "$0.99/mo" else "$5.00"
             val orderId = purchase.orderId ?: "GPA.${System.currentTimeMillis()}"
             val token = purchase.purchaseToken
 

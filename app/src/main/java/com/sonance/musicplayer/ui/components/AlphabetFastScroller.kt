@@ -43,6 +43,12 @@ val ALPHABET_INDEX_CHARS = listOf(
     "V", "W", "X", "Y", "Z"
 )
 
+fun getTrackIndexKey(title: String): String {
+    val trimmed = title.trim()
+    val firstChar = trimmed.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar() ?: return "#"
+    return if (firstChar in 'A'..'Z') firstChar.toString() else "#"
+}
+
 @Composable
 fun AlphabetFastScroller(
     tracks: List<Track>,
@@ -63,8 +69,7 @@ fun AlphabetFastScroller(
     val letterToIndexMap = remember(tracks) {
         val map = mutableMapOf<String, Int>()
         tracks.forEachIndexed { index, track ->
-            val firstChar = track.title.trim().firstOrNull()?.uppercaseChar() ?: '#'
-            val key = if (firstChar in 'A'..'Z') firstChar.toString() else "#"
+            val key = getTrackIndexKey(track.title)
             if (!map.containsKey(key)) {
                 map[key] = index
             }
@@ -84,10 +89,9 @@ fun AlphabetFastScroller(
             activeChar = selectedChar
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
 
-            // Find best matching track index: exact match or nearest preceding/subsequent
+            // Find best matching track index: exact match or nearest subsequent
             var targetIndex = letterToIndexMap[selectedChar]
             if (targetIndex == null) {
-                // If this letter has no tracks, find the first track with letter after it
                 val nextCharIndex = ALPHABET_INDEX_CHARS.indexOf(selectedChar)
                 for (i in nextCharIndex + 1 until ALPHABET_INDEX_CHARS.size) {
                     val candidate = letterToIndexMap[ALPHABET_INDEX_CHARS[i]]
@@ -113,12 +117,12 @@ fun AlphabetFastScroller(
             .testTag("alphabet_fast_scroller"),
         contentAlignment = Alignment.CenterEnd
     ) {
-        // The vertical alphabet strip
+        // The vertical alphabet strip (all letters # and A-Z guaranteed visible via weighted distribution)
         Column(
             modifier = Modifier
                 .fillMaxHeight()
-                .width(22.dp)
-                .padding(vertical = 4.dp)
+                .width(20.dp)
+                .padding(vertical = 2.dp)
                 .onGloballyPositioned { coordinates ->
                     columnHeightPx = coordinates.size.height.toFloat()
                 }
@@ -161,24 +165,35 @@ fun AlphabetFastScroller(
                         }
                     )
                 },
-            verticalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.SpaceEvenly,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             ALPHABET_INDEX_CHARS.forEach { char ->
                 val isSelected = activeChar == char
-                Text(
-                    text = char,
-                    color = if (isSelected) {
-                        theme.accentColor
-                    } else {
-                        theme.textSecondary.copy(alpha = 0.65f)
-                    },
-                    fontSize = if (isSelected) 10.5.sp else 9.sp,
-                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
-                    textAlign = TextAlign.Center,
+                Box(
                     modifier = Modifier
-                        .wrapContentSize()
-                )
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = char,
+                        color = if (isSelected) {
+                            theme.accentColor
+                        } else {
+                            theme.textSecondary.copy(alpha = 0.75f)
+                        },
+                        fontSize = if (isSelected) 10.sp else 8.5.sp,
+                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 10.sp,
+                        style = androidx.compose.ui.text.TextStyle(
+                            platformStyle = androidx.compose.ui.text.PlatformTextStyle(
+                                includeFontPadding = false
+                            )
+                        )
+                    )
+                }
             }
         }
 

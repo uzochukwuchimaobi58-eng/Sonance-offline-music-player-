@@ -44,7 +44,9 @@ fun ProUpgradeDialog(
     subscription: UserSubscription,
     onSubscribe: (plan: String, price: String, email: String, provider: String) -> Unit,
     onRestorePurchases: ((Boolean, String) -> Unit) -> Unit = {},
-    theme: ThemeConfig
+    theme: ThemeConfig,
+    defaultYearlyPrice: String = "$1.00",
+    defaultOneTimePrice: String = "$5.00"
 ) {
     if (!isOpen) return
 
@@ -54,8 +56,8 @@ fun ProUpgradeDialog(
     val isBillingConnected by billingManager.isConnected.collectAsState()
     val queriedProducts by billingManager.products.collectAsState()
 
-    // 0: Monthly, 1: Yearly
-    var selectedPlanIndex by remember { mutableIntStateOf(1) }
+    // 0: Yearly ($1.00/yr), 1: One-Time ($5.00)
+    var selectedPlanIndex by remember { mutableIntStateOf(0) }
     var isRestoring by remember { mutableStateOf(false) }
     var isProcessing by remember { mutableStateOf(false) }
 
@@ -67,14 +69,14 @@ fun ProUpgradeDialog(
     val cardUnselectedBg = Color(0xFF141316)
     val textMuted = Color(0xFF8F8B83)
 
-    // Dynamic or fallback prices matching the user's reference mockup
-    val monthlyPrice = queriedProducts[GooglePlayBillingManager.PRODUCT_MONTHLY]?.let { prod ->
-        prod.subscriptionOfferDetails?.firstOrNull()?.pricingPhases?.pricingPhaseList?.firstOrNull()?.formattedPrice
-    } ?: "₦3,290.00"
-
+    // Dynamic Google Play billing prices or main fallback prices
     val yearlyPrice = queriedProducts[GooglePlayBillingManager.PRODUCT_YEARLY]?.let { prod ->
         prod.subscriptionOfferDetails?.firstOrNull()?.pricingPhases?.pricingPhaseList?.firstOrNull()?.formattedPrice
-    } ?: "₦20,000.00"
+    } ?: defaultYearlyPrice
+
+    val oneTimePrice = queriedProducts[GooglePlayBillingManager.PRODUCT_LIFETIME]?.let { prod ->
+        prod.oneTimePurchaseOfferDetails?.formattedPrice
+    } ?: defaultOneTimePrice
 
     Dialog(
         onDismissRequest = onClose,
@@ -259,25 +261,25 @@ fun ProUpgradeDialog(
 
                     Spacer(modifier = Modifier.height(44.dp))
 
-                    // Plan selection cards: [Monthly] | [Yearly] (49% OFF)
+                    // Plan selection cards: [Yearly - $1.00] | [One-Time - $5.00]
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        // Monthly Card
-                        val isMonthlySelected = selectedPlanIndex == 0
+                        // Yearly Card ($1.00)
+                        val isYearlySelected = selectedPlanIndex == 0
                         Surface(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(18.dp))
                                 .border(
-                                    width = if (isMonthlySelected) 2.dp else 1.dp,
-                                    color = if (isMonthlySelected) goldBorder else Color(0xFF28272C),
+                                    width = if (isYearlySelected) 2.dp else 1.dp,
+                                    color = if (isYearlySelected) goldBorder else Color(0xFF28272C),
                                     shape = RoundedCornerShape(18.dp)
                                 )
                                 .clickable { selectedPlanIndex = 0 }
-                                .testTag("plan_card_monthly"),
-                            color = if (isMonthlySelected) cardBg else cardUnselectedBg
+                                .testTag("plan_card_yearly"),
+                            color = if (isYearlySelected) cardBg else cardUnselectedBg
                         ) {
                             Column(
                                 modifier = Modifier
@@ -286,14 +288,14 @@ fun ProUpgradeDialog(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text(
-                                    text = "Monthly",
+                                    text = "Yearly",
                                     color = Color(0xFFDCD8D0),
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Medium
                                 )
                                 Spacer(modifier = Modifier.height(14.dp))
                                 Text(
-                                    text = monthlyPrice,
+                                    text = yearlyPrice,
                                     color = Color.White,
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.ExtraBold,
@@ -301,15 +303,15 @@ fun ProUpgradeDialog(
                                 )
                                 Spacer(modifier = Modifier.height(14.dp))
                                 Text(
-                                    text = "Price of a song",
+                                    text = "yearly payments",
                                     color = textMuted,
                                     fontSize = 12.sp
                                 )
                             }
                         }
 
-                        // Yearly Card with "49% OFF" floating pill badge
-                        val isYearlySelected = selectedPlanIndex == 1
+                        // One-Time Card ($5.00) with badge
+                        val isOneTimeSelected = selectedPlanIndex == 1
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -320,13 +322,13 @@ fun ProUpgradeDialog(
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(18.dp))
                                     .border(
-                                        width = if (isYearlySelected) 2.dp else 1.dp,
-                                        color = if (isYearlySelected) goldBorder else Color(0xFF28272C),
+                                        width = if (isOneTimeSelected) 2.dp else 1.dp,
+                                        color = if (isOneTimeSelected) goldBorder else Color(0xFF28272C),
                                         shape = RoundedCornerShape(18.dp)
                                     )
                                     .clickable { selectedPlanIndex = 1 }
-                                    .testTag("plan_card_yearly"),
-                                color = if (isYearlySelected) cardBg else cardUnselectedBg
+                                    .testTag("plan_card_lifetime"),
+                                color = if (isOneTimeSelected) cardBg else cardUnselectedBg
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -335,14 +337,14 @@ fun ProUpgradeDialog(
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Text(
-                                        text = "Yearly",
+                                        text = "One-Time",
                                         color = Color(0xFFDCD8D0),
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Medium
                                     )
                                     Spacer(modifier = Modifier.height(14.dp))
                                     Text(
-                                        text = yearlyPrice,
+                                        text = oneTimePrice,
                                         color = Color.White,
                                         fontSize = 18.sp,
                                         fontWeight = FontWeight.ExtraBold,
@@ -350,14 +352,14 @@ fun ProUpgradeDialog(
                                     )
                                     Spacer(modifier = Modifier.height(14.dp))
                                     Text(
-                                        text = "Price of fast food",
+                                        text = "one time payment",
                                         color = textMuted,
                                         fontSize = 12.sp
                                     )
                                 }
                             }
 
-                            // 49% OFF pill badge
+                            // ONE-TIME badge
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
@@ -367,7 +369,7 @@ fun ProUpgradeDialog(
                                     .padding(horizontal = 10.dp, vertical = 3.dp)
                             ) {
                                 Text(
-                                    text = "49% OFF",
+                                    text = "LIFETIME",
                                     color = Color(0xFF201607),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Black
@@ -383,8 +385,8 @@ fun ProUpgradeDialog(
                         onClick = {
                             if (isProcessing) return@Button
                             isProcessing = true
-                            val selectedPlan = if (selectedPlanIndex == 0) "monthly" else "yearly"
-                            val price = if (selectedPlanIndex == 0) monthlyPrice else yearlyPrice
+                            val selectedPlan = if (selectedPlanIndex == 0) "yearly" else "lifetime"
+                            val price = if (selectedPlanIndex == 0) yearlyPrice else oneTimePrice
 
                             val activity = context as? Activity
                             if (activity != null && isBillingConnected) {
