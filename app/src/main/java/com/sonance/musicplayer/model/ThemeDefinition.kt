@@ -229,6 +229,116 @@ object ThemeRepository {
         shuffleFabBg = Color(0xFF2563EB)
     )
 
+    private val royalAmethyst = ThemeConfig(
+        theme = AppTheme.ROYAL_AMETHYST,
+        isDark = true,
+        accentColor = Color(0xFFD946EF),
+        bgCanvas = Color(0xFF140722),
+        headerBg = Color(0xFF1B0B2E),
+        headerBorder = Color(0xFF38125E),
+        miniPlayerBg = Color(0xFF120520),
+        miniPlayerBorder = Color(0xFF38125E),
+        sidebarBg = Color(0xFF1B0B2E),
+        textPrimary = Color(0xFFFAF5FF),
+        textSecondary = Color(0xFFD8B4FE),
+        cardBorder = Color(0x33D946EF),
+        libraryCard = CardTheme(Color(0xFF9333EA), Color.White, Color.White),
+        folderCard = CardTheme(Color(0xFFC026D3), Color.White, Color.White),
+        favoriteCard = CardTheme(Color(0xFFE879F9), Color.White, Color.White),
+        recentPlayCard = CardTheme(Color(0xFFA855F7), Color.White, Color(0xFFA855F7)),
+        recentAddCard = CardTheme(Color(0xFF7E22CE), Color.White, Color(0xFF7E22CE)),
+        mostPlayCard = CardTheme(Color(0xFFD946EF), Color.White, Color.White),
+        shuffleFabBg = Color(0xFFD946EF)
+    )
+
+    private val auroraBorealis = ThemeConfig(
+        theme = AppTheme.AURORA_BOREALIS,
+        isDark = true,
+        accentColor = Color(0xFF00F5D4),
+        bgCanvas = Color(0xFF061521),
+        headerBg = Color(0xFF0A2234),
+        headerBorder = Color(0xFF13415C),
+        miniPlayerBg = Color(0xFF05111B),
+        miniPlayerBorder = Color(0xFF13415C),
+        sidebarBg = Color(0xFF0A2234),
+        textPrimary = Color(0xFFF0FDFA),
+        textSecondary = Color(0xFF99F6E4),
+        cardBorder = Color(0x3300F5D4),
+        libraryCard = CardTheme(Color(0xFF0D9488), Color.White, Color.White),
+        folderCard = CardTheme(Color(0xFF0284C7), Color.White, Color.White),
+        favoriteCard = CardTheme(Color(0xFF14B8A6), Color.White, Color.White),
+        recentPlayCard = CardTheme(Color(0xFF06B6D4), Color.White, Color(0xFF06B6D4)),
+        recentAddCard = CardTheme(Color(0xFF10B981), Color.White, Color(0xFF10B981)),
+        mostPlayCard = CardTheme(Color(0xFF2DD4BF), Color.White, Color.White),
+        shuffleFabBg = Color(0xFF00F5D4)
+    )
+
+    private val carbonTitanium = ThemeConfig(
+        theme = AppTheme.CARBON_TITANIUM,
+        isDark = true,
+        accentColor = Color(0xFFF59E0B),
+        bgCanvas = Color(0xFF111215),
+        headerBg = Color(0xFF181A1F),
+        headerBorder = Color(0xFF2C313A),
+        miniPlayerBg = Color(0xFF0F1013),
+        miniPlayerBorder = Color(0xFF2C313A),
+        sidebarBg = Color(0xFF181A1F),
+        textPrimary = Color(0xFFF1F5F9),
+        textSecondary = Color(0xFF94A3B8),
+        cardBorder = Color(0x33F59E0B),
+        libraryCard = CardTheme(Color(0xFF475569), Color.White, Color.White),
+        folderCard = CardTheme(Color(0xFF334155), Color.White, Color.White),
+        favoriteCard = CardTheme(Color(0xFFD97706), Color.White, Color.White),
+        recentPlayCard = CardTheme(Color(0xFF64748B), Color.White, Color(0xFF64748B)),
+        recentAddCard = CardTheme(Color(0xFFF59E0B), Color.White, Color(0xFFF59E0B)),
+        mostPlayCard = CardTheme(Color(0xFFB45309), Color.White, Color.White),
+        shuffleFabBg = Color(0xFFF59E0B)
+    )
+
+    private val roseGoldLuxe = ThemeConfig(
+        theme = AppTheme.ROSE_GOLD_LUXE,
+        isDark = true,
+        accentColor = Color(0xFFFB7185),
+        bgCanvas = Color(0xFF1C0E14),
+        headerBg = Color(0xFF28141D),
+        headerBorder = Color(0xFF4C2033),
+        miniPlayerBg = Color(0xFF170B10),
+        miniPlayerBorder = Color(0xFF4C2033),
+        sidebarBg = Color(0xFF28141D),
+        textPrimary = Color(0xFFFFF1F2),
+        textSecondary = Color(0xFFFECDD3),
+        cardBorder = Color(0x33FB7185),
+        libraryCard = CardTheme(Color(0xFFE11D48), Color.White, Color.White),
+        folderCard = CardTheme(Color(0xFFBE123C), Color.White, Color.White),
+        favoriteCard = CardTheme(Color(0xFFFB7185), Color.White, Color.White),
+        recentPlayCard = CardTheme(Color(0xFFF43F5E), Color.White, Color(0xFFF43F5E)),
+        recentAddCard = CardTheme(Color(0xFFFDA4AF), Color.Black, Color(0xFFFDA4AF)),
+        mostPlayCard = CardTheme(Color(0xFF9F1239), Color.White, Color.White),
+        shuffleFabBg = Color(0xFFFB7185)
+    )
+
+    private val neonMatrix = ThemeConfig(
+        theme = AppTheme.NEON_MATRIX,
+        isDark = true,
+        accentColor = Color(0xFF22C55E),
+        bgCanvas = Color(0xFF07110A),
+        headerBg = Color(0xFF0D1C12),
+        headerBorder = Color(0xFF163E24),
+        miniPlayerBg = Color(0xFF050E07),
+        miniPlayerBorder = Color(0xFF163E24),
+        sidebarBg = Color(0xFF0D1C12),
+        textPrimary = Color(0xFFDCFCE7),
+        textSecondary = Color(0xFF86EFAC),
+        cardBorder = Color(0x3322C55E),
+        libraryCard = CardTheme(Color(0xFF15803D), Color.White, Color.White),
+        folderCard = CardTheme(Color(0xFF166534), Color.White, Color.White),
+        favoriteCard = CardTheme(Color(0xFF22C55E), Color.Black, Color.Black),
+        recentPlayCard = CardTheme(Color(0xFF4ADE80), Color.Black, Color(0xFF4ADE80)),
+        recentAddCard = CardTheme(Color(0xFF10B981), Color.White, Color(0xFF10B981)),
+        mostPlayCard = CardTheme(Color(0xFF059669), Color.White, Color.White),
+        shuffleFabBg = Color(0xFF22C55E)
+    )
+
     fun getTheme(theme: AppTheme): ThemeConfig {
         return when (theme) {
             AppTheme.DARK_AMOLED -> darkAmoled
@@ -240,6 +350,11 @@ object ThemeRepository {
             AppTheme.CRIMSON_RUBY -> crimsonRuby
             AppTheme.GOLDEN_LUXURY -> goldenLuxury
             AppTheme.LIGHT_MINIMAL -> lightMinimal
+            AppTheme.ROYAL_AMETHYST -> royalAmethyst
+            AppTheme.AURORA_BOREALIS -> auroraBorealis
+            AppTheme.CARBON_TITANIUM -> carbonTitanium
+            AppTheme.ROSE_GOLD_LUXE -> roseGoldLuxe
+            AppTheme.NEON_MATRIX -> neonMatrix
         }
     }
 }

@@ -222,106 +222,6 @@ fun SettingsDialog(
                         theme = theme
                     )
 
-                    // --- Sonance PRO & AdMob Section ---
-                    SettingsSectionHeader(title = "Sonance PRO & AdMob Ads", color = Color(0xFFFFD700))
-
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .border(1.dp, Color(0xFFFFD700).copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
-                        color = theme.sidebarBg
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.WorkspacePremium,
-                                        contentDescription = null,
-                                        tint = Color(0xFFFFD700),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = if (userSubscription.isPro) "PRO VIP Active" else "Free Plan (AdMob Active)",
-                                        color = if (userSubscription.isPro) Color(0xFFFFD700) else theme.textPrimary,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = if (userSubscription.isPro) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFFFFB300).copy(alpha = 0.2f)
-                                ) {
-                                    Text(
-                                        text = if (userSubscription.isPro) "ZERO ADS" else "$1/yr or $2",
-                                        color = if (userSubscription.isPro) Color(0xFF10B981) else Color(0xFFFFB300),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            Text(
-                                text = if (userSubscription.isPro)
-                                    "Account: ${userSubscription.userEmail.ifBlank { "Tester" }} • Plan: ${userSubscription.plan.uppercase()} (${userSubscription.price})"
-                                else
-                                    "Guest users enjoy free music with AdMob ads. Upgrade to remove all ads and unlock Pro presets.",
-                                color = theme.textSecondary,
-                                fontSize = 11.sp
-                            )
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Button(
-                                    onClick = onOpenProUpgrade,
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD700)),
-                                    modifier = Modifier.weight(1f).height(36.dp),
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp)
-                                ) {
-                                    Text(
-                                        text = if (userSubscription.isPro) "Manage Plan" else "Go PRO ($1 / $2)",
-                                        color = Color.Black,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp
-                                    )
-                                }
-
-                                OutlinedButton(
-                                    onClick = {
-                                        onSetDevProState(!userSubscription.isPro)
-                                        val target = !userSubscription.isPro
-                                        Toast.makeText(context, if (target) "Dev Pro set to TRUE" else "Dev Pro set to FALSE", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.weight(1f).height(36.dp),
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
-                                ) {
-                                    Text(
-                                        text = if (userSubscription.isPro) "Test False (Ads)" else "Test True (Pro)",
-                                        color = theme.textPrimary,
-                                        fontSize = 11.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-
                     // --- Lyrics Section ---
                     SettingsSectionHeader(title = "Lyrics", color = headerGold)
 
@@ -582,6 +482,18 @@ fun SettingsDialog(
                         theme = theme
                     )
 
+                    SettingActionItem(
+                        title = if (userSubscription.isPro) "Sonance PRO VIP Active" else "Sonance PRO Status",
+                        subtitle = if (userSubscription.isPro) "All 5 VIP themes unlocked • Tap to toggle test state" else "Free Plan • Tap to activate Pro test mode",
+                        onClick = {
+                            val newPro = !userSubscription.isPro
+                            onSetDevProState(newPro)
+                            val msg = if (newPro) "Pro Mode Activated! All VIP themes unlocked." else "Pro Mode Disabled (Free Plan active)"
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        },
+                        theme = theme
+                    )
+
                     Spacer(modifier = Modifier.height(32.dp))
                 }
             }
@@ -680,7 +592,13 @@ fun SettingsDialog(
             Triple("Sunset Warm", Color(0xFFF97316), AppTheme.SUNSET_WARM),
             Triple("Crimson Ruby", Color(0xFFEF4444), AppTheme.CRIMSON_RUBY),
             Triple("Dark AMOLED", Color(0xFFF9BE39), AppTheme.DARK_AMOLED),
-            Triple("Light Minimal", Color(0xFF2563EB), AppTheme.LIGHT_MINIMAL)
+            Triple("Light Minimal", Color(0xFF2563EB), AppTheme.LIGHT_MINIMAL),
+            // Pro VIP Accents
+            Triple("Royal Amethyst", Color(0xFFD946EF), AppTheme.ROYAL_AMETHYST),
+            Triple("Aurora Cyan", Color(0xFF00F5D4), AppTheme.AURORA_BOREALIS),
+            Triple("Titanium Gold", Color(0xFFF59E0B), AppTheme.CARBON_TITANIUM),
+            Triple("Rose Gold Luxe", Color(0xFFFB7185), AppTheme.ROSE_GOLD_LUXE),
+            Triple("Neon Matrix", Color(0xFF22C55E), AppTheme.NEON_MATRIX)
         )
 
         AlertDialog(
@@ -691,20 +609,28 @@ fun SettingsDialog(
             },
             text = {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     accentOptions.forEach { (name, color, appTheme) ->
                         val isSelected = theme.theme == appTheme
+                        val isLocked = appTheme.isProOnly && !userSubscription.isPro
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(if (isSelected) theme.accentColor.copy(alpha = 0.15f) else Color.Transparent)
                                 .clickable {
-                                    onSelectTheme(appTheme)
-                                    onUpdateSettings(settings.copy(accentColor = name.lowercase()))
-                                    showAccentColorDialog = false
+                                    if (isLocked) {
+                                        Toast.makeText(context, "$name is exclusive to Sonance PRO!", Toast.LENGTH_SHORT).show()
+                                        showAccentColorDialog = false
+                                        onOpenProUpgrade()
+                                    } else {
+                                        onSelectTheme(appTheme)
+                                        onUpdateSettings(settings.copy(accentColor = name.lowercase()))
+                                        showAccentColorDialog = false
+                                    }
                                 }
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -724,7 +650,20 @@ fun SettingsDialog(
                                 fontSize = 15.sp,
                                 modifier = Modifier.weight(1f)
                             )
-                            if (isSelected) {
+                            if (appTheme.isProOnly) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xFFFFD700).copy(alpha = 0.2f)
+                                ) {
+                                    Text(
+                                        text = "PRO",
+                                        color = Color(0xFFFFD700),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            } else if (isSelected) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = null,

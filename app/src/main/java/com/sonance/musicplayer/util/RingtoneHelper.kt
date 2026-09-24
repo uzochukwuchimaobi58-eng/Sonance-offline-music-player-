@@ -13,25 +13,36 @@ import android.widget.Toast
 import com.sonance.musicplayer.model.Track
 import java.io.File
 import java.io.FileInputStream
-import java.io.FileOutputStream
 
 object RingtoneHelper {
 
-    fun setAsRingtoneImmediately(context: Context, track: Track): Boolean {
+    fun hasWriteSettingsPermission(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.System.canWrite(context)
+        } else {
+            true
+        }
+    }
+
+    fun requestWriteSettingsPermission(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (!Settings.System.canWrite(context)) {
-                Toast.makeText(
-                    context,
-                    "Please allow 'Modify system settings' so Sonance can set your ringtone",
-                    Toast.LENGTH_LONG
-                ).show()
-                val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
-                    data = Uri.parse("package:${context.packageName}")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                return false
+            val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
+                data = Uri.parse("package:${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+            context.startActivity(intent)
+        }
+    }
+
+    fun setAsRingtoneImmediately(context: Context, track: Track): Boolean {
+        if (!hasWriteSettingsPermission(context)) {
+            Toast.makeText(
+                context,
+                "Please allow 'Modify system settings' so Sonance can set your ringtone",
+                Toast.LENGTH_LONG
+            ).show()
+            requestWriteSettingsPermission(context)
+            return false
         }
 
         try {
@@ -49,20 +60,20 @@ object RingtoneHelper {
                 ringtoneUri = parsedUri
             }
 
-            // 2. If it's a direct file path
+            // 2. If direct file path
             if (ringtoneUri == null && track.contentUri.isNotBlank() && !track.contentUri.startsWith("http")) {
-                val file = File(track.contentUri)
+                val file = File(track.contentUri.removePrefix("file://"))
                 if (file.exists()) {
                     ringtoneUri = copyToRingtoneCollection(context, file, track.title)
                 }
             }
 
-            // 3. Fallback: create ringtone entry from existing URI stream
+            // 3. Fallback: parse whatever URI exists
             if (ringtoneUri == null) {
                 ringtoneUri = Uri.parse(track.contentUri)
             }
 
-            // Set actual system default ringtone
+            // Set system ringtone
             RingtoneManager.setActualDefaultRingtoneUri(
                 context,
                 RingtoneManager.TYPE_RINGTONE,
@@ -71,7 +82,7 @@ object RingtoneHelper {
 
             Toast.makeText(
                 context,
-                "✓ '${track.title}' is now set as your phone ringtone!",
+                "✓ '${track.title}' set as phone ringtone!",
                 Toast.LENGTH_LONG
             ).show()
             return true
@@ -86,13 +97,52 @@ object RingtoneHelper {
         }
     }
 
+    fun setFileAsRingtone(context: Context, audioFile: File, title: String): Boolean {
+        if (!hasWriteSettingsPermission(context)) {
+            Toast.makeText(
+                context,
+                "Please allow 'Modify system settings' so Sonance can set your ringtone",
+                Toast.LENGTH_LONG
+            ).show()
+            requestWriteSettingsPermission(context)
+            return false
+        }
+
+        return try {
+            val ringtoneUri = copyToRingtoneCollection(context, audioFile, title)
+                ?: Uri.fromFile(audioFile)
+
+            RingtoneManager.setActualDefaultRingtoneUri(
+                context,
+                RingtoneManager.TYPE_RINGTONE,
+                ringtoneUri
+            )
+
+            Toast.makeText(
+                context,
+                "✓ '$title' set as phone ringtone!",
+                Toast.LENGTH_LONG
+            ).show()
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(
+                context,
+                "Failed to set ringtone: ${e.localizedMessage ?: "Unknown error"}",
+                Toast.LENGTH_SHORT
+            ).show()
+            false
+        }
+    }
+
     private fun copyToRingtoneCollection(context: Context, sourceFile: File, title: String): Uri? {
         return try {
             val resolver = context.contentResolver
+            val safeName = "${title.replace("[^a-zA-Z0-9.-]".toRegex(), "_")}.mp3"
             val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, "${title.replace("[^a-zA-Z0-9.-]".toRegex(), "_")}.mp3")
+                put(MediaStore.MediaColumns.DISPLAY_NAME, safeName)
                 put(MediaStore.MediaColumns.TITLE, title)
-                put(MediaStore.MediaColumns.MIME_TYPE, "audio/mp3")
+                put(MediaStore.MediaColumns.MIME_TYPE, "audio/mpeg")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_RINGTONES)
                     put(MediaStore.MediaColumns.IS_PENDING, 1)

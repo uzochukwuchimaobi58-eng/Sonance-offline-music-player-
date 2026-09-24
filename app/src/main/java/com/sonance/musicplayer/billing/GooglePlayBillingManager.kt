@@ -34,6 +34,10 @@ class GooglePlayBillingManager private constructor(private val context: Context)
         const val PRODUCT_YEARLY = "sonance_pro_yearly"
         const val PRODUCT_MONTHLY = "sonance_pro_monthly"
 
+        // Candidate IDs to match whatever the developer named their products in Google Play Console
+        val INAPP_CANDIDATE_IDS = listOf(PRODUCT_LIFETIME, "pro_lifetime", "sonance_lifetime", "lifetime", "sonance_pro", "pro")
+        val SUBS_CANDIDATE_IDS = listOf(PRODUCT_YEARLY, "pro_yearly", "sonance_yearly", "yearly", PRODUCT_MONTHLY, "pro_monthly", "sonance_monthly", "monthly")
+
         @Volatile
         private var instance: GooglePlayBillingManager? = null
 
@@ -62,6 +66,7 @@ class GooglePlayBillingManager private constructor(private val context: Context)
 
     // Callback when a purchase succeeds and is verified
     var onPurchaseCompleted: ((plan: String, price: String, orderId: String, purchaseToken: String) -> Unit)? = null
+    var onPurchaseFailed: ((reason: String) -> Unit)? = null
 
     init {
         initBillingClient()
@@ -136,16 +141,15 @@ class GooglePlayBillingManager private constructor(private val context: Context)
         coroutineScope.launch {
             try {
                 // In Google Play Billing, all products in a single QueryProductDetailsParams MUST be of the same type
-                // 1. Query lifetime (INAPP)
+                // 1. Query lifetime (INAPP) candidates
+                val inAppProductList = INAPP_CANDIDATE_IDS.distinct().map { id ->
+                    QueryProductDetailsParams.Product.newBuilder()
+                        .setProductId(id)
+                        .setProductType(BillingClient.ProductType.INAPP)
+                        .build()
+                }
                 val inAppParams = QueryProductDetailsParams.newBuilder()
-                    .setProductList(
-                        listOf(
-                            QueryProductDetailsParams.Product.newBuilder()
-                                .setProductId(PRODUCT_LIFETIME)
-                                .setProductType(BillingClient.ProductType.INAPP)
-                                .build()
-                        )
-                    )
+                    .setProductList(inAppProductList)
                     .build()
 
                 client.queryProductDetailsAsync(inAppParams) { billingResult, queryProductDetailsResult ->
@@ -160,20 +164,15 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                     }
                 }
 
-                // 2. Query monthly & yearly (SUBS)
+                // 2. Query monthly & yearly (SUBS) candidates
+                val subsProductList = SUBS_CANDIDATE_IDS.distinct().map { id ->
+                    QueryProductDetailsParams.Product.newBuilder()
+                        .setProductId(id)
+                        .setProductType(BillingClient.ProductType.SUBS)
+                        .build()
+                }
                 val subsParams = QueryProductDetailsParams.newBuilder()
-                    .setProductList(
-                        listOf(
-                            QueryProductDetailsParams.Product.newBuilder()
-                                .setProductId(PRODUCT_YEARLY)
-                                .setProductType(BillingClient.ProductType.SUBS)
-                                .build(),
-                            QueryProductDetailsParams.Product.newBuilder()
-                                .setProductId(PRODUCT_MONTHLY)
-                                .setProductType(BillingClient.ProductType.SUBS)
-                                .build()
-                        )
-                    )
+                    .setProductList(subsProductList)
                     .build()
 
                 client.queryProductDetailsAsync(subsParams) { billingResult, queryProductDetailsResult ->
@@ -202,13 +201,20 @@ class GooglePlayBillingManager private constructor(private val context: Context)
         onFallbackSimulation: () -> Unit
     ) {
         val client = billingClient
+        val isSubscription = plan.lowercase() == "monthly" || plan.lowercase() == "yearly"
         val targetProductId = when (plan.lowercase()) {
             "monthly" -> PRODUCT_MONTHLY
             "yearly" -> PRODUCT_YEARLY
             else -> PRODUCT_LIFETIME
         }
-        val isSubscription = plan.lowercase() == "monthly" || plan.lowercase() == "yearly"
+
+        // Try exact productId first, or any matching candidate from fetched products
         val productDetails = _products.value[targetProductId]
+            ?: if (isSubscription) {
+                _products.value.values.find { it.productType == BillingClient.ProductType.SUBS }
+            } else {
+                _products.value.values.find { it.productType == BillingClient.ProductType.INAPP }
+            }
 
         if (client != null && client.isReady && productDetails != null) {
             try {
@@ -266,6 +272,9 @@ class GooglePlayBillingManager private constructor(private val context: Context)
             BillingClient.BillingResponseCode.USER_CANCELED -> {
                 Log.d(TAG, "User canceled the purchase")
                 _statusMessage.value = "Purchase canceled"
+                coroutineScope.launch(Dispatchers.Main) {
+                    onPurchaseFailed?.invoke("Purchase canceled")
+                }
             }
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
                 Log.d(TAG, "Item already owned, querying purchases")
@@ -275,14 +284,17 @@ class GooglePlayBillingManager private constructor(private val context: Context)
             else -> {
                 Log.w(TAG, "Purchase failed: ${billingResult.debugMessage}")
                 _statusMessage.value = "Payment result: ${billingResult.debugMessage.ifBlank { "Code ${billingResult.responseCode}" }}"
+                coroutineScope.launch(Dispatchers.Main) {
+                    onPurchaseFailed?.invoke(billingResult.debugMessage.ifBlank { "Purchase failed (code ${billingResult.responseCode})" })
+                }
             }
         }
     }
 
     private fun handlePurchase(purchase: Purchase) {
         if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
-            val isYearly = purchase.products.contains(PRODUCT_YEARLY)
-            val isMonthly = purchase.products.contains(PRODUCT_MONTHLY)
+            val isYearly = purchase.products.any { it.contains("year", ignoreCase = true) }
+            val isMonthly = purchase.products.any { it.contains("month", ignoreCase = true) }
             val plan = if (isYearly) "yearly" else if (isMonthly) "monthly" else "lifetime"
             val price = if (isYearly) "$1.00/yr" else if (isMonthly) "$0.99/mo" else "$5.00"
             val orderId = purchase.orderId ?: "GPA.${System.currentTimeMillis()}"
@@ -338,7 +350,13 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                 client.queryPurchasesAsync(inAppParams) { res, purchases ->
                     if (res.responseCode == BillingClient.BillingResponseCode.OK) {
                         val valid = purchases.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
-                        val lifetime = valid.find { it.products.contains(PRODUCT_LIFETIME) }
+                        val lifetime = valid.find { p ->
+                            p.products.any { prodId ->
+                                prodId.contains("life", ignoreCase = true) ||
+                                        prodId.contains("pro", ignoreCase = true) ||
+                                        INAPP_CANDIDATE_IDS.contains(prodId)
+                            }
+                        }
                         if (lifetime != null) {
                             foundPro = true
                             details = "Restored Lifetime Pro license"
@@ -346,7 +364,7 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                         }
                     }
 
-                    // Check Subs (Yearly)
+                    // Check Subs (Yearly/Monthly)
                     val subsParams = QueryPurchasesParams.newBuilder()
                         .setProductType(BillingClient.ProductType.SUBS)
                         .build()
@@ -354,11 +372,17 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                     client.queryPurchasesAsync(subsParams) { subRes, subPurchases ->
                         if (subRes.responseCode == BillingClient.BillingResponseCode.OK) {
                             val validSubs = subPurchases.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
-                            val yearly = validSubs.find { it.products.contains(PRODUCT_YEARLY) }
-                            if (yearly != null) {
+                            val subItem = validSubs.find { p ->
+                                p.products.any { prodId ->
+                                    prodId.contains("year", ignoreCase = true) ||
+                                            prodId.contains("month", ignoreCase = true) ||
+                                            SUBS_CANDIDATE_IDS.contains(prodId)
+                                }
+                            }
+                            if (subItem != null) {
                                 foundPro = true
-                                details = "Restored Yearly Pro subscription"
-                                handlePurchase(yearly)
+                                details = "Restored Pro subscription"
+                                handlePurchase(subItem)
                             }
                         }
 

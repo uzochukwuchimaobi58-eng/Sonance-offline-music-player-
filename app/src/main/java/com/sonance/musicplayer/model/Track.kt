@@ -21,16 +21,22 @@ enum class EqPreset(val displayName: String) {
 }
 
 @Serializable
-enum class AppTheme(val idStr: String, val displayName: String) {
-    DARK_AMOLED("dark-amoled", "Classic Music Player"),
-    DARK_SLATE("dark-slate", "Modern Slate & Neon Cyan"),
-    CYBERPUNK("cyberpunk", "Cyberpunk Neon & Violet"),
-    MIDNIGHT_BLUE("midnight-blue", "Midnight Sapphire Ocean"),
-    SUNSET_WARM("sunset-warm", "Warm Sunset & Amber"),
-    EMERALD_FOREST("emerald-forest", "Deep Emerald & Mint Forest"),
-    CRIMSON_RUBY("crimson-ruby", "Velvet Crimson & Ruby"),
-    GOLDEN_LUXURY("golden-luxury", "Golden Royalty & Onyx"),
-    LIGHT_MINIMAL("light-minimal", "Clean Studio Light")
+enum class AppTheme(val idStr: String, val displayName: String, val isProOnly: Boolean = false) {
+    DARK_AMOLED("dark-amoled", "Classic Music Player", false),
+    DARK_SLATE("dark-slate", "Modern Slate & Neon Cyan", false),
+    CYBERPUNK("cyberpunk", "Cyberpunk Neon & Violet", false),
+    MIDNIGHT_BLUE("midnight-blue", "Midnight Sapphire Ocean", false),
+    SUNSET_WARM("sunset-warm", "Warm Sunset & Amber", false),
+    EMERALD_FOREST("emerald-forest", "Deep Emerald & Mint Forest", false),
+    CRIMSON_RUBY("crimson-ruby", "Velvet Crimson & Ruby", false),
+    GOLDEN_LUXURY("golden-luxury", "Golden Royalty & Onyx", false),
+    LIGHT_MINIMAL("light-minimal", "Clean Studio Light", false),
+    // Exclusive PRO VIP Themes
+    ROYAL_AMETHYST("royal-amethyst", "VIP Royal Velvet & Amethyst", true),
+    AURORA_BOREALIS("aurora-borealis", "VIP Nordic Aurora Glow", true),
+    CARBON_TITANIUM("carbon-titanium", "VIP Stealth Carbon & Titanium", true),
+    ROSE_GOLD_LUXE("rose-gold-luxe", "VIP Rose Gold & Champagne", true),
+    NEON_MATRIX("neon-matrix", "VIP Neon Green Matrix", true)
 }
 
 @Serializable

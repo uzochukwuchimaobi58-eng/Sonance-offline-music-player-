@@ -39,6 +39,17 @@ class MusicRepository(private val context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("sonance_music_prefs", Context.MODE_PRIVATE)
 
+    private val playCountPrefs = context.getSharedPreferences("sonance_play_counts", Context.MODE_PRIVATE)
+    private val lastPlayedPrefs = context.getSharedPreferences("sonance_last_played", Context.MODE_PRIVATE)
+    private val favoritesPrefs = context.getSharedPreferences("sonance_favorites", Context.MODE_PRIVATE)
+    private val discoveryPrefs = context.getSharedPreferences("sonance_discovered", Context.MODE_PRIVATE)
+
+    fun getNormTrackKey(title: String, artist: String): String {
+        val t = title.trim().lowercase()
+        val a = artist.trim().lowercase()
+        return if (t.isNotBlank()) "$t|$a" else ""
+    }
+
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
 
     private val _tracks = MutableStateFlow<List<Track>>(emptyList())
@@ -375,22 +386,23 @@ class MusicRepository(private val context: Context) {
                 _playlists.value = DefaultTracks.initialPlaylists
             }
 
-            // Load Tracks or default
+            // Load Tracks or default - ensure only valid local user tracks are kept
             val tracksJson = prefs.getString("tracks", null)
             val savedTracks: List<Track>? = if (tracksJson != null) {
                 try {
-                    json.decodeFromString(tracksJson)
+                    val parsed: List<Track> = json.decodeFromString(tracksJson)
+                    parsed.filter { tr ->
+                        tr.sourceType == "local" &&
+                        !tr.url.startsWith("content://media/internal/") &&
+                        !tr.url.contains("SoundHelix") &&
+                        tr.url.isNotBlank()
+                    }
                 } catch (e: Exception) {
                     null
                 }
             } else null
 
-            val combined = if (savedTracks.isNullOrEmpty()) {
-                DefaultTracks.initialTracks
-            } else {
-                savedTracks
-            }
-            _tracks.value = combined
+            _tracks.value = savedTracks ?: emptyList()
 
             // Auto-scan local storage in background
             scanMediaStore()
@@ -402,6 +414,8 @@ class MusicRepository(private val context: Context) {
 
     suspend fun scanMediaStore(): Int = withContext(Dispatchers.IO) {
         val deviceTracks = mutableListOf<Track>()
+        val existingMediaIds = mutableSetOf<Long>()
+
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
@@ -413,114 +427,134 @@ class MusicRepository(private val context: Context) {
             MediaStore.Audio.Media.DATE_MODIFIED,
             MediaStore.Audio.Media.SIZE
         )
-        // Broad selection ensuring browser downloads and newly added songs are captured immediately
-        val selection = "(${MediaStore.Audio.Media.IS_MUSIC} != 0 OR ${MediaStore.Audio.Media.DURATION} > 0 OR ${MediaStore.Audio.Media.DATA} LIKE '%.mp3' OR ${MediaStore.Audio.Media.DATA} LIKE '%.m4a' OR ${MediaStore.Audio.Media.DATA} LIKE '%.aac' OR ${MediaStore.Audio.Media.DATA} LIKE '%.wav' OR ${MediaStore.Audio.Media.DATA} LIKE '%.flac' OR ${MediaStore.Audio.Media.DATA} LIKE '%.ogg' OR ${MediaStore.Audio.Media.MIME_TYPE} LIKE 'audio/%')"
 
-        try {
-            val cursor = context.contentResolver.query(
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                projection,
-                selection,
-                null,
-                "${MediaStore.Audio.Media.DATE_MODIFIED} DESC"
-            )
+        fun queryUri(contentUriBase: Uri, selection: String?) {
+            try {
+                val cursor = context.contentResolver.query(
+                    contentUriBase,
+                    projection,
+                    selection,
+                    null,
+                    "${MediaStore.Audio.Media.DATE_MODIFIED} DESC"
+                )
 
-            cursor?.use {
-                val idCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-                val titleCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-                val artistCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-                val albumCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-                val durationCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-                val dataCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-                val dateAddedCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
-                val dateModifiedCol = it.getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
-                val sizeCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+                cursor?.use {
+                    val idCol = it.getColumnIndex(MediaStore.Audio.Media._ID)
+                    if (idCol < 0) return@use
+                    val titleCol = it.getColumnIndex(MediaStore.Audio.Media.TITLE)
+                    val artistCol = it.getColumnIndex(MediaStore.Audio.Media.ARTIST)
+                    val albumCol = it.getColumnIndex(MediaStore.Audio.Media.ALBUM)
+                    val durationCol = it.getColumnIndex(MediaStore.Audio.Media.DURATION)
+                    val dataCol = it.getColumnIndex(MediaStore.Audio.Media.DATA)
+                    val dateAddedCol = it.getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
+                    val dateModifiedCol = it.getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
+                    val sizeCol = it.getColumnIndex(MediaStore.Audio.Media.SIZE)
 
-                while (it.moveToNext()) {
-                    val mediaId = it.getLong(idCol)
-                    val contentUri = ContentUris.withAppendedId(
-                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                        mediaId
-                    ).toString()
-                    val title = it.getString(titleCol) ?: "Unknown Track"
-                    val artist = it.getString(artistCol) ?: "<unknown>"
-                    val album = it.getString(albumCol) ?: "Music"
-                    val durationMs = it.getLong(durationCol)
-                    val dataPath = it.getString(dataCol) ?: ""
-                    val dateAddedSec = it.getLong(dateAddedCol)
-                    val dateModifiedSec = if (dateModifiedCol >= 0) it.getLong(dateModifiedCol) else 0L
-                    val fileModified = if (dataPath.isNotEmpty()) {
-                        try { File(dataPath).lastModified() } catch (_: Exception) { 0L }
-                    } else 0L
+                    while (it.moveToNext()) {
+                        val mediaId = it.getLong(idCol)
+                        if (existingMediaIds.contains(mediaId)) continue
+                        existingMediaIds.add(mediaId)
 
-                    // Effective timestamp: latest of dateAdded, dateModified, or file last modified
-                    val effectiveAdded = maxOf(dateAddedSec * 1000L, dateModifiedSec * 1000L, fileModified).takeIf { t -> t > 0L } ?: System.currentTimeMillis()
+                        val contentUri = ContentUris.withAppendedId(contentUriBase, mediaId).toString()
+                        val title = (if (titleCol >= 0) it.getString(titleCol) else null)?.takeIf { t -> t.isNotBlank() } ?: "Track $mediaId"
+                        val artist = (if (artistCol >= 0) it.getString(artistCol) else null)?.takeIf { a -> a.isNotBlank() && a != "<unknown>" } ?: "Unknown Artist"
+                        val album = (if (albumCol >= 0) it.getString(albumCol) else null)?.takeIf { al -> al.isNotBlank() } ?: "Music"
+                        val durationMs = if (durationCol >= 0) it.getLong(durationCol) else 0L
+                        val dataPath = if (dataCol >= 0) it.getString(dataCol) ?: "" else ""
+                        val dateAddedSec = if (dateAddedCol >= 0) it.getLong(dateAddedCol) else 0L
+                        val dateModifiedSec = if (dateModifiedCol >= 0) it.getLong(dateModifiedCol) else 0L
+                        val fileModified = if (dataPath.isNotEmpty()) {
+                            try { File(dataPath).lastModified() } catch (_: Exception) { 0L }
+                        } else 0L
 
-                    val sizeBytes = it.getLong(sizeCol)
-                    val folder = if (dataPath.isNotEmpty()) {
-                        File(dataPath).parent ?: "Phone Storage"
-                    } else "Phone Storage"
+                        val effectiveAdded = maxOf(dateAddedSec * 1000L, dateModifiedSec * 1000L, fileModified).takeIf { t -> t > 0L } ?: System.currentTimeMillis()
+                        val sizeBytes = if (sizeCol >= 0) it.getLong(sizeCol) else 0L
+                        val folder = if (dataPath.isNotEmpty()) {
+                            try { File(dataPath).parent ?: "Phone Storage" } catch (_: Exception) { "Phone Storage" }
+                        } else "Phone Storage"
 
-                    val sizeMb = String.format("%.1f MB", sizeBytes / (1024.0 * 1024.0))
+                        val sizeMb = String.format("%.1f MB", sizeBytes / (1024.0 * 1024.0))
+                        val albumArtUri = Uri.parse("content://media/external/audio/media/$mediaId/albumart").toString()
 
-                    // Artwork Uri
-                    val albumArtUri = Uri.parse("content://media/external/audio/media/$mediaId/albumart").toString()
-
-                    deviceTracks.add(
-                        Track(
-                            id = "local-$mediaId",
-                            title = title,
-                            artist = if (artist == "<unknown>") "Unknown Artist" else artist,
-                            album = album,
-                            duration = durationMs / 1000L,
-                            url = contentUri,
-                            coverArt = albumArtUri,
-                            folder = folder,
-                            dateAdded = effectiveAdded,
-                            fileSize = sizeMb,
-                            sourceType = "local"
+                        deviceTracks.add(
+                            Track(
+                                id = "local-$mediaId",
+                                title = title,
+                                artist = artist,
+                                album = album,
+                                duration = durationMs / 1000L,
+                                url = contentUri,
+                                coverArt = albumArtUri,
+                                folder = folder,
+                                dateAdded = effectiveAdded,
+                                fileSize = sizeMb,
+                                sourceType = "local"
+                            )
                         )
-                    )
+                    }
                 }
+            } catch (e: Exception) {
+                Log.w("MusicRepository", "MediaStore query error on $contentUriBase: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.e("MusicRepository", "Error querying MediaStore", e)
         }
 
-        // Also directly scan Download and Music folders so newly downloaded files from Chrome appear immediately
+        // Query external storage for real user music
+        val broadSelection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 OR ${MediaStore.Audio.Media.DURATION} > 0"
+        queryUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, broadSelection)
+
+        // If no tracks found, query external without any filter (essential for Redmi / HyperOS devices)
+        if (deviceTracks.isEmpty()) {
+            queryUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, null)
+        }
+
+        // Directly scan filesystem folders recursively to guarantee detection on all devices, SD cards, and subfolders
         scanDirectDownloadAndMusicFolders(deviceTracks)
 
         val existingTracks = _tracks.value
         val existingFavorites = existingTracks.filter { it.isFavorite }.map { it.id }.toSet()
-        val playCounts = existingTracks.associate { it.id to it.playCount }
-        val lastPlayedMap = existingTracks.associate { it.id to it.lastPlayed }
-        val lyricsMap = existingTracks.filter { it.lyrics.isNotBlank() }.associate { it.id to it.lyrics }
+        val existingLyrics = existingTracks.filter { it.lyrics.isNotBlank() }.associate { it.id to it.lyrics }
 
         val newTrackList = if (deviceTracks.isNotEmpty()) {
             val updatedDeviceTracks = deviceTracks.map { t ->
+                val normKey = getNormTrackKey(t.title, t.artist)
+                val persistentPlayCount = maxOf(
+                    playCountPrefs.getInt(t.id, 0),
+                    if (normKey.isNotBlank()) playCountPrefs.getInt(normKey, 0) else 0,
+                    t.playCount
+                )
+                val persistentLastPlayed = maxOf(
+                    lastPlayedPrefs.getLong(t.id, 0L),
+                    if (normKey.isNotBlank()) lastPlayedPrefs.getLong(normKey, 0L) else 0L,
+                    t.lastPlayed
+                )
+                val isFav = existingFavorites.contains(t.id) ||
+                        favoritesPrefs.getBoolean(t.id, false) ||
+                        (normKey.isNotBlank() && favoritesPrefs.getBoolean(normKey, false)) ||
+                        t.isFavorite
+
+                // Track discovery timestamp so newly added songs immediately show at the top of Recently Added
+                val savedDiscovered = discoveryPrefs.getLong(t.id, 0L)
+                val effectiveDiscovered = if (savedDiscovered > 0L) {
+                    savedDiscovered
+                } else {
+                    val now = System.currentTimeMillis()
+                    discoveryPrefs.edit().putLong(t.id, now).apply()
+                    now
+                }
+                val effectiveAdded = maxOf(t.dateAdded, effectiveDiscovered)
+
                 t.copy(
-                    isFavorite = existingFavorites.contains(t.id),
-                    playCount = playCounts[t.id] ?: 0,
-                    lastPlayed = lastPlayedMap[t.id] ?: 0L,
-                    lyrics = lyricsMap[t.id] ?: t.lyrics
+                    isFavorite = isFav,
+                    playCount = persistentPlayCount,
+                    lastPlayed = persistentLastPlayed,
+                    lyrics = existingLyrics[t.id] ?: t.lyrics,
+                    dateAdded = effectiveAdded
                 )
             }
             // Default order for library tracks is A to Z by title
-            val sortedDevice = updatedDeviceTracks.sortedWith(com.sonance.musicplayer.util.TrackComparators.TitleComparator)
-
-            // Keep built-in tracks too if user has only few songs, placed after local device tracks
-            sortedDevice + DefaultTracks.initialTracks.filter { def ->
-                deviceTracks.none { it.title.equals(def.title, ignoreCase = true) }
-            }.map { def ->
-                def.copy(
-                    isFavorite = existingFavorites.contains(def.id),
-                    playCount = playCounts[def.id] ?: def.playCount,
-                    lastPlayed = lastPlayedMap[def.id] ?: def.lastPlayed,
-                    lyrics = lyricsMap[def.id] ?: def.lyrics
-                )
-            }
+            updatedDeviceTracks.sortedWith(com.sonance.musicplayer.util.TrackComparators.TitleComparator)
         } else {
-            existingTracks.ifEmpty { DefaultTracks.initialTracks }
+            existingTracks.filter { it.sourceType == "local" && !it.url.startsWith("content://media/internal/") }
         }
 
         _tracks.value = newTrackList
@@ -529,94 +563,161 @@ class MusicRepository(private val context: Context) {
     }
 
     /**
-     * Direct file system inspection of standard Download and Music directories.
-     * Ensures music freshly downloaded from Chrome is detected and added immediately
-     * even before system MediaStore runs its periodic indexing cycle.
+     * Direct recursive file system inspection of standard and device-specific audio directories.
+     * Ensures music on all Redmi, Tecno, Samsung, and other devices (including SD cards and subfolders)
+     * is found immediately even before system MediaStore runs its periodic indexing cycle.
      */
     private fun scanDirectDownloadAndMusicFolders(deviceTracks: MutableList<Track>) {
         try {
             val candidateDirs = mutableListOf<File>()
+
+            // 1. Android public directories
             try {
                 candidateDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS))
             } catch (_: Exception) {}
             try {
                 candidateDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC))
             } catch (_: Exception) {}
-            candidateDirs.add(File("/storage/emulated/0/Download"))
-            candidateDirs.add(File("/storage/emulated/0/Music"))
+            try {
+                candidateDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PODCASTS))
+            } catch (_: Exception) {}
+            try {
+                candidateDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS))
+            } catch (_: Exception) {}
+            try {
+                candidateDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS))
+            } catch (_: Exception) {}
+
+            // 2. Standard device storage paths (including Redmi / Xiaomi MIUI custom paths)
+            val commonPaths = listOf(
+                "/storage/emulated/0/Download",
+                "/storage/emulated/0/Downloads",
+                "/storage/emulated/0/Music",
+                "/storage/emulated/0/Audio",
+                "/storage/emulated/0/Recordings",
+                "/storage/emulated/0/MIUI/sound_recorder",
+                "/storage/emulated/0/bluetooth",
+                "/storage/emulated/0/Telegram"
+            )
+            for (p in commonPaths) {
+                candidateDirs.add(File(p))
+            }
+
+            // 3. Removable SD Cards (e.g. /storage/ABCD-1234/)
+            try {
+                val externalFilesDirs = context.getExternalFilesDirs(null)
+                for (f in externalFilesDirs) {
+                    if (f != null) {
+                        val path = f.absolutePath
+                        // Extract root mount point before /Android/data/...
+                        val rootIdx = path.indexOf("/Android/data/")
+                        if (rootIdx > 0) {
+                            val sdCardRoot = File(path.substring(0, rootIdx))
+                            candidateDirs.add(sdCardRoot)
+                            candidateDirs.add(File(sdCardRoot, "Music"))
+                            candidateDirs.add(File(sdCardRoot, "Download"))
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+
+            try {
+                val storageDir = File("/storage")
+                if (storageDir.exists() && storageDir.isDirectory) {
+                    storageDir.listFiles()?.forEach { sub ->
+                        if (sub.isDirectory && sub.name != "emulated" && sub.name != "self") {
+                            candidateDirs.add(sub)
+                            candidateDirs.add(File(sub, "Music"))
+                            candidateDirs.add(File(sub, "Download"))
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
 
             val validDirs = candidateDirs.filter { it.exists() && it.isDirectory }.distinctBy { it.absolutePath }
-            val audioExts = setOf("mp3", "m4a", "aac", "wav", "flac", "ogg", "opus")
+            val audioExts = setOf("mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "wma")
             val existingUrls = deviceTracks.map { it.url }.toMutableSet()
             val existingTitles = deviceTracks.map { it.title.trim().lowercase() }.toMutableSet()
 
             var retriever: MediaMetadataRetriever? = null
 
-            for (dir in validDirs) {
-                val files = dir.listFiles() ?: continue
-                for (file in files) {
-                    if (!file.isFile || file.length() < 10240) continue // Skip non-files or <10KB
-                    val ext = file.extension.lowercase()
-                    if (ext in audioExts) {
-                        val fileUri = Uri.fromFile(file).toString()
-                        val fileNameClean = file.nameWithoutExtension.trim().lowercase()
-                        if (existingUrls.contains(fileUri) || existingTitles.contains(fileNameClean)) {
-                            continue
+            for (rootDir in validDirs) {
+                try {
+                    rootDir.walkTopDown()
+                        .maxDepth(5)
+                        .filter { file ->
+                            if (file.isDirectory) {
+                                // Skip hidden folders and Android private data caches
+                                val name = file.name
+                                !name.startsWith(".") && name != "Android" && name != "data" && name != "cache"
+                            } else {
+                                file.isFile && file.length() >= 10240L && file.extension.lowercase() in audioExts
+                            }
                         }
+                        .forEach { file ->
+                            if (!file.isFile) return@forEach
 
-                        // Trigger MediaScannerConnection so Android indexes it
-                        try {
-                            MediaScannerConnection.scanFile(
-                                context,
-                                arrayOf(file.absolutePath),
-                                null,
-                                null
+                            val fileUri = Uri.fromFile(file).toString()
+                            val fileNameClean = file.nameWithoutExtension.trim().lowercase()
+                            if (existingUrls.contains(fileUri) || existingTitles.contains(fileNameClean)) {
+                                return@forEach
+                            }
+
+                            // Trigger MediaScannerConnection so Android indexes it
+                            try {
+                                MediaScannerConnection.scanFile(
+                                    context,
+                                    arrayOf(file.absolutePath),
+                                    null,
+                                    null
+                                )
+                            } catch (_: Exception) {}
+
+                            if (retriever == null) {
+                                retriever = MediaMetadataRetriever()
+                            }
+
+                            var title = file.nameWithoutExtension
+                            var artist = "Unknown Artist"
+                            var album = file.parentFile?.name ?: "Download"
+                            var durationSec = 0L
+
+                            try {
+                                retriever?.setDataSource(file.absolutePath)
+                                val metaTitle = retriever?.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                                val metaArtist = retriever?.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                                val metaAlbum = retriever?.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                                val metaDur = retriever?.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+
+                                if (!metaTitle.isNullOrBlank()) title = metaTitle.trim()
+                                if (!metaArtist.isNullOrBlank() && metaArtist != "<unknown>") artist = metaArtist.trim()
+                                if (!metaAlbum.isNullOrBlank()) album = metaAlbum.trim()
+                                if (!metaDur.isNullOrBlank()) durationSec = (metaDur.toLongOrNull() ?: 0L) / 1000L
+                            } catch (_: Exception) {}
+
+                            val sizeMb = String.format("%.1f MB", file.length() / (1024.0 * 1024.0))
+                            val addedTime = file.lastModified().takeIf { it > 0L } ?: System.currentTimeMillis()
+
+                            deviceTracks.add(
+                                Track(
+                                    id = "local-file-${file.absolutePath.hashCode()}",
+                                    title = title,
+                                    artist = artist,
+                                    album = album,
+                                    duration = durationSec,
+                                    url = fileUri,
+                                    coverArt = "",
+                                    folder = file.parent ?: "Download",
+                                    dateAdded = addedTime,
+                                    fileSize = sizeMb,
+                                    sourceType = "local"
+                                )
                             )
-                        } catch (_: Exception) {}
-
-                        if (retriever == null) {
-                            retriever = MediaMetadataRetriever()
+                            existingUrls.add(fileUri)
+                            existingTitles.add(title.trim().lowercase())
                         }
-
-                        var title = file.nameWithoutExtension
-                        var artist = "Unknown Artist"
-                        var album = file.parentFile?.name ?: "Download"
-                        var durationSec = 0L
-
-                        try {
-                            retriever.setDataSource(file.absolutePath)
-                            val metaTitle = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                            val metaArtist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                            val metaAlbum = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
-                            val metaDur = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-
-                            if (!metaTitle.isNullOrBlank()) title = metaTitle.trim()
-                            if (!metaArtist.isNullOrBlank() && metaArtist != "<unknown>") artist = metaArtist.trim()
-                            if (!metaAlbum.isNullOrBlank()) album = metaAlbum.trim()
-                            if (!metaDur.isNullOrBlank()) durationSec = (metaDur.toLongOrNull() ?: 0L) / 1000L
-                        } catch (_: Exception) {}
-
-                        val sizeMb = String.format("%.1f MB", file.length() / (1024.0 * 1024.0))
-                        val addedTime = file.lastModified().takeIf { it > 0L } ?: System.currentTimeMillis()
-
-                        deviceTracks.add(
-                            Track(
-                                id = "local-file-${file.absolutePath.hashCode()}",
-                                title = title,
-                                artist = artist,
-                                album = album,
-                                duration = durationSec,
-                                url = fileUri,
-                                coverArt = "",
-                                folder = file.parent ?: "Download",
-                                dateAdded = addedTime,
-                                fileSize = sizeMb,
-                                sourceType = "local"
-                            )
-                        )
-                        existingUrls.add(fileUri)
-                        existingTitles.add(title.trim().lowercase())
-                    }
+                } catch (e: Exception) {
+                    Log.w("MusicRepository", "Folder crawl warning on ${rootDir.absolutePath}: ${e.message}")
                 }
             }
             try { retriever?.release() } catch (_: Exception) {}
@@ -626,27 +727,62 @@ class MusicRepository(private val context: Context) {
     }
 
     fun toggleFavorite(trackId: String) {
+        val target = _tracks.value.find { it.id == trackId }
+        val newFav = !(target?.isFavorite ?: false)
+        favoritesPrefs.edit().putBoolean(trackId, newFav).apply()
+        if (target != null) {
+            val normKey = getNormTrackKey(target.title, target.artist)
+            if (normKey.isNotBlank()) {
+                favoritesPrefs.edit().putBoolean(normKey, newFav).apply()
+            }
+        }
         val updated = _tracks.value.map {
-            if (it.id == trackId) it.copy(isFavorite = !it.isFavorite) else it
+            if (it.id == trackId) it.copy(isFavorite = newFav) else it
         }
         _tracks.value = updated
         persistTracks(updated)
     }
 
-    fun recordTrackPlayed(trackId: String) {
+    fun recordTrackPlayed(trackId: String, title: String = "", artist: String = "") {
         val now = System.currentTimeMillis()
+        val targetTrack = _tracks.value.find { it.id == trackId }
+        val effectiveTitle = title.ifBlank { targetTrack?.title ?: "" }
+        val effectiveArtist = artist.ifBlank { targetTrack?.artist ?: "" }
+        val normKey = getNormTrackKey(effectiveTitle, effectiveArtist)
+
+        val currentCount = maxOf(
+            playCountPrefs.getInt(trackId, 0),
+            if (normKey.isNotBlank()) playCountPrefs.getInt(normKey, 0) else 0,
+            targetTrack?.playCount ?: 0
+        )
+        val newCount = currentCount + 1
+
+        playCountPrefs.edit().putInt(trackId, newCount).apply()
+        if (normKey.isNotBlank()) {
+            playCountPrefs.edit().putInt(normKey, newCount).apply()
+        }
+
+        lastPlayedPrefs.edit().putLong(trackId, now).apply()
+        if (normKey.isNotBlank()) {
+            lastPlayedPrefs.edit().putLong(normKey, now).apply()
+        }
+
         val updated = _tracks.value.map {
-            if (it.id == trackId) it.copy(
-                playCount = it.playCount + 1,
-                lastPlayed = now
-            ) else it
+            val matches = it.id == trackId || (normKey.isNotBlank() && getNormTrackKey(it.title, it.artist) == normKey)
+            if (matches) {
+                it.copy(
+                    playCount = newCount,
+                    lastPlayed = now
+                )
+            } else it
         }
         _tracks.value = updated
         persistTracks(updated)
+        Log.i("MusicRepository", "Play recorded for '$effectiveTitle' (id=$trackId), new count=$newCount")
     }
 
-    fun incrementPlayCount(trackId: String) {
-        recordTrackPlayed(trackId)
+    fun incrementPlayCount(trackId: String, title: String = "", artist: String = "") {
+        recordTrackPlayed(trackId, title, artist)
     }
 
     fun saveLastPlaybackState(trackId: String, positionMs: Long, queueIds: List<String>, queueIndex: Int) {

@@ -1,30 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
-    android:width="128dp"
-    android:height="128dp"
+    android:width="108dp"
+    android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Vibrant Gradient Circle (Magenta to Electric Cyan Blue) -->
+    <!-- Soundwave Equalizer Bars on Left -->
     <path
-        android:pathData="M54,54m-44,0a44,44 0,1,1 88,0a44,44 0,1,1 -88,0">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:startX="15"
-                android:startY="15"
-                android:endX="93"
-                android:endY="93"
-                android:type="linear">
-                <item android:offset="0.0" android:color="#D925EE" />
-                <item android:offset="0.4" android:color="#963CF8" />
-                <item android:offset="1.0" android:color="#00A3FF" />
-            </gradient>
-        </aapt:attr>
-    </path>
+        android:fillColor="#80FFFFFF"
+        android:pathData="M18,48 L22,48 A2,2 0 0 1 24,50 L24,58 A2,2 0 0 1 22,60 L18,60 A2,2 0 0 1 16,58 L16,50 A2,2 0 0 1 18,48 Z" />
+    <path
+        android:fillColor="#CCFFFFFF"
+        android:pathData="M26,42 L30,42 A2,2 0 0 1 32,44 L32,64 A2,2 0 0 1 30,66 L26,66 A2,2 0 0 1 24,64 L24,44 A2,2 0 0 1 26,42 Z" />
 
     <!-- Bold White Beamed Musical Note -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M71,36 L46,42 L46,60.5 C43.8,59.3 41,58.7 37.8,59.5 C32.8,60.7 29.5,65.2 30.3,69.5 C31.1,73.8 35.8,76.5 40.8,75.3 C45.2,74.2 48.2,70.5 48.5,66.5 L48.5,47.5 L68.5,42.5 L68.5,56.5 C66.3,55.3 63.5,54.7 60.3,55.5 C55.3,56.7 52,61.2 52.8,65.5 C53.6,69.8 58.3,72.5 63.3,71.3 C67.7,70.2 70.7,66.5 71,62.5 L71,36 Z" />
+        android:pathData="M72,32 L44,38.5 L44,61.5 C41.6,60.2 38.4,59.5 34.8,60.4 C29.2,61.8 25.5,66.8 26.4,71.7 C27.3,76.5 32.6,79.5 38.2,78.2 C43.2,76.9 46.8,72.7 46.8,68.2 L46.8,47 L69.2,41.5 L69.2,57.5 C66.8,56.2 63.6,55.5 60,56.4 C54.4,57.8 50.7,62.8 51.6,67.7 C52.5,72.5 57.8,75.5 63.4,74.2 C68.4,72.9 72,68.7 72,64.2 L72,32 Z" />
+
+    <!-- Soundwave Equalizer Bars on Right -->
+    <path
+        android:fillColor="#CCFFFFFF"
+        android:pathData="M78,42 L82,42 A2,2 0 0 1 84,44 L84,64 A2,2 0 0 1 82,66 L78,66 A2,2 0 0 1 76,64 L76,44 A2,2 0 0 1 78,42 Z" />
+    <path
+        android:fillColor="#80FFFFFF"
+        android:pathData="M86,48 L90,48 A2,2 0 0 1 92,50 L92,58 A2,2 0 0 1 90,60 L86,60 A2,2 0 0 1 84,58 L84,50 A2,2 0 0 1 86,48 Z" />
 </vector>

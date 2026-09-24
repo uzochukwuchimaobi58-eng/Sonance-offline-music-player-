@@ -34,6 +34,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileInputStream
 
 class PlaybackManager(
     private val context: Context,
@@ -264,57 +267,108 @@ class PlaybackManager(
         loadAndPlay(track, startPositionMs)
     }
 
+    private var playJob: Job? = null
+
     private fun loadAndPlay(track: Track, startPositionMs: Long = 0L) {
+        playJob?.cancel()
         releasePlayer()
-        try {
-            val mp = MediaPlayer()
-            mp.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .build()
-            )
 
-            if (track.url.startsWith("http://") || track.url.startsWith("https://") || track.url.startsWith("content://")) {
-                mp.setDataSource(context, Uri.parse(track.url))
-            } else if (track.url.isNotEmpty()) {
-                mp.setDataSource(track.url)
-            } else {
-                // Fallback default url if empty
-                mp.setDataSource(context, Uri.parse("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"))
-            }
+        playJob = scope.launch(Dispatchers.IO) {
+            try {
+                val mp = MediaPlayer()
+                mp.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .build()
+                )
 
-            mp.setOnPreparedListener { player ->
-                _durationMs.value = player.duration.toLong().coerceAtLeast(track.duration * 1000L)
-                attachAudioEffects(player.audioSessionId)
-                applySpeedInternal(player, _playbackSpeed.value)
-                applyVolumeInternal(player, _volume.value)
-                if (startPositionMs > 0L) {
-                    player.seekTo(startPositionMs.toInt())
-                    _currentPositionMs.value = startPositionMs
+                // High compatibility data source resolution for all devices (Redmi, Tecno, Samsung, etc.)
+                when {
+                    track.url.startsWith("content://") -> {
+                        val uri = Uri.parse(track.url)
+                        var sourceSet = false
+                        try {
+                            context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                                mp.setDataSource(pfd.fileDescriptor)
+                                sourceSet = true
+                            }
+                        } catch (e: Throwable) {
+                            Log.w(tag, "openFileDescriptor fallback: ${e.message}")
+                        }
+                        if (!sourceSet) {
+                            mp.setDataSource(context, uri)
+                        }
+                    }
+                    track.url.startsWith("file://") || track.url.startsWith("/") -> {
+                        val filePath = if (track.url.startsWith("file://")) {
+                            Uri.parse(track.url).path ?: track.url.removePrefix("file://")
+                        } else {
+                            track.url
+                        }
+                        val file = File(filePath)
+                        if (file.exists() && file.canRead()) {
+                            FileInputStream(file).use { fis ->
+                                mp.setDataSource(fis.fd)
+                            }
+                        } else {
+                            mp.setDataSource(context, Uri.parse(track.url))
+                        }
+                    }
+                    track.url.startsWith("http://") || track.url.startsWith("https://") -> {
+                        mp.setDataSource(context, Uri.parse(track.url))
+                    }
+                    track.url.isNotEmpty() -> {
+                        mp.setDataSource(track.url)
+                    }
+                    else -> {
+                        mp.setDataSource(context, Uri.parse("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"))
+                    }
                 }
-                player.start()
-                _isPlaying.value = true
-                repository?.recordTrackPlayed(track.id)
-                onTrackCompletedCallback?.invoke(track)
-                notificationManager.updateNotification(track, true, if (startPositionMs > 0L) startPositionMs else 0L, _durationMs.value)
-            }
 
-            mp.setOnCompletionListener {
-                handleTrackCompletion()
-            }
+                withContext(Dispatchers.Main) {
+                    mp.setOnPreparedListener { player ->
+                        _durationMs.value = player.duration.toLong().coerceAtLeast(track.duration * 1000L)
+                        applySpeedInternal(player, _playbackSpeed.value)
+                        applyVolumeInternal(player, _volume.value)
+                        if (startPositionMs > 0L) {
+                            player.seekTo(startPositionMs.toInt())
+                            _currentPositionMs.value = startPositionMs
+                        }
+                        player.start()
+                        _isPlaying.value = true
+                        repository?.recordTrackPlayed(track.id, track.title, track.artist)
+                        _currentTrack.value = track.copy(
+                            playCount = track.playCount + 1,
+                            lastPlayed = System.currentTimeMillis()
+                        )
+                        notificationManager.updateNotification(track, true, if (startPositionMs > 0L) startPositionMs else 0L, _durationMs.value)
 
-            mp.setOnErrorListener { _, what, extra ->
-                Log.e(tag, "MediaPlayer error: what=$what extra=$extra")
-                _isPlaying.value = false
-                false
-            }
+                        // Attach audio effects asynchronously so audio HAL never freezes the UI thread
+                        scope.launch(Dispatchers.IO) {
+                            attachAudioEffects(player.audioSessionId)
+                        }
+                    }
 
-            mediaPlayer = mp
-            mp.prepareAsync()
-        } catch (e: Exception) {
-            Log.e(tag, "Error loading track ${track.title}", e)
-            _isPlaying.value = false
+                    mp.setOnCompletionListener {
+                        handleTrackCompletion()
+                    }
+
+                    mp.setOnErrorListener { _, what, extra ->
+                        Log.e(tag, "MediaPlayer error: what=$what extra=$extra")
+                        _isPlaying.value = false
+                        false
+                    }
+
+                    mediaPlayer = mp
+                    mp.prepareAsync()
+                }
+            } catch (e: Exception) {
+                Log.e(tag, "Error loading track ${track.title}", e)
+                withContext(Dispatchers.Main) {
+                    _isPlaying.value = false
+                }
+            }
         }
     }
 
@@ -816,21 +870,34 @@ class PlaybackManager(
     }
 
     private fun releasePlayer() {
-        try {
-            equalizer?.release()
-            equalizer = null
-            bassBoost?.release()
-            bassBoost = null
-            virtualizer?.release()
-            virtualizer = null
-            visualizer?.release()
-            visualizer = null
+        val oldPlayer = mediaPlayer
+        mediaPlayer = null
+        val oldEq = equalizer
+        equalizer = null
+        val oldBb = bassBoost
+        bassBoost = null
+        val oldVz = virtualizer
+        virtualizer = null
+        val oldVis = visualizer
+        visualizer = null
 
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
-            mediaPlayer = null
-        } catch (e: Exception) {
-            Log.e(tag, "Error releasing player", e)
+        scope.launch(Dispatchers.IO) {
+            try {
+                oldVis?.release()
+            } catch (_: Throwable) {}
+            try {
+                oldEq?.release()
+            } catch (_: Throwable) {}
+            try {
+                oldBb?.release()
+            } catch (_: Throwable) {}
+            try {
+                oldVz?.release()
+            } catch (_: Throwable) {}
+            try {
+                oldPlayer?.stop()
+                oldPlayer?.release()
+            } catch (_: Throwable) {}
         }
     }
 
@@ -857,7 +924,7 @@ class PlaybackManager(
         ): PlaybackManager {
             val inst = instance ?: synchronized(this) {
                 instance ?: PlaybackManager(context.applicationContext) { completedTrack ->
-                    instance?.repository?.incrementPlayCount(completedTrack.id)
+                    instance?.repository?.incrementPlayCount(completedTrack.id, completedTrack.title, completedTrack.artist)
                 }.also { instance = it }
             }
             if (repository != null) {

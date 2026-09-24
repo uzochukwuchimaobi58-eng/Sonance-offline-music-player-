@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.*
@@ -161,6 +162,35 @@ fun LyricsModeScreen(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Download Lyrics (.lrc & .txt to Downloads)
+                IconButton(
+                    onClick = {
+                        if (track != null && activeLyricsText.isNotBlank()) {
+                            coroutineScope.launch {
+                                com.sonance.musicplayer.util.AudioExportHelper.exportLyrics(
+                                    context = context,
+                                    track = track,
+                                    lyricsContent = activeLyricsText
+                                )
+                            }
+                        } else {
+                            android.widget.Toast.makeText(context, "No lyrics loaded to download", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .clip(CircleShape)
+                        .background(theme.headerBg)
+                        .testTag("btn_download_lyrics")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = "Download Lyrics",
+                        tint = theme.accentColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
                 // Rescan / Refresh Button
                 IconButton(
                     onClick = {

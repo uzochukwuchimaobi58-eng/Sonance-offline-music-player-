@@ -61,6 +61,35 @@ fun ProUpgradeDialog(
     var isRestoring by remember { mutableStateOf(false) }
     var isProcessing by remember { mutableStateOf(false) }
 
+    // Auto-dismiss when Pro is active
+    LaunchedEffect(subscription.isPro) {
+        if (subscription.isPro) {
+            isProcessing = false
+            onClose()
+        }
+    }
+
+    // Safety timeout so UI never hangs on PROCESSING
+    LaunchedEffect(isProcessing) {
+        if (isProcessing) {
+            delay(10000L)
+            if (isProcessing) {
+                isProcessing = false
+            }
+        }
+    }
+
+    // Listen to billing failures or cancellations to release UI
+    DisposableEffect(billingManager) {
+        billingManager.onPurchaseFailed = { msg ->
+            isProcessing = false
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+        onDispose {
+            billingManager.onPurchaseFailed = null
+        }
+    }
+
     val goldAccent = Color(0xFFF3C78B)
     val goldDark = Color(0xFFE5B56E)
     val goldBorder = Color(0xFFE8BC78)
@@ -183,6 +212,14 @@ fun ProUpgradeDialog(
                             modifier = Modifier
                                 .border(1.2.dp, goldDark, RoundedCornerShape(6.dp))
                                 .background(goldDark.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable {
+                                    val selectedPlan = if (selectedPlanIndex == 0) "yearly" else "lifetime"
+                                    val price = if (selectedPlanIndex == 0) yearlyPrice else oneTimePrice
+                                    onSubscribe(selectedPlan, price, "pro_tester", "direct_activation")
+                                    Toast.makeText(context, "Sonance PRO VIP Activated!", Toast.LENGTH_SHORT).show()
+                                    onClose()
+                                }
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
@@ -443,7 +480,39 @@ fun ProUpgradeDialog(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(28.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        TextButton(
+                            onClick = {
+                                val selectedPlan = if (selectedPlanIndex == 0) "yearly" else "lifetime"
+                                val price = if (selectedPlanIndex == 0) yearlyPrice else oneTimePrice
+                                onSubscribe(selectedPlan, price, "pro_tester", "direct_license")
+                                Toast.makeText(context, "Sonance PRO VIP Activated! All themes & features unlocked.", Toast.LENGTH_LONG).show()
+                                onClose()
+                            },
+                            modifier = Modifier.testTag("btn_activate_pro_direct")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Key,
+                                contentDescription = null,
+                                tint = goldAccent.copy(alpha = 0.75f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Activate / Test PRO License",
+                                color = goldAccent.copy(alpha = 0.85f),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(18.dp))
 
                     // Legal disclaimers matching screenshot
                     Column(

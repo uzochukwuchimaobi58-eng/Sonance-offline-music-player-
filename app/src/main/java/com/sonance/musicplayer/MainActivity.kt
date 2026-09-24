@@ -161,7 +161,9 @@ class MainActivity : ComponentActivity() {
             val permissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestMultiplePermissions()
             ) { perms ->
-                val granted = perms.values.any { it }
+                val granted = perms[Manifest.permission.READ_MEDIA_AUDIO] == true ||
+                        perms[Manifest.permission.READ_EXTERNAL_STORAGE] == true ||
+                        perms.values.any { it }
                 if (granted) {
                     scope.launch {
                         repository.scanMediaStore()
@@ -184,6 +186,10 @@ class MainActivity : ComponentActivity() {
 
                 if (!hasAudioPerm) {
                     permissionLauncher.launch(permissionsToRequest)
+                } else {
+                    scope.launch {
+                        repository.scanMediaStore()
+                    }
                 }
             }
 
@@ -228,19 +234,17 @@ class MainActivity : ComponentActivity() {
                         ActiveView.LYRICS_MODE -> tracks
                         ActiveView.FAVORITE -> tracks.filter { it.isFavorite }
                         ActiveView.RECENT_PLAY -> {
-                            val recents = tracks.filter { (it.playCount > 0 || it.lastPlayed > 0) && (cutoffTime == 0L || it.lastPlayed >= cutoffTime) }
+                            tracks.filter { it.playCount > 0 || it.lastPlayed > 0L }
                                 .sortedByDescending { it.lastPlayed }
-                            recents.ifEmpty { tracks.sortedByDescending { it.lastPlayed } }
                         }
                         ActiveView.RECENT_ADD -> {
-                            val recents = tracks.filter { cutoffTime == 0L || it.addedDate >= cutoffTime }
-                                .sortedByDescending { it.addedDate }
-                            recents.ifEmpty { tracks.sortedByDescending { it.addedDate } }
+                            // Show tracks ordered by date added/discovered, newest first
+                            tracks.sortedByDescending { it.dateAdded }
                         }
                         ActiveView.MOST_PLAY -> {
-                            val mostly = tracks.filter { it.playCount > 0 && (cutoffTime == 0L || it.lastPlayed >= cutoffTime) }
+                            // Show tracks that have been played, ordered by play count descending
+                            tracks.filter { it.playCount > 0 }
                                 .sortedByDescending { it.playCount }
-                            mostly.ifEmpty { tracks.sortedByDescending { it.playCount } }
                         }
                         ActiveView.PLAYLIST_DETAIL -> {
                             val pl = playlists.find { it.id == activePlaylistId }
@@ -649,7 +653,9 @@ class MainActivity : ComponentActivity() {
                     onClose = { isThemePickerOpen = false },
                     currentTheme = appTheme,
                     onSelectTheme = { repository.saveTheme(it) },
-                    theme = theme
+                    theme = theme,
+                    isPro = isProEffective,
+                    onOpenProUpgrade = { isProUpgradeOpen = true }
                 )
 
                 // Settings Dialog
@@ -671,7 +677,7 @@ class MainActivity : ComponentActivity() {
                             repository.updateFirebaseSettings(updated)
                         }
                     },
-                    userSubscription = userSubscription,
+                    userSubscription = userSubscription.copy(isPro = isProEffective),
                     onOpenProUpgrade = { isProUpgradeOpen = true },
                     onSetDevProState = { isPro -> repository.setDevProState(isPro) },
                     theme = theme

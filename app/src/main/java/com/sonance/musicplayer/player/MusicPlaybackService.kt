@@ -15,21 +15,27 @@ class MusicPlaybackService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START_SERVICE -> {
-                val notification = PlaybackNotificationManager.cachedNotification
-                if (notification != null) {
-                    try {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            startForeground(
-                                PlaybackNotificationManager.NOTIFICATION_ID,
-                                notification,
-                                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                            )
-                        } else {
-                            startForeground(PlaybackNotificationManager.NOTIFICATION_ID, notification)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error starting foreground service", e)
+                val notification = PlaybackNotificationManager.cachedNotification ?: run {
+                    androidx.core.app.NotificationCompat.Builder(this, PlaybackNotificationManager.CHANNEL_ID)
+                        .setSmallIcon(com.sonance.musicplayer.R.drawable.ic_notification_play)
+                        .setContentTitle("Playing Music")
+                        .setContentText("Sonance Music Player")
+                        .setOngoing(true)
+                        .setOnlyAlertOnce(true)
+                        .build()
+                }
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(
+                            PlaybackNotificationManager.NOTIFICATION_ID,
+                            notification,
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                        )
+                    } else {
+                        startForeground(PlaybackNotificationManager.NOTIFICATION_ID, notification)
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error starting foreground service", e)
                 }
             }
             ACTION_STOP_SERVICE -> {

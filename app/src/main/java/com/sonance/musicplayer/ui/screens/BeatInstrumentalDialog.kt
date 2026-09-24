@@ -241,11 +241,16 @@ fun BeatInstrumentalDialog(
                             isConverting = false
                             isGenerated = true
 
+                            // Physically export audio file to device Downloads
+                            val exportedFile = com.sonance.musicplayer.util.AudioExportHelper.exportInstrumentalBeat(context, track)
+
                             // Create instrumental track copy in repository
                             val instTrack = track.copy(
                                 id = "inst-${UUID.randomUUID()}",
                                 title = "${track.title} (Beat Instrumental)",
                                 album = "Instrumentals & Beats",
+                                url = exportedFile?.let { android.net.Uri.fromFile(it).toString() } ?: track.url,
+                                folder = exportedFile?.parent ?: "Download",
                                 lastPlayed = System.currentTimeMillis()
                             )
                             repository?.addTrack(instTrack)
@@ -259,11 +264,13 @@ fun BeatInstrumentalDialog(
                                 melodyLevel = melodyLevel
                             )
 
-                            Toast.makeText(
-                                context,
-                                "✓ '${instTrack.title}' added to your music library!",
-                                Toast.LENGTH_LONG
-                            ).show()
+                            val downloadMsg = if (exportedFile != null) {
+                                "✓ Downloaded to Downloads/${exportedFile.name} & added to library!"
+                            } else {
+                                "✓ '${instTrack.title}' added to your music library!"
+                            }
+
+                            Toast.makeText(context, downloadMsg, Toast.LENGTH_LONG).show()
                             onConversionFinished()
                         }
                     },
