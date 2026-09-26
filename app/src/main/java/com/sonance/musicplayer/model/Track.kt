@@ -22,20 +22,44 @@ enum class EqPreset(val displayName: String) {
 
 @Serializable
 enum class AppTheme(val idStr: String, val displayName: String, val isProOnly: Boolean = false) {
-    DARK_AMOLED("dark-amoled", "Classic Music Player", false),
-    DARK_SLATE("dark-slate", "Modern Slate & Neon Cyan", false),
-    CYBERPUNK("cyberpunk", "Cyberpunk Neon & Violet", false),
-    MIDNIGHT_BLUE("midnight-blue", "Midnight Sapphire Ocean", false),
-    SUNSET_WARM("sunset-warm", "Warm Sunset & Amber", false),
-    EMERALD_FOREST("emerald-forest", "Deep Emerald & Mint Forest", false),
-    CRIMSON_RUBY("crimson-ruby", "Velvet Crimson & Ruby", false),
-    GOLDEN_LUXURY("golden-luxury", "Golden Royalty & Onyx", false),
-    LIGHT_MINIMAL("light-minimal", "Clean Studio Light", false),
-    // Exclusive PRO VIP Themes
-    ROYAL_AMETHYST("royal-amethyst", "VIP Royal Velvet & Amethyst", true),
+    // 3 Free Templates & Wallpapers
+    NATURE_FLOWER("nature-flower", "Nature Bellflower Meadow", false),
+    ANIMAL_PETS("animal-pets", "Meadow Puppy & Kitten", false),
+    DARK_AMOLED("dark-amoled", "Classic Player (AMOLED)", false),
+
+    // Template Themes (Locked for Pro or Watch Ad)
+    DARK_SLATE("dark-slate", "Modern Slate & Cyan", true),
+    FROSTED_GLASS("frosted-glass", "Frosted Glass Studio", true),
+    CRIMSON_COUNTDOWN("crimson-countdown", "Red Gradient & Vinyl Retro", true),
+    MONOCHROME_SPOKE("monochrome-spoke", "Monochrome Spoke Turntable", true),
+    EMERALD_ARC("emerald-arc", "Emerald Arc Hi-Fi", true),
+    STUDIO_PIANO("studio-piano", "Studio Piano Acoustic", true),
+    AUTUMN_BOKEH("autumn-bokeh", "Golden Autumn Vibes", true),
+    ROCK_PLAYLIST("rock-playlist", "Rock Festival Stage", true),
+    MOUNTAIN_BLUR("mountain-blur", "Mountain Serenity Lo-Fi", true),
+    WEEKLY_BLUE("weekly-blue", "Weekly Blue Top Hits", true),
+    TROPICAL_DUSK("tropical-dusk", "Tropical Sunset Chill", true),
+    CAMPUS_SUNSHINE("campus-sunshine", "Sunshine Pop Beats", true),
+    SKY_BLOSSOM("sky-blossom", "Pink Minimalist Pastel", true),
+    BOHO_PAMPAS("boho-pampas", "Boho Acoustic Warmth", true),
+    ALPINE_LAKE("alpine-lake", "Alpine Vista Soundscape", true),
+    SYNTHWAVE_NEON("synthwave-neon", "Synthwave Neon Visualizer", true),
+    SUNSET_OCEAN("sunset-ocean", "Sunset Ocean Synth & Chill", true),
+    LIQUID_CHROME("liquid-chrome", "Holographic Liquid Chrome", true),
+    ROMANTIC_DREAMS("romantic-dreams", "Beige Minimalist & Warm Boho", true),
+
+    // Classic & VIP Themes
+    CYBERPUNK("cyberpunk", "Cyberpunk Neon & Violet", true),
+    MIDNIGHT_BLUE("midnight-blue", "Midnight Sapphire Ocean", true),
+    SUNSET_WARM("sunset-warm", "Warm Sunset & Amber", true),
+    EMERALD_FOREST("emerald-forest", "Deep Emerald Forest", true),
+    CRIMSON_RUBY("crimson-ruby", "Velvet Crimson Ruby", true),
+    GOLDEN_LUXURY("golden-luxury", "Golden Royalty & Onyx", true),
+    LIGHT_MINIMAL("light-minimal", "Clean Studio Minimal", true),
+    ROYAL_AMETHYST("royal-amethyst", "VIP Royal Velvet Amethyst", true),
     AURORA_BOREALIS("aurora-borealis", "VIP Nordic Aurora Glow", true),
-    CARBON_TITANIUM("carbon-titanium", "VIP Stealth Carbon & Titanium", true),
-    ROSE_GOLD_LUXE("rose-gold-luxe", "VIP Rose Gold & Champagne", true),
+    CARBON_TITANIUM("carbon-titanium", "VIP Stealth Carbon Titanium", true),
+    ROSE_GOLD_LUXE("rose-gold-luxe", "VIP Rose Gold Champagne", true),
     NEON_MATRIX("neon-matrix", "VIP Neon Green Matrix", true)
 }
 

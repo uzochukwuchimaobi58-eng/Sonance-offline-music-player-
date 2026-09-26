@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -47,6 +48,7 @@ fun FullPlayerSheet(
     isKaraokeMode: Boolean,
     theme: ThemeConfig,
     showForwardBackward: Boolean = true,
+    customWallpaperUri: String? = null,
     onTogglePlay: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
@@ -82,16 +84,37 @@ fun FullPlayerSheet(
             .fillMaxSize()
             .testTag("full_player_sheet")
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (customWallpaperUri != null) {
+                AsyncImage(
+                    model = customWallpaperUri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(0.20f)
+                )
+            } else if (theme.coverDrawableRes != null) {
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(id = theme.coverDrawableRes),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(0.18f)
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
             // Top Bar: Minimize / Title / Actions
             Row(
                 modifier = Modifier
@@ -295,124 +318,173 @@ fun FullPlayerSheet(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Playback Controls Row (Shuffle, Prev, Play/Pause, Next, Repeat)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceEvenly
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp)
             ) {
-                Surface(
-                    shape = CircleShape,
-                    color = if (isShuffle) theme.accentColor.copy(alpha = 0.22f) else theme.headerBg,
-                    border = if (isShuffle) androidx.compose.foundation.BorderStroke(1.5.dp, theme.accentColor) else null,
-                    modifier = Modifier.size(44.dp)
+                val availableWidth = maxWidth
+                val isCompact = availableWidth < 350.dp
+                val isMedium = availableWidth in 350.dp..390.dp
+
+                val playSize = if (isCompact) 56.dp else if (isMedium) 62.dp else 68.dp
+                val playIconSize = if (isCompact) 30.dp else if (isMedium) 34.dp else 38.dp
+                val circleBtnSize = if (isCompact) 38.dp else if (isMedium) 42.dp else 44.dp
+                val circleIconSize = if (isCompact) 20.dp else if (isMedium) 24.dp else 26.dp
+                val skipBtnSize = if (isCompact) 28.dp else if (isMedium) 32.dp else 36.dp
+                val skipIconSize = if (isCompact) 18.dp else if (isMedium) 22.dp else 24.dp
+                val navIconSize = if (isCompact) 26.dp else if (isMedium) 30.dp else 34.dp
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    // Shuffle Button with visible circle container on all devices
+                    Surface(
+                        shape = CircleShape,
+                        color = if (isShuffle) theme.accentColor.copy(alpha = 0.22f) else theme.headerBg.copy(alpha = 0.85f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            width = if (isShuffle) 1.5.dp else 1.dp,
+                            color = if (isShuffle) theme.accentColor else theme.textSecondary.copy(alpha = 0.35f)
+                        ),
+                        modifier = Modifier.size(circleBtnSize)
+                    ) {
+                        IconButton(
+                            onClick = onToggleShuffle,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag("btn_full_shuffle")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Shuffle,
+                                contentDescription = "Shuffle",
+                                tint = if (isShuffle) theme.accentColor else theme.textSecondary,
+                                modifier = Modifier.size(circleIconSize)
+                            )
+                        }
+                    }
+
+                    // Previous Button
                     IconButton(
-                        onClick = onToggleShuffle,
+                        onClick = onPrev,
                         modifier = Modifier
-                            .fillMaxSize()
-                            .testTag("btn_full_shuffle")
+                            .size(if (isCompact) 36.dp else 44.dp)
+                            .testTag("btn_full_prev")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Shuffle,
-                            contentDescription = "Shuffle",
-                            tint = if (isShuffle) theme.accentColor else theme.textSecondary,
-                            modifier = Modifier.size(28.dp)
+                            imageVector = Icons.Default.SkipPrevious,
+                            contentDescription = "Previous",
+                            tint = theme.textPrimary,
+                            modifier = Modifier.size(navIconSize)
                         )
                     }
-                }
 
-                IconButton(
-                    onClick = onPrev,
-                    modifier = Modifier.testTag("btn_full_prev")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SkipPrevious,
-                        contentDescription = "Previous",
-                        tint = theme.textPrimary,
-                        modifier = Modifier.size(34.dp)
-                    )
-                }
-
-                if (showForwardBackward) {
-                    IconButton(
-                        onClick = { onSeek((currentPosMs - 10000L).coerceAtLeast(0L)) },
-                        modifier = Modifier.testTag("btn_full_rewind_10")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FastRewind,
-                            contentDescription = "Rewind 10 seconds",
-                            tint = theme.textSecondary,
-                            modifier = Modifier.size(26.dp)
-                        )
+                    // Rewind 10s (if enabled)
+                    if (showForwardBackward) {
+                        IconButton(
+                            onClick = { onSeek((currentPosMs - 10000L).coerceAtLeast(0L)) },
+                            modifier = Modifier
+                                .size(skipBtnSize)
+                                .testTag("btn_full_rewind_10")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FastRewind,
+                                contentDescription = "Rewind 10 seconds",
+                                tint = theme.textSecondary,
+                                modifier = Modifier.size(skipIconSize)
+                            )
+                        }
                     }
-                }
 
-                // Big Play / Pause Button
-                Box(
-                    modifier = Modifier
-                        .size(68.dp)
-                        .clip(CircleShape)
-                        .background(theme.accentColor)
-                        .clickable(onClick = onTogglePlay)
-                        .testTag("btn_full_play_pause"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause" else "Play",
-                        tint = Color.Black,
-                        modifier = Modifier.size(38.dp)
-                    )
-                }
-
-                if (showForwardBackward) {
-                    IconButton(
-                        onClick = { onSeek((currentPosMs + 10000L).coerceAtMost(durationMs)) },
-                        modifier = Modifier.testTag("btn_full_forward_10")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FastForward,
-                            contentDescription = "Forward 10 seconds",
-                            tint = theme.textSecondary,
-                            modifier = Modifier.size(26.dp)
-                        )
-                    }
-                }
-
-                IconButton(
-                    onClick = onNext,
-                    modifier = Modifier.testTag("btn_full_next")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SkipNext,
-                        contentDescription = "Next",
-                        tint = theme.textPrimary,
-                        modifier = Modifier.size(34.dp)
-                    )
-                }
-
-                Surface(
-                    shape = CircleShape,
-                    color = if (repeatMode != RepeatMode.OFF) theme.accentColor.copy(alpha = 0.22f) else theme.headerBg,
-                    border = if (repeatMode != RepeatMode.OFF) androidx.compose.foundation.BorderStroke(1.5.dp, theme.accentColor) else null,
-                    modifier = Modifier.size(44.dp)
-                ) {
-                    IconButton(
-                        onClick = onToggleRepeat,
+                    // Big Play / Pause Button
+                    Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .testTag("btn_full_repeat")
+                            .size(playSize)
+                            .clip(CircleShape)
+                            .background(theme.accentColor)
+                            .clickable(onClick = onTogglePlay)
+                            .testTag("btn_full_play_pause"),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = when (repeatMode) {
-                                RepeatMode.ONE -> Icons.Default.RepeatOne
-                                RepeatMode.ALL -> Icons.Default.Repeat
-                                RepeatMode.OFF -> Icons.Default.Repeat
-                            },
-                            contentDescription = "Repeat",
-                            tint = if (repeatMode != RepeatMode.OFF) theme.accentColor else theme.textSecondary,
-                            modifier = Modifier.size(28.dp)
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            tint = Color.Black,
+                            modifier = Modifier.size(playIconSize)
                         )
+                    }
+
+                    // Forward 10s (if enabled)
+                    if (showForwardBackward) {
+                        IconButton(
+                            onClick = { onSeek((currentPosMs + 10000L).coerceAtMost(durationMs)) },
+                            modifier = Modifier
+                                .size(skipBtnSize)
+                                .testTag("btn_full_forward_10")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FastForward,
+                                contentDescription = "Forward 10 seconds",
+                                tint = theme.textSecondary,
+                                modifier = Modifier.size(skipIconSize)
+                            )
+                        }
+                    }
+
+                    // Next Button
+                    IconButton(
+                        onClick = onNext,
+                        modifier = Modifier
+                            .size(if (isCompact) 36.dp else 44.dp)
+                            .testTag("btn_full_next")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SkipNext,
+                            contentDescription = "Next",
+                            tint = theme.textPrimary,
+                            modifier = Modifier.size(navIconSize)
+                        )
+                    }
+
+                    // Prominent Repeat Button with guaranteed visible circle container & indicator on every device
+                    Surface(
+                        shape = CircleShape,
+                        color = if (repeatMode != RepeatMode.OFF) theme.accentColor.copy(alpha = 0.22f) else theme.headerBg.copy(alpha = 0.85f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            width = if (repeatMode != RepeatMode.OFF) 1.5.dp else 1.dp,
+                            color = if (repeatMode != RepeatMode.OFF) theme.accentColor else theme.textSecondary.copy(alpha = 0.35f)
+                        ),
+                        modifier = Modifier.size(circleBtnSize)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable(onClick = onToggleRepeat)
+                                .testTag("btn_full_repeat"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = when (repeatMode) {
+                                    RepeatMode.ONE -> Icons.Default.RepeatOne
+                                    RepeatMode.ALL -> Icons.Default.Repeat
+                                    RepeatMode.OFF -> Icons.Default.Repeat
+                                },
+                                contentDescription = "Repeat",
+                                tint = if (repeatMode != RepeatMode.OFF) theme.accentColor else theme.textSecondary,
+                                modifier = Modifier.size(circleIconSize)
+                            )
+                            if (repeatMode != RepeatMode.OFF) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(bottom = 2.dp)
+                                        .size(4.dp)
+                                        .clip(CircleShape)
+                                        .background(theme.accentColor)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -490,6 +562,7 @@ fun FullPlayerSheet(
                 }
             }
         }
+    }
     }
 
     // Speed Dialog

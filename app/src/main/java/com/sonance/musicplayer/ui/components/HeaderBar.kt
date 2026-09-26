@@ -50,7 +50,7 @@ fun HeaderBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(theme.headerBg)
+            .background(theme.headerBg.copy(alpha = 0.90f))
             .statusBarsPadding()
             .height(56.dp)
             .padding(horizontal = 8.dp),

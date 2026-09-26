@@ -330,12 +330,24 @@ fun SidebarDrawer(
                         theme = theme
                     )
 
-                    // Repeat Current
+                    // Repeat Mode
                     SidebarItem(
-                        icon = if (repeatMode == RepeatMode.ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                        title = "Repeat Current",
-                        badge = if (repeatMode == RepeatMode.ONE) "ON" else null,
-                        iconColor = if (repeatMode == RepeatMode.ONE) theme.accentColor else theme.textSecondary,
+                        icon = when (repeatMode) {
+                            RepeatMode.ONE -> Icons.Default.RepeatOne
+                            RepeatMode.ALL -> Icons.Default.Repeat
+                            RepeatMode.OFF -> Icons.Default.Repeat
+                        },
+                        title = when (repeatMode) {
+                            RepeatMode.ONE -> "Repeat Track (One)"
+                            RepeatMode.ALL -> "Repeat All Tracks"
+                            RepeatMode.OFF -> "Repeat (Off)"
+                        },
+                        badge = when (repeatMode) {
+                            RepeatMode.ONE -> "ONE"
+                            RepeatMode.ALL -> "ALL"
+                            RepeatMode.OFF -> null
+                        },
+                        iconColor = if (repeatMode != RepeatMode.OFF) theme.accentColor else theme.textSecondary,
                         onClick = onToggleRepeat,
                         tag = "menu_repeat_current",
                         theme = theme

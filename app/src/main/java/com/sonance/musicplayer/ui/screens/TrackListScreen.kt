@@ -155,7 +155,6 @@ fun TrackListScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(theme.bgCanvas)
     ) {
         Column(
             modifier = Modifier.fillMaxSize()
@@ -410,8 +409,11 @@ fun TrackListScreen(
                     // Prominent Repeat Button matching the toolbar style
                     Surface(
                         shape = CircleShape,
-                        color = if (repeatMode != RepeatMode.OFF) theme.accentColor.copy(alpha = 0.25f) else theme.headerBg,
-                        border = if (repeatMode != RepeatMode.OFF) androidx.compose.foundation.BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.7f)) else null,
+                        color = if (repeatMode != RepeatMode.OFF) theme.accentColor.copy(alpha = 0.25f) else theme.headerBg.copy(alpha = 0.85f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (repeatMode != RepeatMode.OFF) theme.accentColor.copy(alpha = 0.8f) else theme.textSecondary.copy(alpha = 0.35f)
+                        ),
                         modifier = Modifier.size(36.dp)
                     ) {
                         IconButton(

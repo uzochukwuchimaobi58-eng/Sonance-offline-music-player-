@@ -64,7 +64,6 @@ fun HomeScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(theme.bgCanvas)
     ) {
         Column(
             modifier = Modifier
@@ -274,14 +273,25 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // STUDIO TOOLS SECTION
-            Text(
-                text = "STUDIO TOOLS",
-                color = theme.textPrimary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp,
-                modifier = Modifier.padding(start = 2.dp, bottom = 12.dp)
-            )
+            Row(
+                modifier = Modifier.padding(start = 2.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(4.dp, 14.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(theme.accentColor)
+                )
+                Text(
+                    text = "STUDIO TOOLS",
+                    color = theme.textPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -292,11 +302,11 @@ fun HomeScreen(
                     subtitle = "Ringtone, Alarm & Cutter",
                     badge = "TRIM",
                     icon = Icons.Default.ContentCut,
-                    iconTint = Color(0xFF818CF8),
-                    badgeBg = Color(0xFF6366F1).copy(alpha = 0.2f),
-                    badgeText = Color(0xFFA5B4FC),
-                    cardBg = if (theme.isDark) Color(0xFF1A2234) else Color(0xFFF0F5FF),
-                    cardBorder = if (theme.isDark) Color(0x406366F1) else Color(0xFFC7D2FE),
+                    iconTint = theme.accentColor,
+                    badgeBg = theme.accentColor.copy(alpha = 0.2f),
+                    badgeText = theme.accentColor,
+                    cardBg = theme.sidebarBg.copy(alpha = 0.90f),
+                    cardBorder = theme.headerBorder,
                     textColor = theme.textPrimary,
                     subtextColor = theme.textSecondary,
                     modifier = Modifier.weight(1f),
@@ -312,8 +322,8 @@ fun HomeScreen(
                     iconTint = Color(0xFFFB7185),
                     badgeBg = Color(0xFFF43F5E).copy(alpha = 0.2f),
                     badgeText = Color(0xFFFDA4AF),
-                    cardBg = if (theme.isDark) Color(0xFF2E1925) else Color(0xFFFFF1F2),
-                    cardBorder = if (theme.isDark) Color(0x40F43F5E) else Color(0xFFFECDD3),
+                    cardBg = theme.sidebarBg.copy(alpha = 0.90f),
+                    cardBorder = theme.headerBorder,
                     textColor = theme.textPrimary,
                     subtextColor = theme.textSecondary,
                     modifier = Modifier.weight(1f),
@@ -336,8 +346,8 @@ fun HomeScreen(
                     iconTint = Color(0xFFFBBF24),
                     badgeBg = Color(0xFFF59E0B).copy(alpha = 0.2f),
                     badgeText = Color(0xFFFDE68A),
-                    cardBg = if (theme.isDark) Color(0xFF282115) else Color(0xFFFEFCE8),
-                    cardBorder = if (theme.isDark) Color(0x4DF59E0B) else Color(0xFFFDE68A),
+                    cardBg = theme.sidebarBg.copy(alpha = 0.90f),
+                    cardBorder = theme.headerBorder,
                     textColor = theme.textPrimary,
                     subtextColor = theme.textSecondary,
                     modifier = Modifier.weight(1f),
@@ -353,8 +363,8 @@ fun HomeScreen(
                     iconTint = Color(0xFFC084FC),
                     badgeBg = Color(0xFFA855F7).copy(alpha = 0.2f),
                     badgeText = Color(0xFFE9D5FF),
-                    cardBg = if (theme.isDark) Color(0xFF1E1C2E) else Color(0xFFF5F3FF),
-                    cardBorder = if (theme.isDark) Color(0x4DA855F7) else Color(0xFFE9D5FF),
+                    cardBg = theme.sidebarBg.copy(alpha = 0.90f),
+                    cardBorder = theme.headerBorder,
                     textColor = theme.textPrimary,
                     subtextColor = theme.textSecondary,
                     modifier = Modifier.weight(1f),
@@ -371,14 +381,25 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "PLAYLISTS",
-                    color = theme.textPrimary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(start = 2.dp)
-                )
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(4.dp, 14.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(theme.accentColor)
+                    )
+                    Text(
+                        text = "PLAYLISTS",
+                        color = theme.textPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                }
 
                 TextButton(onClick = onOpenCreatePlaylist) {
                     Icon(
@@ -406,7 +427,7 @@ fun HomeScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(theme.headerBg)
+                            .background(theme.sidebarBg.copy(alpha = 0.90f))
                             .border(1.dp, theme.headerBorder, RoundedCornerShape(12.dp))
                             .clickable { onSelectPlaylist(pl.id) }
                             .padding(horizontal = 14.dp, vertical = 12.dp)
@@ -490,45 +511,58 @@ private fun CategoryCard(
     tag: String,
     onClick: () -> Unit
 ) {
-    Box(
+    Surface(
         modifier = modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(10.dp))
-            .background(bg)
-            .clickable(onClick = onClick)
-            .padding(8.dp)
-            .testTag(tag)
+            .testTag(tag),
+        shape = RoundedCornerShape(12.dp),
+        color = bg.copy(alpha = 0.95f),
+        border = androidx.compose.foundation.BorderStroke(1.2.dp, Color.White.copy(alpha = 0.30f)),
+        shadowElevation = 3.dp,
+        onClick = onClick
     ) {
-        if (count > 0) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp)
+        ) {
+            if (count > 0) {
+                Surface(
+                    modifier = Modifier.align(Alignment.TopEnd),
+                    shape = RoundedCornerShape(6.dp),
+                    color = Color.Black.copy(alpha = 0.35f)
+                ) {
+                    Text(
+                        text = count.toString(),
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                    )
+                }
+            }
+
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = Color.White,
+                modifier = Modifier
+                    .size(34.dp)
+                    .align(Alignment.Center)
+            )
+
             Text(
-                text = count.toString(),
-                color = textColor.copy(alpha = 0.9f),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.align(Alignment.TopEnd)
+                text = title,
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 0.5.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
             )
         }
-
-        Icon(
-            imageVector = icon,
-            contentDescription = title,
-            tint = textColor,
-            modifier = Modifier
-                .size(34.dp)
-                .align(Alignment.Center)
-        )
-
-        Text(
-            text = title,
-            color = textColor,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.5.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-        )
     }
 }
 

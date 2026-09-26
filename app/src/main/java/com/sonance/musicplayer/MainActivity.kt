@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.core.content.ContextCompat
 import com.sonance.musicplayer.data.MusicRepository
 import com.sonance.musicplayer.model.*
@@ -72,6 +75,8 @@ class MainActivity : ComponentActivity() {
             }
             val playlists by repository.playlistsFlow.collectAsState()
             val appTheme by repository.themeFlow.collectAsState()
+            val unlockedThemeIds by repository.unlockedThemeIdsFlow.collectAsState()
+            val customWallpaperUri by repository.customWallpaperUriFlow.collectAsState()
             val eqSettings by repository.equalizerFlow.collectAsState()
             val playerSettings by repository.settingsFlow.collectAsState()
             val remoteSettings by repository.remoteSettingsFlow.collectAsState()
@@ -304,71 +309,91 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 } else {
-                    Scaffold(
-                        topBar = {
-                            HeaderBar(
-                                title = activeViewTitle,
-                                isHome = activeView == ActiveView.HOME,
-                                onOpenSidebar = { isSidebarOpen = true },
-                                onBack = {
-                                    activeView = ActiveView.HOME
-                                    activePlaylistId = null
-                                    searchQuery = ""
-                                },
-                                searchQuery = searchQuery,
-                                onSearchChange = { searchQuery = it },
-                                isPro = isProEffective,
-                                onOpenPro = { isProUpgradeOpen = true },
-                                onOpenScanModal = { isScanModalOpen = true },
-                                onOpenEqualizer = { isEqualizerOpen = true },
-                                onOpenSettings = { isSettingsOpen = true },
-                                onSortSelected = { sortKey -> currentSortBy = sortKey },
-                                theme = theme
+                    Box(modifier = Modifier.fillMaxSize().background(theme.bgCanvas)) {
+                        // Live Wallpaper Background: Custom User Photo OR Template Picture
+                        if (customWallpaperUri != null) {
+                            coil.compose.AsyncImage(
+                                model = customWallpaperUri,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
                             )
-                        },
-                        bottomBar = {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(theme.miniPlayerBg)
-                                    .navigationBarsPadding()
-                            ) {
-                                // Mini Player (Lifted on top of AdMobBanner)
-                                AnimatedVisibility(
-                                    visible = currentTrack != null,
-                                    enter = slideInVertically(initialOffsetY = { it }),
-                                    exit = slideOutVertically(targetOffsetY = { it })
+                            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.42f)))
+                        } else if (theme.coverDrawableRes != null) {
+                            androidx.compose.foundation.Image(
+                                painter = androidx.compose.ui.res.painterResource(id = theme.coverDrawableRes),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.42f)))
+                        }
+
+                        Scaffold(
+                            topBar = {
+                                HeaderBar(
+                                    title = activeViewTitle,
+                                    isHome = activeView == ActiveView.HOME,
+                                    onOpenSidebar = { isSidebarOpen = true },
+                                    onBack = {
+                                        activeView = ActiveView.HOME
+                                        activePlaylistId = null
+                                        searchQuery = ""
+                                    },
+                                    searchQuery = searchQuery,
+                                    onSearchChange = { searchQuery = it },
+                                    isPro = isProEffective,
+                                    onOpenPro = { isProUpgradeOpen = true },
+                                    onOpenScanModal = { isScanModalOpen = true },
+                                    onOpenEqualizer = { isEqualizerOpen = true },
+                                    onOpenSettings = { isSettingsOpen = true },
+                                    onSortSelected = { sortKey -> currentSortBy = sortKey },
+                                    theme = theme
+                                )
+                            },
+                            bottomBar = {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(theme.miniPlayerBg.copy(alpha = 0.92f))
+                                        .navigationBarsPadding()
                                 ) {
-                                    MiniPlayerBar(
-                                        track = currentTrack,
-                                        isPlaying = isPlaying,
-                                        currentPosMs = currentPosMs,
-                                        durationMs = durationMs,
-                                        onTogglePlay = { playbackManager.togglePlayPause() },
-                                        onNext = { playbackManager.skipToNext() },
-                                        onOpenQueue = { isQueueOpen = true },
-                                        onOpenFullPlayer = { isFullPlayerOpen = true },
+                                    // Mini Player (Lifted on top of AdMobBanner)
+                                    AnimatedVisibility(
+                                        visible = currentTrack != null,
+                                        enter = slideInVertically(initialOffsetY = { it }),
+                                        exit = slideOutVertically(targetOffsetY = { it })
+                                    ) {
+                                        MiniPlayerBar(
+                                            track = currentTrack,
+                                            isPlaying = isPlaying,
+                                            currentPosMs = currentPosMs,
+                                            durationMs = durationMs,
+                                            onTogglePlay = { playbackManager.togglePlayPause() },
+                                            onNext = { playbackManager.skipToNext() },
+                                            onOpenQueue = { isQueueOpen = true },
+                                            onOpenFullPlayer = { isFullPlayerOpen = true },
+                                            theme = theme
+                                        )
+                                    }
+
+                                    // AdMob Banner (positioned under the playing music bar at area 2)
+                                    AdMobBanner(
+                                        isPro = isProEffective,
+                                        admobEnabled = remoteSettings.admobEnabled,
+                                        onOpenProUpgrade = { isProUpgradeOpen = true },
                                         theme = theme
                                     )
                                 }
-
-                                // AdMob Banner (positioned under the playing music bar at area 2)
-                                AdMobBanner(
-                                    isPro = isProEffective,
-                                    admobEnabled = remoteSettings.admobEnabled,
-                                    onOpenProUpgrade = { isProUpgradeOpen = true },
-                                    theme = theme
-                                )
-                            }
-                        },
-                        containerColor = theme.bgCanvas
-                    ) { innerPadding ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(innerPadding)
-                        ) {
-                            if (activeView == ActiveView.HOME && searchQuery.isEmpty()) {
+                            },
+                            containerColor = Color.Transparent
+                        ) { innerPadding ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(innerPadding)
+                            ) {
+                                if (activeView == ActiveView.HOME && searchQuery.isEmpty()) {
                                 HomeScreen(
                                     tracks = tracks,
                                     playlists = playlists,
@@ -511,6 +536,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                    }
                 }
 
                 // Sidebar Navigation Drawer
@@ -560,6 +586,7 @@ class MainActivity : ComponentActivity() {
                     isKaraokeMode = isKaraokeMode,
                     theme = theme,
                     showForwardBackward = playerSettings.forwardAndBackward,
+                    customWallpaperUri = customWallpaperUri,
                     onTogglePlay = { playbackManager.togglePlayPause() },
                     onPrev = { playbackManager.skipToPrevious() },
                     onNext = { playbackManager.skipToNext() },
@@ -655,7 +682,11 @@ class MainActivity : ComponentActivity() {
                     onSelectTheme = { repository.saveTheme(it) },
                     theme = theme,
                     isPro = isProEffective,
-                    onOpenProUpgrade = { isProUpgradeOpen = true }
+                    onOpenProUpgrade = { isProUpgradeOpen = true },
+                    unlockedThemeIds = unlockedThemeIds,
+                    onUnlockThemeByAd = { repository.unlockThemeByAd(it) },
+                    customWallpaperUri = customWallpaperUri,
+                    onSetCustomWallpaperUri = { repository.setCustomWallpaperUri(it) }
                 )
 
                 // Settings Dialog

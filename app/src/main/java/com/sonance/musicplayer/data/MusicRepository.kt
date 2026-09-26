@@ -64,6 +64,12 @@ class MusicRepository(private val context: Context) {
     private val _currentTheme = MutableStateFlow(AppTheme.DARK_AMOLED)
     val currentTheme: StateFlow<AppTheme> = _currentTheme.asStateFlow()
 
+    private val _unlockedThemeIds = MutableStateFlow<Set<String>>(emptySet())
+    val unlockedThemeIds: StateFlow<Set<String>> = _unlockedThemeIds.asStateFlow()
+
+    private val _customWallpaperUri = MutableStateFlow<String?>(null)
+    val customWallpaperUri: StateFlow<String?> = _customWallpaperUri.asStateFlow()
+
     private val _equalizerSettings = MutableStateFlow(EqualizerSettings())
     val equalizerSettings: StateFlow<EqualizerSettings> = _equalizerSettings.asStateFlow()
 
@@ -96,12 +102,28 @@ class MusicRepository(private val context: Context) {
     val playlistsFlow: StateFlow<List<Playlist>> get() = playlists
     val settingsFlow: StateFlow<PlayerSettings> get() = settings
     val themeFlow: StateFlow<AppTheme> get() = currentTheme
+    val unlockedThemeIdsFlow: StateFlow<Set<String>> get() = unlockedThemeIds
+    val customWallpaperUriFlow: StateFlow<String?> get() = customWallpaperUri
     val equalizerFlow: StateFlow<EqualizerSettings> get() = equalizerSettings
     val remoteSettingsFlow: StateFlow<com.sonance.musicplayer.model.RemoteBackendSettings> get() = remoteSettings
     val userSubscriptionFlow: StateFlow<com.sonance.musicplayer.model.UserSubscription> get() = userSubscription
     val userProfileFlow: StateFlow<UserProfile> get() = userProfile
 
     fun saveTheme(theme: AppTheme) = setTheme(theme)
+    fun setCustomWallpaperUri(uri: String?) {
+        _customWallpaperUri.value = uri
+        prefs.edit().putString("custom_wallpaper_uri", uri).apply()
+    }
+    fun unlockThemeByAd(theme: AppTheme) {
+        val updated = _unlockedThemeIds.value + theme.idStr
+        _unlockedThemeIds.value = updated
+        prefs.edit().putStringSet("unlocked_themes", updated).apply()
+    }
+    fun isThemeUnlocked(theme: AppTheme, isPro: Boolean): Boolean {
+        if (!theme.isProOnly) return true
+        if (isPro) return true
+        return _unlockedThemeIds.value.contains(theme.idStr)
+    }
     fun saveEqualizer(eq: EqualizerSettings) = updateEqualizerSettings(eq)
     fun saveSettings(settings: PlayerSettings) = updateSettings(settings)
 
@@ -358,10 +380,13 @@ class MusicRepository(private val context: Context) {
                 }
             }
 
-            // Load Theme
+            // Load Theme & Unlocked Themes
             val themeStr = prefs.getString("app_theme", AppTheme.DARK_AMOLED.idStr)
             val matchingTheme = AppTheme.entries.find { it.idStr == themeStr } ?: AppTheme.DARK_AMOLED
             _currentTheme.value = matchingTheme
+            val savedUnlocked = prefs.getStringSet("unlocked_themes", emptySet()) ?: emptySet()
+            _unlockedThemeIds.value = savedUnlocked
+            _customWallpaperUri.value = prefs.getString("custom_wallpaper_uri", null)
 
             // Load Equalizer
             val eqJson = prefs.getString("equalizer_settings", null)
