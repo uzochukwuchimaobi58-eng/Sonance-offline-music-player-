@@ -41,6 +41,10 @@ fun HeaderBar(
     onOpenEqualizer: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onSortSelected: ((String) -> Unit)? = null,
+    onPlayAll: (() -> Unit)? = null,
+    onShuffleAll: (() -> Unit)? = null,
+    repeatMode: com.sonance.musicplayer.model.RepeatMode? = null,
+    onToggleRepeat: (() -> Unit)? = null,
     theme: ThemeConfig
 ) {
     var isSearchActive by remember { mutableStateOf(false) }
@@ -50,7 +54,7 @@ fun HeaderBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(theme.headerBg.copy(alpha = 0.90f))
+            .background(theme.headerBg.copy(alpha = 0.45f))
             .statusBarsPadding()
             .height(56.dp)
             .padding(horizontal = 8.dp),
@@ -197,6 +201,32 @@ fun HeaderBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
+                // Play All & Shuffle icons in header for music lists
+                if (!isHome && onPlayAll != null) {
+                    IconButton(
+                        onClick = onPlayAll,
+                        modifier = Modifier.testTag("btn_header_play_all")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Play All",
+                            tint = theme.accentColor
+                        )
+                    }
+                }
+                if (!isHome && onShuffleAll != null) {
+                    IconButton(
+                        onClick = onShuffleAll,
+                        modifier = Modifier.testTag("btn_header_shuffle")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = "Shuffle All",
+                            tint = theme.accentColor
+                        )
+                    }
+                }
+
                 // Search Icon
                 IconButton(
                     onClick = { isSearchActive = true },
@@ -227,6 +257,54 @@ fun HeaderBar(
                         onDismissRequest = { showOverflowMenu = false },
                         modifier = Modifier.background(theme.sidebarBg)
                     ) {
+                        if (onPlayAll != null) {
+                            DropdownMenuItem(
+                                text = { Text("Play All", color = theme.textPrimary) },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    onPlayAll()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = theme.accentColor)
+                                }
+                            )
+                        }
+
+                        if (onShuffleAll != null) {
+                            DropdownMenuItem(
+                                text = { Text("Shuffle All", color = theme.textPrimary) },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    onShuffleAll()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Shuffle, contentDescription = null, tint = theme.accentColor)
+                                }
+                            )
+                        }
+
+                        if (onToggleRepeat != null && repeatMode != null) {
+                            DropdownMenuItem(
+                                text = { Text("Repeat: ${repeatMode.name}", color = theme.textPrimary) },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    onToggleRepeat()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        when (repeatMode) {
+                                            com.sonance.musicplayer.model.RepeatMode.ONE -> Icons.Default.RepeatOne
+                                            else -> Icons.Default.Repeat
+                                        },
+                                        contentDescription = null,
+                                        tint = if (repeatMode != com.sonance.musicplayer.model.RepeatMode.OFF) theme.accentColor else theme.textSecondary
+                                    )
+                                }
+                            )
+                        }
+
+                        HorizontalDivider(color = theme.headerBorder.copy(alpha = 0.3f))
+
                         DropdownMenuItem(
                             text = { Text("Sort by Title", color = theme.textPrimary) },
                             onClick = {

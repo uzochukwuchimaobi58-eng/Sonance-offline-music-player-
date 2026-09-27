@@ -614,7 +614,6 @@ fun SettingsDialog(
                 ) {
                     accentOptions.forEach { (name, color, appTheme) ->
                         val isSelected = theme.theme == appTheme
-                        val isLocked = appTheme.isProOnly && !userSubscription.isPro
 
                         Row(
                             modifier = Modifier
@@ -622,15 +621,9 @@ fun SettingsDialog(
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(if (isSelected) theme.accentColor.copy(alpha = 0.15f) else Color.Transparent)
                                 .clickable {
-                                    if (isLocked) {
-                                        Toast.makeText(context, "$name is exclusive to Sonance PRO!", Toast.LENGTH_SHORT).show()
-                                        showAccentColorDialog = false
-                                        onOpenProUpgrade()
-                                    } else {
-                                        onSelectTheme(appTheme)
-                                        onUpdateSettings(settings.copy(accentColor = name.lowercase()))
-                                        showAccentColorDialog = false
-                                    }
+                                    onSelectTheme(appTheme)
+                                    onUpdateSettings(settings.copy(accentColor = name.lowercase()))
+                                    showAccentColorDialog = false
                                 }
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -650,20 +643,7 @@ fun SettingsDialog(
                                 fontSize = 15.sp,
                                 modifier = Modifier.weight(1f)
                             )
-                            if (appTheme.isProOnly) {
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = Color(0xFFFFD700).copy(alpha = 0.2f)
-                                ) {
-                                    Text(
-                                        text = "PRO",
-                                        color = Color(0xFFFFD700),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            } else if (isSelected) {
+                            if (isSelected) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = null,

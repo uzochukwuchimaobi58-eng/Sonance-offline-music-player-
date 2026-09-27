@@ -28,6 +28,7 @@ import com.sonance.musicplayer.player.PlaybackManager
 import com.sonance.musicplayer.ui.components.*
 import com.sonance.musicplayer.ui.screens.*
 import com.sonance.musicplayer.ui.theme.SonanceTheme
+import com.sonance.musicplayer.util.MusicFilter
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -221,8 +222,13 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                // Filtered legitimate music tracks
+                val musicOnlyTracks: List<Track> = remember(tracks) {
+                    tracks.filter { MusicFilter.isMusicTrack(it) }
+                }
+
                 // Filtered tracks for current view & search query
-                val viewTracks: List<Track> = remember(tracks, activeView, activePlaylistId, playlists, searchQuery, playerSettings.smartPlaylistTrackLimit) {
+                val viewTracks: List<Track> = remember(musicOnlyTracks, activeView, activePlaylistId, playlists, searchQuery, playerSettings.smartPlaylistTrackLimit) {
                     val cutoffTime = when (playerSettings.smartPlaylistTrackLimit) {
                         "Past month" -> System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
                         "Past 3 months" -> System.currentTimeMillis() - 90L * 24 * 60 * 60 * 1000
@@ -232,29 +238,29 @@ class MainActivity : ComponentActivity() {
                     }
 
                     val base: List<Track> = when (activeView) {
-                        ActiveView.HOME -> tracks
-                        ActiveView.LIBRARY -> tracks.sortedWith(com.sonance.musicplayer.util.TrackComparators.TitleComparator)
-                        ActiveView.FOLDER -> tracks
-                        ActiveView.DRIVE_MODE -> tracks
-                        ActiveView.LYRICS_MODE -> tracks
-                        ActiveView.FAVORITE -> tracks.filter { it.isFavorite }
+                        ActiveView.HOME -> musicOnlyTracks
+                        ActiveView.LIBRARY -> musicOnlyTracks.sortedWith(com.sonance.musicplayer.util.TrackComparators.TitleComparator)
+                        ActiveView.FOLDER -> musicOnlyTracks
+                        ActiveView.DRIVE_MODE -> musicOnlyTracks
+                        ActiveView.LYRICS_MODE -> musicOnlyTracks
+                        ActiveView.FAVORITE -> musicOnlyTracks.filter { it.isFavorite }
                         ActiveView.RECENT_PLAY -> {
-                            tracks.filter { it.playCount > 0 || it.lastPlayed > 0L }
+                            musicOnlyTracks.filter { it.playCount > 0 || it.lastPlayed > 0L }
                                 .sortedByDescending { it.lastPlayed }
                         }
                         ActiveView.RECENT_ADD -> {
-                            // Show tracks ordered by date added/discovered, newest first
-                            tracks.sortedByDescending { it.dateAdded }
+                            // Show tracks ordered by MediaStore DATE_ADDED (or DATE_MODIFIED fallback), newest first
+                            musicOnlyTracks.sortedByDescending { it.dateAdded }
                         }
                         ActiveView.MOST_PLAY -> {
                             // Show tracks that have been played, ordered by play count descending
-                            tracks.filter { it.playCount > 0 }
+                            musicOnlyTracks.filter { it.playCount > 0 }
                                 .sortedByDescending { it.playCount }
                         }
                         ActiveView.PLAYLIST_DETAIL -> {
                             val pl = playlists.find { it.id == activePlaylistId }
                             if (pl != null) {
-                                tracks.filter { pl.trackIds.contains(it.id) }
+                                musicOnlyTracks.filter { pl.trackIds.contains(it.id) }
                             } else emptyList()
                         }
                     }
@@ -264,9 +270,11 @@ class MainActivity : ComponentActivity() {
                     } else {
                         val q = searchQuery.trim().lowercase()
                         base.filter {
-                            it.title.lowercase().contains(q) ||
-                                    it.artist.lowercase().contains(q) ||
-                                    it.album.lowercase().contains(q)
+                            MusicFilter.isMusicTrack(it) && (
+                                it.title.lowercase().contains(q) ||
+                                it.artist.lowercase().contains(q) ||
+                                it.album.lowercase().contains(q)
+                            )
                         }
                     }
                 }
@@ -348,6 +356,18 @@ class MainActivity : ComponentActivity() {
                                     onOpenEqualizer = { isEqualizerOpen = true },
                                     onOpenSettings = { isSettingsOpen = true },
                                     onSortSelected = { sortKey -> currentSortBy = sortKey },
+                                    onPlayAll = {
+                                        if (viewTracks.isNotEmpty()) {
+                                            playbackManager.setQueue(viewTracks, 0)
+                                        }
+                                    },
+                                    onShuffleAll = {
+                                        if (viewTracks.isNotEmpty()) {
+                                            playbackManager.setQueue(viewTracks.shuffled(), 0)
+                                        }
+                                    },
+                                    repeatMode = repeatMode,
+                                    onToggleRepeat = { playbackManager.cycleRepeatMode() },
                                     theme = theme
                                 )
                             },
@@ -395,7 +415,7 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 if (activeView == ActiveView.HOME && searchQuery.isEmpty()) {
                                 HomeScreen(
-                                    tracks = tracks,
+                                    tracks = musicOnlyTracks,
                                     playlists = playlists,
                                     theme = theme,
                                     showShuffleButton = playerSettings.showShuffleButton,
@@ -486,9 +506,10 @@ class MainActivity : ComponentActivity() {
                                         repository.addTrackToPlaylist(trId, plId)
                                     },
                                     onDeleteTrack = { trId ->
-                                        if (playbackManager.currentTrack.value?.id == trId) {
-                                            playbackManager.skipToNext()
-                                        }
+                                        val tr = repository.tracks.value.find { it.id == trId }
+                                        val duplicateIds = repository.tracks.value.filter { tr != null && repository.areTracksDuplicate(it, tr) }.map { it.id }
+                                        val allIds = (setOf(trId) + duplicateIds).toSet()
+                                        playbackManager.removeTracksFromQueue(allIds)
                                         repository.deleteTrack(trId)
                                         android.widget.Toast.makeText(applicationContext, "Music deleted permanently from device", android.widget.Toast.LENGTH_SHORT).show()
                                     },
@@ -505,9 +526,12 @@ class MainActivity : ComponentActivity() {
                                         repository.addTracksToFavorites(trackIds)
                                     },
                                     onDeleteTracks = { trackIds ->
-                                        if (playbackManager.currentTrack.value?.id in trackIds) {
-                                            playbackManager.skipToNext()
-                                        }
+                                        val idSet = trackIds.toSet()
+                                        val targets = repository.tracks.value.filter { it.id in idSet }
+                                        val allMatchingIds = repository.tracks.value.filter { tr ->
+                                            tr.id in idSet || targets.any { target -> repository.areTracksDuplicate(tr, target) }
+                                        }.map { it.id }.toSet()
+                                        playbackManager.removeTracksFromQueue(allMatchingIds)
                                         repository.deleteTracks(trackIds)
                                         android.widget.Toast.makeText(applicationContext, "${trackIds.size} songs deleted permanently from device", android.widget.Toast.LENGTH_SHORT).show()
                                     },
@@ -531,6 +555,7 @@ class MainActivity : ComponentActivity() {
                                         activeView = targetView
                                         activePlaylistId = null
                                     },
+                                    onPlayNext = { tr -> playbackManager.playNext(tr) },
                                     activeSortBy = currentSortBy
                                 )
                             }
@@ -568,6 +593,7 @@ class MainActivity : ComponentActivity() {
                     onOpenSettings = { isSettingsOpen = true },
                     isPro = isProEffective,
                     onOpenPro = { isProUpgradeOpen = true },
+                    customWallpaperUri = customWallpaperUri,
                     theme = theme
                 )
 

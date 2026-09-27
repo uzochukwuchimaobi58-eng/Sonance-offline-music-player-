@@ -278,13 +278,30 @@ fun FullPlayerSheet(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Progress Slider
-            val maxDuration = durationMs.coerceAtLeast(1000L).toFloat()
-            val currentPos = currentPosMs.coerceIn(0L, durationMs.coerceAtLeast(1000L)).toFloat()
+            val effectiveDurationMs = when {
+                durationMs > 0L -> durationMs
+                track.duration > 0L -> track.duration * 1000L
+                else -> 0L
+            }
+
+            var isDragging by remember { mutableStateOf(false) }
+            var dragPositionMs by remember { mutableFloatStateOf(0f) }
+
+            val maxDuration = effectiveDurationMs.coerceAtLeast(1000L).toFloat()
+            val currentPos = if (isDragging) dragPositionMs else currentPosMs.toFloat()
+            val safeCurrentPos = currentPos.coerceIn(0f, maxDuration)
 
             Column(modifier = Modifier.fillMaxWidth()) {
                 Slider(
-                    value = currentPos,
-                    onValueChange = { onSeek(it.toLong()) },
+                    value = safeCurrentPos,
+                    onValueChange = {
+                        isDragging = true
+                        dragPositionMs = it
+                    },
+                    onValueChangeFinished = {
+                        isDragging = false
+                        onSeek(dragPositionMs.toLong())
+                    },
                     valueRange = 0f..maxDuration,
                     colors = SliderDefaults.colors(
                         thumbColor = theme.accentColor,
@@ -300,15 +317,15 @@ fun FullPlayerSheet(
                         .padding(horizontal = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    val curSec = currentPosMs / 1000L
-                    val durSec = durationMs / 1000L
+                    val curSec = (if (isDragging) dragPositionMs.toLong() else currentPosMs) / 1000L
+                    val durSec = effectiveDurationMs / 1000L
                     Text(
-                        text = String.format("%d:%02d", curSec / 60, curSec % 60),
+                        text = if (curSec >= 3600) String.format("%d:%02d:%02d", curSec / 3600, (curSec % 3600) / 60, curSec % 60) else String.format("%d:%02d", curSec / 60, curSec % 60),
                         color = theme.textSecondary,
                         fontSize = 12.sp
                     )
                     Text(
-                        text = String.format("%d:%02d", durSec / 60, durSec % 60),
+                        text = if (durSec >= 3600) String.format("%d:%02d:%02d", durSec / 3600, (durSec % 3600) / 60, durSec % 60) else String.format("%d:%02d", durSec / 60, durSec % 60),
                         color = theme.textSecondary,
                         fontSize = 12.sp
                     )

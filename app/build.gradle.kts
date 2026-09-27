@@ -95,6 +95,7 @@ dependencies {
     implementation(libs.androidx.media)
     implementation(libs.play.billing.ktx)
     implementation(libs.play.services.ads)
+    testImplementation(libs.junit)
 
     debugImplementation(libs.androidx.ui.tooling)
 }

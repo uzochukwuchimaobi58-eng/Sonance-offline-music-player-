@@ -51,6 +51,7 @@ fun SidebarDrawer(
     onOpenSettings: () -> Unit,
     isPro: Boolean = false,
     onOpenPro: () -> Unit = {},
+    customWallpaperUri: String? = null,
     theme: ThemeConfig
 ) {
     if (!isOpen) return
@@ -64,21 +65,46 @@ fun SidebarDrawer(
         }),
         drawerContent = {
             ModalDrawerSheet(
-                drawerContainerColor = theme.sidebarBg,
+                drawerContainerColor = Color.Transparent,
                 drawerContentColor = theme.textPrimary,
                 modifier = Modifier
                     .width(310.dp)
                     .fillMaxHeight()
                     .testTag("sidebar_drawer_content")
             ) {
-                // Header brand
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // Wallpaper background for side menu
+                    if (customWallpaperUri != null) {
+                        coil.compose.AsyncImage(
+                            model = customWallpaperUri,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.65f)))
+                    } else if (theme.coverDrawableRes != null) {
+                        Image(
+                            painter = painterResource(id = theme.coverDrawableRes),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.65f)))
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize().background(theme.sidebarBg))
+                    }
+
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        // Header brand
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .statusBarsPadding()
+                                .padding(20.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                     Box(
                         modifier = Modifier
                             .size(46.dp)
@@ -405,6 +431,8 @@ fun SidebarDrawer(
                         tag = "menu_settings",
                         theme = theme
                     )
+                }
+                    }
                 }
             }
         },

@@ -93,9 +93,7 @@ fun ThemeDialog(
     }
 
     fun isThemeUnlocked(item: AppTheme): Boolean {
-        if (!item.isProOnly) return true
-        if (isPro) return true
-        return unlockedThemeIds.contains(item.idStr)
+        return true // All colors and themes unlocked as requested
     }
 
     Dialog(

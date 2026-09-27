@@ -44,6 +44,7 @@ import com.sonance.musicplayer.model.RepeatMode
 import com.sonance.musicplayer.model.ThemeConfig
 import com.sonance.musicplayer.model.Track
 import com.sonance.musicplayer.ui.components.AlphabetFastScroller
+import com.sonance.musicplayer.util.MusicFilter
 import com.sonance.musicplayer.util.TrackComparators
 import java.io.File
 
@@ -74,6 +75,7 @@ fun TrackListScreen(
     onShuffleAll: (List<Track>) -> Unit,
     onSelectView: ((ActiveView) -> Unit)? = null,
     activeSortBy: String = "title",
+    onPlayNext: ((Track) -> Unit)? = null,
     onPlayTracks: ((List<Track>) -> Unit)? = null,
     onAddTracksToPlaylist: ((trackIds: List<String>, playlistId: String) -> Unit)? = null,
     onDeleteTracks: ((trackIds: List<String>) -> Unit)? = null,
@@ -110,7 +112,7 @@ fun TrackListScreen(
     // Folder view logic
     val folderGroups = remember(tracks) {
         val map = mutableMapOf<String, MutableList<Track>>()
-        tracks.forEach { t ->
+        tracks.filter { MusicFilter.isMusicTrack(it) }.forEach { t ->
             val f = if (t.folder.isNotBlank()) File(t.folder).name.ifEmpty { t.folder } else "Phone Storage"
             map.getOrPut(f) { mutableListOf() }.add(t)
         }
@@ -118,26 +120,37 @@ fun TrackListScreen(
     }
 
     val displayTracks = remember(tracks, view, selectedFolder, sortBy) {
+        val filtered = tracks.filter { MusicFilter.isMusicTrack(it) }
         val base = if (view == ActiveView.FOLDER && selectedFolder != null) {
-            tracks.filter {
+            filtered.filter {
                 val f = if (it.folder.isNotBlank()) File(it.folder).name.ifEmpty { it.folder } else "Phone Storage"
                 f == selectedFolder
             }
         } else {
-            tracks
+            filtered
         }
 
-        when (sortBy) {
-            "title" -> base.sortedWith(TrackComparators.TitleComparator)
-            "artist" -> base.sortedWith(TrackComparators.ArtistComparator)
-            "duration" -> base.sortedByDescending { it.duration }
-            "plays" -> base.sortedByDescending { it.playCount }
-            else -> {
-                // In Library, Playlists, and Folders, default to A to Z organized by Title
-                if (view == ActiveView.LIBRARY || view == ActiveView.PLAYLIST_DETAIL || view == ActiveView.FOLDER) {
-                    base.sortedWith(TrackComparators.TitleComparator)
-                } else {
-                    base
+        if (view == ActiveView.RECENT_ADD) {
+            when (sortBy) {
+                "artist" -> base.sortedWith(TrackComparators.ArtistComparator)
+                "duration" -> base.sortedByDescending { it.duration }
+                "plays" -> base.sortedByDescending { it.playCount }
+                else -> base.sortedByDescending { it.dateAdded }
+            }
+        } else {
+            when (sortBy) {
+                "title" -> base.sortedWith(TrackComparators.TitleComparator)
+                "artist" -> base.sortedWith(TrackComparators.ArtistComparator)
+                "duration" -> base.sortedByDescending { it.duration }
+                "plays" -> base.sortedByDescending { it.playCount }
+                "date_added" -> base.sortedByDescending { it.dateAdded }
+                else -> {
+                    // In Library, Playlists, and Folders, default to A to Z organized by Title
+                    if (view == ActiveView.LIBRARY || view == ActiveView.PLAYLIST_DETAIL || view == ActiveView.FOLDER) {
+                        base.sortedWith(TrackComparators.TitleComparator)
+                    } else {
+                        base
+                    }
                 }
             }
         }
@@ -260,180 +273,32 @@ fun TrackListScreen(
                     )
                 }
             } else {
-            // Category navigation tabs (SONGS, FOLDERS, PLAYLISTS, FAVORITES, RECENT)
-            if (onSelectView != null) {
-                val tabs = listOf(
-                    Triple(ActiveView.LIBRARY, "SONGS", Icons.Default.MusicNote),
-                    Triple(ActiveView.FOLDER, "FOLDERS", Icons.Default.Folder),
-                    Triple(ActiveView.FAVORITE, "FAVORITES", Icons.Default.Favorite),
-                    Triple(ActiveView.RECENT_PLAY, "RECENT", Icons.Default.History),
-                    Triple(ActiveView.RECENT_ADD, "RECENT ADD", Icons.Default.LibraryAdd),
-                    Triple(ActiveView.MOST_PLAY, "MOST PLAYED", Icons.Default.TrendingUp)
-                )
-
-                ScrollableTabRow(
-                    selectedTabIndex = tabs.indexOfFirst { it.first == view }.coerceAtLeast(0),
-                    containerColor = theme.headerBg,
-                    contentColor = theme.accentColor,
-                    edgePadding = 12.dp,
-                    indicator = { tabPositions ->
-                        val index = tabs.indexOfFirst { it.first == view }
-                        if (index in tabPositions.indices) {
-                            TabRowDefaults.SecondaryIndicator(
-                                modifier = Modifier.tabIndicatorOffset(tabPositions[index]),
-                                color = theme.accentColor
-                            )
-                        }
-                    },
-                    divider = {
-                        HorizontalDivider(color = theme.textSecondary.copy(alpha = 0.15f))
-                    }
-                ) {
-                    tabs.forEach { (tabView, tabTitle, tabIcon) ->
-                        val isSelected = view == tabView
-                        Tab(
-                            selected = isSelected,
-                            onClick = { onSelectView(tabView) },
-                            text = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = tabIcon,
-                                        contentDescription = null,
-                                        tint = if (isSelected) theme.accentColor else theme.textSecondary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        text = tabTitle,
-                                        color = if (isSelected) theme.accentColor else theme.textSecondary,
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                    )
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-
-            // Header stats & Play All / Shuffle All / Repeat toolbar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    if (view == ActiveView.FOLDER && selectedFolder != null) {
+                // Folder breadcrumb if navigating inside a specific folder
+                if (view == ActiveView.FOLDER && selectedFolder != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
                             text = "‹ All Folders",
                             color = theme.accentColor,
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier
                                 .clickable { selectedFolder = null }
-                                .padding(vertical = 2.dp)
+                                .padding(vertical = 4.dp)
                         )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = selectedFolder ?: "",
+                            text = "/ $selectedFolder",
                             color = theme.textPrimary,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    } else {
-                        Text(
-                            text = "${displayTracks.size} songs",
-                            color = theme.textSecondary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    FilledTonalButton(
-                        onClick = {
-                            if (displayTracks.isNotEmpty()) {
-                                onPlayTrack(displayTracks.first(), displayTracks)
-                            }
-                        },
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = theme.accentColor.copy(alpha = 0.2f),
-                            contentColor = theme.accentColor
-                        ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Play All", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    if (showShuffleButton) {
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isShuffle) theme.accentColor.copy(alpha = 0.25f) else theme.headerBg,
-                            border = if (isShuffle) androidx.compose.foundation.BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.7f)) else null,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    if (onToggleShuffle != {}) {
-                                        onToggleShuffle()
-                                    } else {
-                                        onShuffleAll(displayTracks)
-                                    }
-                                },
-                                modifier = Modifier.fillMaxSize().testTag("btn_library_shuffle")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Shuffle,
-                                    contentDescription = "Shuffle",
-                                    tint = if (isShuffle) theme.accentColor else theme.textPrimary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    // Prominent Repeat Button matching the toolbar style
-                    Surface(
-                        shape = CircleShape,
-                        color = if (repeatMode != RepeatMode.OFF) theme.accentColor.copy(alpha = 0.25f) else theme.headerBg.copy(alpha = 0.85f),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            if (repeatMode != RepeatMode.OFF) theme.accentColor.copy(alpha = 0.8f) else theme.textSecondary.copy(alpha = 0.35f)
-                        ),
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        IconButton(
-                            onClick = onToggleRepeat,
-                            modifier = Modifier.fillMaxSize().testTag("btn_library_repeat")
-                        ) {
-                            Icon(
-                                imageVector = when (repeatMode) {
-                                    RepeatMode.ONE -> Icons.Default.RepeatOne
-                                    RepeatMode.ALL -> Icons.Default.Repeat
-                                    RepeatMode.OFF -> Icons.Default.Repeat
-                                },
-                                contentDescription = "Repeat",
-                                tint = if (repeatMode != RepeatMode.OFF) theme.accentColor else theme.textPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-            }
             }
 
             Box(modifier = Modifier.weight(1f)) {
@@ -818,7 +683,23 @@ fun TrackListScreen(
                             }
                         )
 
-                        // 5. More (3 vertical dots)
+                        // 5. Delete (Direct action for marked songs)
+                        SelectionActionButton(
+                            icon = Icons.Default.DeleteForever,
+                            label = "Delete",
+                            theme = theme,
+                            iconTint = Color(0xFFF43F5E),
+                            textColor = Color(0xFFF43F5E),
+                            onClick = {
+                                if (selectedTrackIds.isEmpty()) {
+                                    Toast.makeText(context, "Please select songs first", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showBatchDeleteConfirm = true
+                                }
+                            }
+                        )
+
+                        // 6. More (3 vertical dots)
                         Box {
                             SelectionActionButton(
                                 icon = Icons.Default.MoreVert,
@@ -914,6 +795,17 @@ fun TrackListScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        TrackActionRow(
+                            icon = Icons.AutoMirrored.Filled.QueueMusic,
+                            title = "Play Next",
+                            onClick = {
+                                activeTrackForMenu = null
+                                onPlayNext?.invoke(tr)
+                                Toast.makeText(context, "\"${tr.title}\" will play next", Toast.LENGTH_SHORT).show()
+                            },
+                            theme = theme
+                        )
+
                         TrackActionRow(
                             icon = Icons.Default.QueueMusic,
                             title = "Add to Playlist",
@@ -1195,7 +1087,9 @@ private fun SelectionActionButton(
     label: String,
     theme: ThemeConfig,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    iconTint: Color = theme.textPrimary,
+    textColor: Color = theme.textSecondary
 ) {
     Column(
         modifier = modifier
@@ -1208,13 +1102,13 @@ private fun SelectionActionButton(
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = theme.textPrimary,
+            tint = iconTint,
             modifier = Modifier.size(22.dp)
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = label,
-            color = theme.textSecondary,
+            color = textColor,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium
         )

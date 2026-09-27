@@ -208,6 +208,8 @@ class PlaybackManager(
         }
     }
 
+    private var pendingPlayNextTrack: Track? = null
+
     fun addToQueue(track: Track) {
         val current = _queue.value
         if (!current.any { it.id == track.id }) {
@@ -229,6 +231,7 @@ class PlaybackManager(
     }
 
     fun playNext(track: Track) {
+        pendingPlayNextTrack = track
         val current = _queue.value.toMutableList()
         val currentIndex = _queueIndex.value
         current.removeAll { it.id == track.id }
@@ -243,6 +246,29 @@ class PlaybackManager(
         val safeIndex = startIndex.coerceIn(0, newQueue.size - 1)
         _queueIndex.value = safeIndex
         playTrack(newQueue[safeIndex], newQueue)
+    }
+
+    fun removeTracksFromQueue(trackIds: Set<String>) {
+        if (trackIds.isEmpty()) return
+        val current = _queue.value
+        val filtered = current.filter { it.id !in trackIds }
+        _queue.value = filtered
+
+        val currentId = _currentTrack.value?.id
+        if (currentId != null && currentId in trackIds) {
+            if (filtered.isNotEmpty()) {
+                val nextIdx = _queueIndex.value.coerceIn(0, filtered.size - 1)
+                _queueIndex.value = nextIdx
+                loadAndPlay(filtered[nextIdx])
+            } else {
+                stop()
+            }
+        } else {
+            val newIdx = filtered.indexOfFirst { it.id == currentId }
+            if (newIdx >= 0) {
+                _queueIndex.value = newIdx
+            }
+        }
     }
 
     fun skipToNext() = next()
@@ -272,6 +298,35 @@ class PlaybackManager(
     private fun loadAndPlay(track: Track, startPositionMs: Long = 0L) {
         playJob?.cancel()
         releasePlayer()
+
+        val initialDuration = if (track.duration > 0L) track.duration * 1000L else 0L
+        _durationMs.value = initialDuration
+        _currentPositionMs.value = startPositionMs
+
+        if (initialDuration <= 0L && track.url.isNotEmpty()) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val retriever = android.media.MediaMetadataRetriever()
+                    if (track.url.startsWith("content://")) {
+                        retriever.setDataSource(context, Uri.parse(track.url))
+                    } else if (track.url.startsWith("/") || track.url.startsWith("file://")) {
+                        val path = if (track.url.startsWith("file://")) Uri.parse(track.url).path ?: track.url else track.url
+                        retriever.setDataSource(path)
+                    }
+                    val dStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    val pDur = dStr?.toLongOrNull() ?: 0L
+                    retriever.release()
+                    if (pDur > 0L) {
+                        withContext(Dispatchers.Main) {
+                            if (_durationMs.value <= 0L) {
+                                _durationMs.value = pDur
+                                notificationManager.updateNotification(track, _isPlaying.value, _currentPositionMs.value, pDur)
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
 
         playJob = scope.launch(Dispatchers.IO) {
             try {
@@ -328,7 +383,18 @@ class PlaybackManager(
 
                 withContext(Dispatchers.Main) {
                     mp.setOnPreparedListener { player ->
-                        _durationMs.value = player.duration.toLong().coerceAtLeast(track.duration * 1000L)
+                        val pDur = try { player.duration.toLong() } catch (_: Exception) { 0L }
+                        val safeDuration = when {
+                            pDur > 0L -> pDur
+                            track.duration > 0L -> track.duration * 1000L
+                            _durationMs.value > 0L -> _durationMs.value
+                            else -> 0L
+                        }
+                        _durationMs.value = safeDuration
+                        if (pDur > 0L && track.duration <= 0L) {
+                            val durSec = pDur / 1000L
+                            repository?.updateTrackDuration(track.id, durSec)
+                        }
                         applySpeedInternal(player, _playbackSpeed.value)
                         applyVolumeInternal(player, _volume.value)
                         if (startPositionMs > 0L) {
@@ -338,11 +404,13 @@ class PlaybackManager(
                         player.start()
                         _isPlaying.value = true
                         repository?.recordTrackPlayed(track.id, track.title, track.artist)
-                        _currentTrack.value = track.copy(
+                        val updatedTrack = track.copy(
+                            duration = if (safeDuration > 0L) safeDuration / 1000L else track.duration,
                             playCount = track.playCount + 1,
                             lastPlayed = System.currentTimeMillis()
                         )
-                        notificationManager.updateNotification(track, true, if (startPositionMs > 0L) startPositionMs else 0L, _durationMs.value)
+                        _currentTrack.value = updatedTrack
+                        notificationManager.updateNotification(updatedTrack, true, if (startPositionMs > 0L) startPositionMs else 0L, safeDuration)
 
                         // Attach audio effects asynchronously so audio HAL never freezes the UI thread
                         scope.launch(Dispatchers.IO) {
@@ -450,6 +518,16 @@ class PlaybackManager(
         }
     }
 
+    fun stop() {
+        releasePlayer()
+        _isPlaying.value = false
+        _currentTrack.value = null
+        _durationMs.value = 0L
+        _currentPositionMs.value = 0L
+        stopProgressTracker()
+        notificationManager.dismissNotification()
+    }
+
     private fun fadeVolume(from: Float, to: Float, durationMs: Long = 250L, onComplete: (() -> Unit)? = null) {
         scope.launch {
             val steps = 10
@@ -468,6 +546,18 @@ class PlaybackManager(
     fun next() {
         val q = _queue.value
         if (q.isEmpty()) return
+
+        val playNextTarget = pendingPlayNextTrack
+        if (playNextTarget != null) {
+            pendingPlayNextTrack = null
+            val idx = q.indexOfFirst { it.id == playNextTarget.id }
+            if (idx >= 0) {
+                _queueIndex.value = idx
+                _currentTrack.value = playNextTarget
+                loadAndPlay(playNextTarget)
+                return
+            }
+        }
 
         val nextIndex = if (_isShuffle.value) {
             (0 until q.size).random()
@@ -799,6 +889,9 @@ class PlaybackManager(
                     if (_isPlaying.value && mp.isPlaying) {
                         val pos = mp.currentPosition.toLong()
                         _currentPositionMs.value = pos
+                        if ((_durationMs.value <= 0L || _durationMs.value < pos) && mp.duration > 0) {
+                            _durationMs.value = mp.duration.toLong()
+                        }
                         val now = System.currentTimeMillis()
                         if (now - lastSaveTime > 2000L) {
                             lastSaveTime = now

@@ -147,16 +147,21 @@ class PlaybackNotificationManager(private val context: Context) {
     ) {
         val session = mediaSession ?: return
 
-        val playbackSpeed = 1.0f
-        val safeDuration = durationMs.coerceAtLeast(track.duration * 1000L).coerceAtLeast(1000L)
-        val safePos = currentPosMs.coerceIn(0L, safeDuration)
+        val safeDuration = when {
+            durationMs > 0L -> durationMs
+            track.duration > 0L -> track.duration * 1000L
+            else -> 0L
+        }
+        val safePos = if (safeDuration > 0L) currentPosMs.coerceIn(0L, safeDuration) else currentPosMs.coerceAtLeast(0L)
 
         // 1. Update MediaSession Metadata
         val metadataBuilder = MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_TITLE, track.title)
             .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, if (track.artist == "<unknown>") "Unknown Artist" else track.artist)
             .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, track.album)
-            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, safeDuration)
+        if (safeDuration > 0L) {
+            metadataBuilder.putLong(MediaMetadataCompat.METADATA_KEY_DURATION, safeDuration)
+        }
 
         if (artBitmap != null) {
             metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, artBitmap)
@@ -174,9 +179,10 @@ class PlaybackNotificationManager(private val context: Context) {
                 PlaybackStateCompat.ACTION_STOP
 
         val state = if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
+        val effectiveSpeed = if (isPlaying) 1.0f else 0f
         val stateBuilder = PlaybackStateCompat.Builder()
             .setActions(stateActions)
-            .setState(state, safePos, playbackSpeed)
+            .setState(state, safePos, effectiveSpeed, android.os.SystemClock.elapsedRealtime())
 
         // Add custom action for favorite
         val favIconRes = if (track.isFavorite) R.drawable.ic_notification_heart else R.drawable.ic_notification_heart_outline

@@ -31,6 +31,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.sonance.musicplayer.util.MusicFilter
 import java.io.File
 import java.util.UUID
 
@@ -43,11 +44,226 @@ class MusicRepository(private val context: Context) {
     private val lastPlayedPrefs = context.getSharedPreferences("sonance_last_played", Context.MODE_PRIVATE)
     private val favoritesPrefs = context.getSharedPreferences("sonance_favorites", Context.MODE_PRIVATE)
     private val discoveryPrefs = context.getSharedPreferences("sonance_discovered", Context.MODE_PRIVATE)
+    private val deletedPrefs = context.getSharedPreferences("sonance_deleted_tracks", Context.MODE_PRIVATE)
 
     fun getNormTrackKey(title: String, artist: String): String {
         val t = title.trim().lowercase()
         val a = artist.trim().lowercase()
         return if (t.isNotBlank()) "$t|$a" else ""
+    }
+
+    /**
+     * Cleans up common prefixes/suffixes from titles (like "01 - ", ".mp3", "(Official Audio)")
+     * to accurately detect duplicate songs across different scan sources.
+     */
+    fun cleanSongTitle(raw: String): String {
+        var t = raw.trim()
+        t = t.replace(Regex("\\.(mp3|m4a|flac|wav|aac|ogg|opus)$", RegexOption.IGNORE_CASE), "")
+        t = t.replace(Regex("^\\d{1,3}[\\s._-]+"), "")
+        if (t.contains(" - ")) {
+            val parts = t.split(" - ")
+            if (parts.size == 2 && parts[1].isNotBlank()) {
+                t = parts[1].trim()
+            }
+        }
+        t = t.replace(Regex("\\[(Official.*|Audio|Video|Lyrics|HD|HQ)\\]", RegexOption.IGNORE_CASE), "")
+        t = t.replace(Regex("\\((Official.*|Audio|Video|Lyrics|HD|HQ|Remastered.*?)\\)", RegexOption.IGNORE_CASE), "")
+        return t.replace(Regex("[^a-zA-Z0-9\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .lowercase()
+    }
+
+    fun cleanArtist(raw: String): String {
+        val a = raw.trim().lowercase()
+        if (a == "<unknown>" || a == "unknown artist" || a == "unknown" || a == "download") return ""
+        return a.replace(Regex("[^a-zA-Z0-9\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    fun hasValidArtwork(track: Track): Boolean {
+        val art = track.coverArt.trim()
+        return art.isNotEmpty() && art != "null"
+    }
+
+    fun isTrackDeleted(track: Track): Boolean {
+        val deletedSet = deletedPrefs.getStringSet("deleted_keys_set", emptySet()) ?: emptySet()
+        if (deletedSet.isEmpty()) return false
+
+        if (deletedSet.contains(track.id)) return true
+        if (track.url.isNotBlank() && deletedSet.contains(track.url)) return true
+
+        val filePath = if (track.url.startsWith("file://")) track.url.removePrefix("file://") else track.url
+        if (filePath.isNotBlank() && deletedSet.contains(filePath)) return true
+
+        val normKey = getNormTrackKey(track.title, track.artist)
+        if (normKey.isNotBlank() && deletedSet.contains(normKey)) return true
+
+        val clean = cleanSongTitle(track.title)
+        if (clean.isNotBlank() && deletedSet.contains("title:$clean")) return true
+
+        return false
+    }
+
+    fun markTrackAsDeleted(track: Track) {
+        val currentSet = deletedPrefs.getStringSet("deleted_keys_set", emptySet())?.toMutableSet() ?: mutableSetOf()
+        currentSet.add(track.id)
+        if (track.url.isNotBlank()) currentSet.add(track.url)
+        val filePath = if (track.url.startsWith("file://")) track.url.removePrefix("file://") else track.url
+        if (filePath.isNotBlank()) currentSet.add(filePath)
+        val normKey = getNormTrackKey(track.title, track.artist)
+        if (normKey.isNotBlank()) currentSet.add(normKey)
+        val clean = cleanSongTitle(track.title)
+        if (clean.isNotBlank()) currentSet.add("title:$clean")
+
+        deletedPrefs.edit().putStringSet("deleted_keys_set", currentSet).apply()
+    }
+
+    fun areTracksDuplicate(t1: Track, t2: Track): Boolean {
+        if (t1.id == t2.id) return true
+        if (t1.url.isNotBlank() && t2.url.isNotBlank() && t1.url == t2.url) return true
+
+        val p1 = if (t1.url.startsWith("file://")) t1.url.removePrefix("file://").lowercase() else t1.url.lowercase()
+        val p2 = if (t2.url.startsWith("file://")) t2.url.removePrefix("file://").lowercase() else t2.url.lowercase()
+        if (p1.isNotBlank() && p2.isNotBlank() && p1 == p2) return true
+
+        val clean1 = cleanSongTitle(t1.title)
+        val clean2 = cleanSongTitle(t2.title)
+
+        if (clean1.isNotEmpty() && clean1 == clean2) {
+            val a1 = cleanArtist(t1.artist)
+            val a2 = cleanArtist(t2.artist)
+
+            // If both have known artists
+            if (a1.isNotEmpty() && a2.isNotEmpty()) {
+                if (a1 == a2 || a1.contains(a2) || a2.contains(a1)) return true
+            } else {
+                // If one or both artists are unknown:
+                if (t1.duration > 0L && t2.duration > 0L) {
+                    if (Math.abs(t1.duration - t2.duration) <= 4L) return true
+                } else {
+                    // One has duration = 0 (Downloads or unindexed direct file)
+                    if (clean1.length >= 3) return true
+                }
+            }
+        }
+        return false
+    }
+
+    /**
+     * Resolves duplicates between tracks:
+     * "resolve them to only with the one with artwork"
+     * When two or more tracks are identified as the same song,
+     * the one with artwork is strictly kept and the non-artwork duplicate is discarded.
+     * All richer metadata (duration, real artist, lyrics, favorites, play count) is merged into the winner.
+     */
+    fun deduplicateTracks(rawTracks: List<Track>): List<Track> {
+        if (rawTracks.isEmpty()) return emptyList()
+
+        val result = mutableListOf<Track>()
+        for (incoming in rawTracks) {
+            if (isTrackDeleted(incoming)) continue
+
+            val matchIndex = result.indexOfFirst { existing ->
+                areTracksDuplicate(existing, incoming)
+            }
+
+            if (matchIndex < 0) {
+                result.add(incoming)
+            } else {
+                val existing = result[matchIndex]
+                val existingHasArt = hasValidArtwork(existing)
+                val incomingHasArt = hasValidArtwork(incoming)
+
+                val winner: Track
+                val loser: Track
+
+                if (incomingHasArt && !existingHasArt) {
+                    // Incoming has artwork, existing does not -> Incoming WINS!
+                    winner = incoming
+                    loser = existing
+                } else if (existingHasArt && !incomingHasArt) {
+                    // Existing has artwork, incoming does not -> Existing WINS!
+                    winner = existing
+                    loser = incoming
+                } else {
+                    // Both have artwork or neither has artwork:
+                    val existingIsMediaStore = existing.id.startsWith("local-") && !existing.id.startsWith("local-file-")
+                    val incomingIsMediaStore = incoming.id.startsWith("local-") && !incoming.id.startsWith("local-file-")
+
+                    if (incomingIsMediaStore && !existingIsMediaStore) {
+                        winner = incoming
+                        loser = existing
+                    } else if (existingIsMediaStore && !incomingIsMediaStore) {
+                        winner = existing
+                        loser = incoming
+                    } else if (incoming.duration > 0 && existing.duration <= 0) {
+                        winner = incoming
+                        loser = existing
+                    } else {
+                        winner = existing
+                        loser = incoming
+                    }
+                }
+
+                // Merge best metadata into winner from loser
+                val mergedDuration = if (winner.duration > 0) winner.duration else loser.duration
+                val mergedArtist = if (winner.artist.isNotBlank() && winner.artist != "Unknown Artist" && winner.artist != "<unknown>") {
+                    winner.artist
+                } else if (loser.artist.isNotBlank() && loser.artist != "Unknown Artist" && loser.artist != "<unknown>") {
+                    loser.artist
+                } else {
+                    winner.artist
+                }
+                val mergedAlbum = if (winner.album.isNotBlank() && winner.album != "Music" && winner.album != "Download") {
+                    winner.album
+                } else if (loser.album.isNotBlank() && loser.album != "Music" && loser.album != "Download") {
+                    loser.album
+                } else {
+                    winner.album
+                }
+                val mergedArt = if (hasValidArtwork(winner)) winner.coverArt else loser.coverArt
+                val mergedLyrics = winner.lyrics.ifBlank { loser.lyrics }
+                val mergedPlays = maxOf(winner.playCount, loser.playCount)
+                val mergedFav = winner.isFavorite || loser.isFavorite
+                val mergedLastPlayed = maxOf(winner.lastPlayed, loser.lastPlayed)
+
+                val finalWinner = winner.copy(
+                    duration = mergedDuration,
+                    artist = mergedArtist,
+                    album = mergedAlbum,
+                    coverArt = mergedArt,
+                    lyrics = mergedLyrics,
+                    playCount = mergedPlays,
+                    isFavorite = mergedFav,
+                    lastPlayed = mergedLastPlayed
+                )
+
+                result[matchIndex] = finalWinner
+            }
+        }
+        return result
+    }
+
+    fun extractEmbeddedArtwork(filePath: String, trackId: String): String {
+        return try {
+            val retriever = MediaMetadataRetriever()
+            retriever.setDataSource(filePath)
+            val pic = retriever.embeddedPicture
+            retriever.release()
+            if (pic != null && pic.isNotEmpty()) {
+                val cacheFolder = File(context.cacheDir, "albumart")
+                if (!cacheFolder.exists()) cacheFolder.mkdirs()
+                val artFile = File(cacheFolder, "art_${trackId.hashCode().toString().replace("-", "n")}.jpg")
+                if (!artFile.exists() || artFile.length() == 0L) {
+                    artFile.writeBytes(pic)
+                }
+                Uri.fromFile(artFile).toString()
+            } else ""
+        } catch (_: Exception) {
+            ""
+        }
     }
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
@@ -120,9 +336,16 @@ class MusicRepository(private val context: Context) {
         prefs.edit().putStringSet("unlocked_themes", updated).apply()
     }
     fun isThemeUnlocked(theme: AppTheme, isPro: Boolean): Boolean {
-        if (!theme.isProOnly) return true
-        if (isPro) return true
-        return _unlockedThemeIds.value.contains(theme.idStr)
+        return true // All themes and colors unlocked as requested
+    }
+    fun updateTrackDuration(trackId: String, durationSec: Long) {
+        val current = _tracks.value
+        val updated = current.map {
+            if (it.id == trackId && (it.duration <= 0L || it.duration != durationSec)) {
+                it.copy(duration = durationSec)
+            } else it
+        }
+        _tracks.value = updated
     }
     fun saveEqualizer(eq: EqualizerSettings) = updateEqualizerSettings(eq)
     fun saveSettings(settings: PlayerSettings) = updateSettings(settings)
@@ -411,17 +634,20 @@ class MusicRepository(private val context: Context) {
                 _playlists.value = DefaultTracks.initialPlaylists
             }
 
-            // Load Tracks or default - ensure only valid local user tracks are kept
+            // Load Tracks or default - ensure only valid local user tracks are kept, deleted tracks are filtered, and duplicates are resolved to the one with artwork
             val tracksJson = prefs.getString("tracks", null)
             val savedTracks: List<Track>? = if (tracksJson != null) {
                 try {
                     val parsed: List<Track> = json.decodeFromString(tracksJson)
-                    parsed.filter { tr ->
+                    val valid = parsed.filter { tr ->
                         tr.sourceType == "local" &&
                         !tr.url.startsWith("content://media/internal/") &&
                         !tr.url.contains("SoundHelix") &&
-                        tr.url.isNotBlank()
+                        tr.url.isNotBlank() &&
+                        MusicFilter.isMusicTrack(tr) &&
+                        !isTrackDeleted(tr)
                     }
+                    deduplicateTracks(valid)
                 } catch (e: Exception) {
                     null
                 }
@@ -440,8 +666,10 @@ class MusicRepository(private val context: Context) {
     suspend fun scanMediaStore(): Int = withContext(Dispatchers.IO) {
         val deviceTracks = mutableListOf<Track>()
         val existingMediaIds = mutableSetOf<Long>()
+        val existingUrls = mutableSetOf<String>()
+        val existingFilePaths = mutableSetOf<String>()
 
-        val projection = arrayOf(
+        val projectionList = mutableListOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
@@ -450,8 +678,15 @@ class MusicRepository(private val context: Context) {
             MediaStore.Audio.Media.DATA,
             MediaStore.Audio.Media.DATE_ADDED,
             MediaStore.Audio.Media.DATE_MODIFIED,
-            MediaStore.Audio.Media.SIZE
+            MediaStore.Audio.Media.SIZE,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.MIME_TYPE,
+            MediaStore.Audio.Media.IS_MUSIC
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            projectionList.add(MediaStore.MediaColumns.RELATIVE_PATH)
+        }
+        val projection = projectionList.toTypedArray()
 
         fun queryUri(contentUriBase: Uri, selection: String?) {
             try {
@@ -460,7 +695,7 @@ class MusicRepository(private val context: Context) {
                     projection,
                     selection,
                     null,
-                    "${MediaStore.Audio.Media.DATE_MODIFIED} DESC"
+                    "${MediaStore.Audio.Media.DATE_ADDED} DESC"
                 )
 
                 cursor?.use {
@@ -474,13 +709,17 @@ class MusicRepository(private val context: Context) {
                     val dateAddedCol = it.getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
                     val dateModifiedCol = it.getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
                     val sizeCol = it.getColumnIndex(MediaStore.Audio.Media.SIZE)
+                    val displayNameCol = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                    val mimeTypeCol = it.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
+                    val isMusicCol = it.getColumnIndex(MediaStore.Audio.Media.IS_MUSIC)
+                    val relativePathCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        it.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                    } else -1
 
                     while (it.moveToNext()) {
                         val mediaId = it.getLong(idCol)
                         if (existingMediaIds.contains(mediaId)) continue
-                        existingMediaIds.add(mediaId)
 
-                        val contentUri = ContentUris.withAppendedId(contentUriBase, mediaId).toString()
                         val title = (if (titleCol >= 0) it.getString(titleCol) else null)?.takeIf { t -> t.isNotBlank() } ?: "Track $mediaId"
                         val artist = (if (artistCol >= 0) it.getString(artistCol) else null)?.takeIf { a -> a.isNotBlank() && a != "<unknown>" } ?: "Unknown Artist"
                         val album = (if (albumCol >= 0) it.getString(albumCol) else null)?.takeIf { al -> al.isNotBlank() } ?: "Music"
@@ -488,34 +727,82 @@ class MusicRepository(private val context: Context) {
                         val dataPath = if (dataCol >= 0) it.getString(dataCol) ?: "" else ""
                         val dateAddedSec = if (dateAddedCol >= 0) it.getLong(dateAddedCol) else 0L
                         val dateModifiedSec = if (dateModifiedCol >= 0) it.getLong(dateModifiedCol) else 0L
+                        val sizeBytes = if (sizeCol >= 0) it.getLong(sizeCol) else 0L
+                        val displayName = if (displayNameCol >= 0) it.getString(displayNameCol) else null
+                        val mimeType = if (mimeTypeCol >= 0) it.getString(mimeTypeCol) else null
+                        val isMusic = if (isMusicCol >= 0) it.getInt(isMusicCol) else null
+                        val relativePath = if (relativePathCol >= 0) it.getString(relativePathCol) else null
+
+                        // Central filter: Is this a legitimate music track?
+                        // Excludes WhatsApp voice notes, Voice Recorder recordings, Sound Recorder, Call recordings, etc.
+                        if (!MusicFilter.isMusicTrack(
+                                relativePath = relativePath,
+                                displayName = displayName,
+                                mimeType = mimeType,
+                                isMusic = isMusic,
+                                dataPath = dataPath,
+                                title = title,
+                                artist = artist,
+                                album = album,
+                                durationMs = durationMs,
+                                sizeBytes = sizeBytes
+                            )
+                        ) {
+                            continue
+                        }
+
+                        existingMediaIds.add(mediaId)
+                        if (dataPath.isNotEmpty()) existingFilePaths.add(dataPath.lowercase())
+
+                        val contentUri = ContentUris.withAppendedId(contentUriBase, mediaId).toString()
+                        existingUrls.add(contentUri)
+
                         val fileModified = if (dataPath.isNotEmpty()) {
                             try { File(dataPath).lastModified() } catch (_: Exception) { 0L }
                         } else 0L
 
-                        val effectiveAdded = maxOf(dateAddedSec * 1000L, dateModifiedSec * 1000L, fileModified).takeIf { t -> t > 0L } ?: System.currentTimeMillis()
-                        val sizeBytes = if (sizeCol >= 0) it.getLong(sizeCol) else 0L
-                        val folder = if (dataPath.isNotEmpty()) {
+                        // Use "DATE_ADDED" to sort Recently Added, newest first. Use "DATE_MODIFIED" only as a fallback.
+                        val effectiveAdded = if (dateAddedSec > 0L) {
+                            dateAddedSec * 1000L
+                        } else if (dateModifiedSec > 0L) {
+                            dateModifiedSec * 1000L
+                        } else if (fileModified > 0L) {
+                            fileModified
+                        } else {
+                            System.currentTimeMillis()
+                        }
+
+                        val folder = if (!relativePath.isNullOrBlank()) {
+                            relativePath.trimEnd('/')
+                        } else if (dataPath.isNotEmpty()) {
                             try { File(dataPath).parent ?: "Phone Storage" } catch (_: Exception) { "Phone Storage" }
                         } else "Phone Storage"
 
                         val sizeMb = String.format("%.1f MB", sizeBytes / (1024.0 * 1024.0))
-                        val albumArtUri = Uri.parse("content://media/external/audio/media/$mediaId/albumart").toString()
+                        val albumIdCol = it.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
+                        val albumId = if (albumIdCol >= 0) it.getLong(albumIdCol) else -1L
+                        val albumArtUri = if (albumId >= 0) {
+                            ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId).toString()
+                        } else {
+                            Uri.parse("content://media/external/audio/media/$mediaId/albumart").toString()
+                        }
 
-                        deviceTracks.add(
-                            Track(
-                                id = "local-$mediaId",
-                                title = title,
-                                artist = artist,
-                                album = album,
-                                duration = durationMs / 1000L,
-                                url = contentUri,
-                                coverArt = albumArtUri,
-                                folder = folder,
-                                dateAdded = effectiveAdded,
-                                fileSize = sizeMb,
-                                sourceType = "local"
-                            )
+                        val track = Track(
+                            id = "local-$mediaId",
+                            title = title,
+                            artist = artist,
+                            album = album,
+                            duration = durationMs / 1000L,
+                            url = contentUri,
+                            coverArt = albumArtUri,
+                            folder = folder,
+                            dateAdded = effectiveAdded,
+                            fileSize = sizeMb,
+                            sourceType = "local"
                         )
+                        if (!isTrackDeleted(track)) {
+                            deviceTracks.add(track)
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -523,24 +810,113 @@ class MusicRepository(private val context: Context) {
             }
         }
 
-        // Query external storage for real user music
-        val broadSelection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 OR ${MediaStore.Audio.Media.DURATION} > 0"
-        queryUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, broadSelection)
+        // Query external storage for audio
+        queryUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, null)
 
-        // If no tracks found, query external without any filter (essential for Redmi / HyperOS devices)
-        if (deviceTracks.isEmpty()) {
-            queryUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, null)
+        // On Android 10+ (API 29+), check MediaStore.Downloads for newly downloaded Chrome songs
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                val downloadProjection = arrayOf(
+                    MediaStore.Downloads._ID,
+                    MediaStore.Downloads.DISPLAY_NAME,
+                    MediaStore.Downloads.MIME_TYPE,
+                    MediaStore.Downloads.DATA,
+                    MediaStore.Downloads.DATE_ADDED,
+                    MediaStore.Downloads.DATE_MODIFIED,
+                    MediaStore.Downloads.SIZE,
+                    MediaStore.Downloads.RELATIVE_PATH
+                )
+                val downloadCursor = context.contentResolver.query(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    downloadProjection,
+                    null,
+                    null,
+                    "${MediaStore.Downloads.DATE_ADDED} DESC"
+                )
+                downloadCursor?.use { dc ->
+                    val dIdCol = dc.getColumnIndex(MediaStore.Downloads._ID)
+                    val dNameCol = dc.getColumnIndex(MediaStore.Downloads.DISPLAY_NAME)
+                    val dMimeCol = dc.getColumnIndex(MediaStore.Downloads.MIME_TYPE)
+                    val dDataCol = dc.getColumnIndex(MediaStore.Downloads.DATA)
+                    val dAddedCol = dc.getColumnIndex(MediaStore.Downloads.DATE_ADDED)
+                    val dModCol = dc.getColumnIndex(MediaStore.Downloads.DATE_MODIFIED)
+                    val dSizeCol = dc.getColumnIndex(MediaStore.Downloads.SIZE)
+                    val dRelCol = dc.getColumnIndex(MediaStore.Downloads.RELATIVE_PATH)
+
+                    while (dc.moveToNext()) {
+                        val dId = if (dIdCol >= 0) dc.getLong(dIdCol) else continue
+                        val dData = if (dDataCol >= 0) dc.getString(dDataCol) ?: "" else ""
+                        val dName = if (dNameCol >= 0) dc.getString(dNameCol) ?: "" else ""
+                        val dMime = if (dMimeCol >= 0) dc.getString(dMimeCol) else null
+                        val dRel = if (dRelCol >= 0) dc.getString(dRelCol) else "Download/"
+                        val dSize = if (dSizeCol >= 0) dc.getLong(dSizeCol) else 0L
+                        val dAddedSec = if (dAddedCol >= 0) dc.getLong(dAddedCol) else 0L
+                        val dModSec = if (dModCol >= 0) dc.getLong(dModCol) else 0L
+
+                        if (dData.isNotEmpty() && existingFilePaths.contains(dData.lowercase())) continue
+
+                        if (!MusicFilter.isMusicTrack(
+                                relativePath = dRel,
+                                displayName = dName,
+                                mimeType = dMime,
+                                dataPath = dData,
+                                title = dName.substringBeforeLast("."),
+                                sizeBytes = dSize
+                            )
+                        ) {
+                            continue
+                        }
+
+                        if (dData.isNotEmpty()) existingFilePaths.add(dData.lowercase())
+                        val downloadUri = ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, dId).toString()
+                        val fMod = if (dData.isNotEmpty()) try { File(dData).lastModified() } catch (_: Exception) { 0L } else 0L
+                        val effAdded = if (dAddedSec > 0L) dAddedSec * 1000L else if (dModSec > 0L) dModSec * 1000L else if (fMod > 0L) fMod else System.currentTimeMillis()
+
+                        val trackTitle = if (dName.contains(".")) dName.substringBeforeLast(".") else dName
+                        val sizeMb = String.format("%.1f MB", dSize / (1024.0 * 1024.0))
+
+                        val embeddedArt = if (dData.isNotEmpty()) extractEmbeddedArtwork(dData, "download-$dId") else ""
+                        val dTrack = Track(
+                            id = "download-$dId",
+                            title = trackTitle,
+                            artist = "Unknown Artist",
+                            album = "Download",
+                            duration = 0L,
+                            url = downloadUri,
+                            coverArt = embeddedArt,
+                            folder = dRel.trimEnd('/'),
+                            dateAdded = effAdded,
+                            fileSize = sizeMb,
+                            sourceType = "local"
+                        )
+
+                        if (!isTrackDeleted(dTrack)) {
+                            deviceTracks.add(dTrack)
+                        }
+
+                        // Trigger media scanner so Android also indexes it into Audio.Media
+                        if (dData.isNotEmpty()) {
+                            try {
+                                MediaScannerConnection.scanFile(context, arrayOf(dData), null, null)
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("MusicRepository", "MediaStore.Downloads query warning: ${e.message}")
+            }
         }
 
-        // Directly scan filesystem folders recursively to guarantee detection on all devices, SD cards, and subfolders
-        scanDirectDownloadAndMusicFolders(deviceTracks)
+        // Directly scan filesystem folders recursively to guarantee Chrome downloads and custom folders are detected
+        scanDirectDownloadAndMusicFolders(deviceTracks, existingFilePaths)
 
         val existingTracks = _tracks.value
         val existingFavorites = existingTracks.filter { it.isFavorite }.map { it.id }.toSet()
         val existingLyrics = existingTracks.filter { it.lyrics.isNotBlank() }.associate { it.id to it.lyrics }
 
         val newTrackList = if (deviceTracks.isNotEmpty()) {
-            val updatedDeviceTracks = deviceTracks.map { t ->
+            val deduplicated = deduplicateTracks(deviceTracks.filter { MusicFilter.isMusicTrack(it) && !isTrackDeleted(it) })
+            val updatedDeviceTracks = deduplicated.map { t ->
                 val normKey = getNormTrackKey(t.title, t.artist)
                 val persistentPlayCount = maxOf(
                     playCountPrefs.getInt(t.id, 0),
@@ -557,46 +933,40 @@ class MusicRepository(private val context: Context) {
                         (normKey.isNotBlank() && favoritesPrefs.getBoolean(normKey, false)) ||
                         t.isFavorite
 
-                // Track discovery timestamp so newly added songs immediately show at the top of Recently Added
-                val savedDiscovered = discoveryPrefs.getLong(t.id, 0L)
-                val effectiveDiscovered = if (savedDiscovered > 0L) {
-                    savedDiscovered
-                } else {
-                    val now = System.currentTimeMillis()
-                    discoveryPrefs.edit().putLong(t.id, now).apply()
-                    now
-                }
-                val effectiveAdded = maxOf(t.dateAdded, effectiveDiscovered)
-
                 t.copy(
                     isFavorite = isFav,
                     playCount = persistentPlayCount,
                     lastPlayed = persistentLastPlayed,
                     lyrics = existingLyrics[t.id] ?: t.lyrics,
-                    dateAdded = effectiveAdded
+                    dateAdded = t.dateAdded
                 )
             }
             // Default order for library tracks is A to Z by title
             updatedDeviceTracks.sortedWith(com.sonance.musicplayer.util.TrackComparators.TitleComparator)
         } else {
-            existingTracks.filter { it.sourceType == "local" && !it.url.startsWith("content://media/internal/") }
+            val validExisting = existingTracks.filter { it.sourceType == "local" && MusicFilter.isMusicTrack(it) && !it.url.startsWith("content://media/internal/") && !isTrackDeleted(it) }
+            deduplicateTracks(validExisting)
         }
 
         _tracks.value = newTrackList
         persistTracks(newTrackList)
-        deviceTracks.size
+        newTrackList.size
     }
 
     /**
      * Direct recursive file system inspection of standard and device-specific audio directories.
-     * Ensures music on all Redmi, Tecno, Samsung, and other devices (including SD cards and subfolders)
-     * is found immediately even before system MediaStore runs its periodic indexing cycle.
+     * Ensures music on all devices (including SD cards and subfolders) is found immediately
+     * when downloaded through Chrome or saved locally.
+     * Voice recording and WhatsApp folders are strictly excluded.
      */
-    private fun scanDirectDownloadAndMusicFolders(deviceTracks: MutableList<Track>) {
+    private fun scanDirectDownloadAndMusicFolders(
+        deviceTracks: MutableList<Track>,
+        existingFilePaths: MutableSet<String> = mutableSetOf()
+    ) {
         try {
             val candidateDirs = mutableListOf<File>()
 
-            // 1. Android public directories
+            // 1. Android public directories (Downloads, Music, Podcasts, Documents)
             try {
                 candidateDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS))
             } catch (_: Exception) {}
@@ -607,22 +977,16 @@ class MusicRepository(private val context: Context) {
                 candidateDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PODCASTS))
             } catch (_: Exception) {}
             try {
-                candidateDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS))
-            } catch (_: Exception) {}
-            try {
                 candidateDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS))
             } catch (_: Exception) {}
 
-            // 2. Standard device storage paths (including Redmi / Xiaomi MIUI custom paths)
+            // 2. Standard device storage paths
             val commonPaths = listOf(
                 "/storage/emulated/0/Download",
                 "/storage/emulated/0/Downloads",
                 "/storage/emulated/0/Music",
                 "/storage/emulated/0/Audio",
-                "/storage/emulated/0/Recordings",
-                "/storage/emulated/0/MIUI/sound_recorder",
-                "/storage/emulated/0/bluetooth",
-                "/storage/emulated/0/Telegram"
+                "/storage/emulated/0/bluetooth"
             )
             for (p in commonPaths) {
                 candidateDirs.add(File(p))
@@ -634,7 +998,6 @@ class MusicRepository(private val context: Context) {
                 for (f in externalFilesDirs) {
                     if (f != null) {
                         val path = f.absolutePath
-                        // Extract root mount point before /Android/data/...
                         val rootIdx = path.indexOf("/Android/data/")
                         if (rootIdx > 0) {
                             val sdCardRoot = File(path.substring(0, rootIdx))
@@ -660,7 +1023,6 @@ class MusicRepository(private val context: Context) {
             } catch (_: Exception) {}
 
             val validDirs = candidateDirs.filter { it.exists() && it.isDirectory }.distinctBy { it.absolutePath }
-            val audioExts = setOf("mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "wma")
             val existingUrls = deviceTracks.map { it.url }.toMutableSet()
             val existingTitles = deviceTracks.map { it.title.trim().lowercase() }.toMutableSet()
 
@@ -672,15 +1034,28 @@ class MusicRepository(private val context: Context) {
                         .maxDepth(5)
                         .filter { file ->
                             if (file.isDirectory) {
-                                // Skip hidden folders and Android private data caches
                                 val name = file.name
-                                !name.startsWith(".") && name != "Android" && name != "data" && name != "cache"
+                                !name.startsWith(".") &&
+                                    name != "Android" &&
+                                    name != "data" &&
+                                    name != "cache" &&
+                                    !name.equals("Recordings", ignoreCase = true) &&
+                                    !name.equals("WhatsApp", ignoreCase = true) &&
+                                    !name.contains("Voice", ignoreCase = true)
                             } else {
-                                file.isFile && file.length() >= 10240L && file.extension.lowercase() in audioExts
+                                file.isFile && file.length() >= 10240L &&
+                                    MusicFilter.isMusicTrack(
+                                        displayName = file.name,
+                                        dataPath = file.absolutePath,
+                                        sizeBytes = file.length()
+                                    )
                             }
                         }
                         .forEach { file ->
                             if (!file.isFile) return@forEach
+
+                            val filePathLower = file.absolutePath.lowercase()
+                            if (existingFilePaths.contains(filePathLower)) return@forEach
 
                             val fileUri = Uri.fromFile(file).toString()
                             val fileNameClean = file.nameWithoutExtension.trim().lowercase()
@@ -723,21 +1098,27 @@ class MusicRepository(private val context: Context) {
                             val sizeMb = String.format("%.1f MB", file.length() / (1024.0 * 1024.0))
                             val addedTime = file.lastModified().takeIf { it > 0L } ?: System.currentTimeMillis()
 
-                            deviceTracks.add(
-                                Track(
-                                    id = "local-file-${file.absolutePath.hashCode()}",
-                                    title = title,
-                                    artist = artist,
-                                    album = album,
-                                    duration = durationSec,
-                                    url = fileUri,
-                                    coverArt = "",
-                                    folder = file.parent ?: "Download",
-                                    dateAdded = addedTime,
-                                    fileSize = sizeMb,
-                                    sourceType = "local"
-                                )
+                            val trackId = "local-file-${file.absolutePath.hashCode()}"
+                            val embeddedArt = extractEmbeddedArtwork(file.absolutePath, trackId)
+
+                            val dirTrack = Track(
+                                id = trackId,
+                                title = title,
+                                artist = artist,
+                                album = album,
+                                duration = durationSec,
+                                url = fileUri,
+                                coverArt = embeddedArt,
+                                folder = file.parent ?: "Download",
+                                dateAdded = addedTime,
+                                fileSize = sizeMb,
+                                sourceType = "local"
                             )
+
+                            if (!isTrackDeleted(dirTrack)) {
+                                deviceTracks.add(dirTrack)
+                            }
+                            existingFilePaths.add(filePathLower)
                             existingUrls.add(fileUri)
                             existingTitles.add(title.trim().lowercase())
                         }
@@ -750,6 +1131,11 @@ class MusicRepository(private val context: Context) {
             Log.w("MusicRepository", "Direct folder scan warning: ${e.message}")
         }
     }
+
+    /**
+     * Expose central isMusicTrack check for external consumers.
+     */
+    fun isMusicTrack(track: Track): Boolean = MusicFilter.isMusicTrack(track)
 
     fun toggleFavorite(trackId: String) {
         val target = _tracks.value.find { it.id == trackId }
@@ -838,35 +1224,93 @@ class MusicRepository(private val context: Context) {
     }
 
     fun addTrack(track: Track) {
+        if (!MusicFilter.isMusicTrack(track)) return
         val updated = listOf(track) + _tracks.value.filter { it.id != track.id }
         _tracks.value = updated
         persistTracks(updated)
     }
 
     fun deleteTrack(trackId: String) {
-        val track = _tracks.value.find { it.id == trackId }
-        if (track != null) {
+        deleteTracks(listOf(trackId))
+    }
+
+    fun deleteTracks(trackIds: Collection<String>) {
+        if (trackIds.isEmpty()) return
+        val idSet = trackIds.toSet()
+        val targets = _tracks.value.filter { it.id in idSet }
+
+        // Find all duplicate tracks in the library that match any of the targets
+        val allDuplicatesToDelete = _tracks.value.filter { current ->
+            current.id in idSet || targets.any { target -> areTracksDuplicate(current, target) }
+        }
+
+        val allIdsToDelete = (idSet + allDuplicatesToDelete.map { it.id }).toSet()
+
+        // Mark all as deleted in persistent blacklist so scans never re-add them
+        allDuplicatesToDelete.forEach { track ->
+            markTrackAsDeleted(track)
+
+            // Attempt physical file deletion across all supported URI and path formats
             try {
-                if (track.contentUri.startsWith("content://")) {
-                    val uri = Uri.parse(track.contentUri)
-                    context.contentResolver.delete(uri, null, null)
-                } else if (track.contentUri.isNotBlank()) {
-                    val file = File(track.contentUri)
-                    if (file.exists()) {
-                        file.delete()
+                if (track.url.startsWith("content://")) {
+                    val uri = Uri.parse(track.url)
+                    try {
+                        context.contentResolver.delete(uri, null, null)
+                    } catch (se: SecurityException) {
+                        Log.w("MusicRepository", "Scoped storage delete restricted for ${track.url}: ${se.message}")
+                    }
+
+                    if (track.id.startsWith("local-")) {
+                        val mid = track.id.removePrefix("local-").toLongOrNull()
+                        if (mid != null) {
+                            try {
+                                context.contentResolver.delete(
+                                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                                    "${MediaStore.Audio.Media._ID} = ?",
+                                    arrayOf(mid.toString())
+                                )
+                            } catch (_: Exception) {}
+                        }
+                    } else if (track.id.startsWith("download-")) {
+                        val did = track.id.removePrefix("download-").toLongOrNull()
+                        if (did != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            try {
+                                context.contentResolver.delete(
+                                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                    "${MediaStore.Downloads._ID} = ?",
+                                    arrayOf(did.toString())
+                                )
+                            } catch (_: Exception) {}
+                        }
+                    }
+                } else {
+                    val path = if (track.url.startsWith("file://")) {
+                        Uri.parse(track.url).path ?: track.url.removePrefix("file://")
+                    } else {
+                        track.url
+                    }
+                    if (path.isNotBlank()) {
+                        val file = File(path)
+                        if (file.exists()) {
+                            file.delete()
+                        }
+                        try {
+                            MediaScannerConnection.scanFile(context, arrayOf(path), null, null)
+                        } catch (_: Exception) {}
                     }
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.w("MusicRepository", "Error attempting physical file deletion for '${track.title}': ${e.message}")
             }
         }
-        val updated = _tracks.value.filter { it.id != trackId }
+
+        val updated = _tracks.value.filter { it.id !in allIdsToDelete }
         _tracks.value = updated
         persistTracks(updated)
 
         // Remove from playlists
         val updatedPlaylists = _playlists.value.map { pl ->
-            pl.copy(trackIds = pl.trackIds.filter { it != trackId })
+            pl.copy(trackIds = pl.trackIds.filter { it !in allIdsToDelete })
         }
         _playlists.value = updatedPlaylists
         persistPlaylists(updatedPlaylists)
@@ -912,37 +1356,6 @@ class MusicRepository(private val context: Context) {
         }
         _tracks.value = updated
         persistTracks(updated)
-    }
-
-    fun deleteTracks(trackIds: Collection<String>) {
-        if (trackIds.isEmpty()) return
-        val idSet = trackIds.toSet()
-        val toDelete = _tracks.value.filter { it.id in idSet }
-        toDelete.forEach { track ->
-            try {
-                if (track.contentUri.startsWith("content://")) {
-                    val uri = Uri.parse(track.contentUri)
-                    context.contentResolver.delete(uri, null, null)
-                } else if (track.contentUri.isNotBlank()) {
-                    val file = File(track.contentUri)
-                    if (file.exists()) {
-                        file.delete()
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-        val updated = _tracks.value.filter { it.id !in idSet }
-        _tracks.value = updated
-        persistTracks(updated)
-
-        // Remove from playlists
-        val updatedPlaylists = _playlists.value.map { pl ->
-            pl.copy(trackIds = pl.trackIds.filter { it !in idSet })
-        }
-        _playlists.value = updatedPlaylists
-        persistPlaylists(updatedPlaylists)
     }
 
     fun removeTrackFromPlaylist(trackId: String, playlistId: String) {
