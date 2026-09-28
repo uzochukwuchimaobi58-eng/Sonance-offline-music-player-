@@ -1,6 +1,8 @@
 package com.sonance.musicplayer.ui.screens
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -60,11 +62,13 @@ fun ProUpgradeDialog(
     var selectedPlanIndex by remember { mutableIntStateOf(0) }
     var isRestoring by remember { mutableStateOf(false) }
     var isProcessing by remember { mutableStateOf(false) }
+    var showPlansForActivePro by remember { mutableStateOf(false) }
 
-    // Auto-dismiss when Pro is active
-    LaunchedEffect(subscription.isPro) {
-        if (subscription.isPro) {
+    // Auto-dismiss ONLY if we were actively processing a purchase flow that just succeeded
+    LaunchedEffect(subscription.isPro, isProcessing) {
+        if (isProcessing && subscription.isPro) {
             isProcessing = false
+            Toast.makeText(context, "Sonance PRO VIP Activated! All ads removed.", Toast.LENGTH_LONG).show()
             onClose()
         }
     }
@@ -72,7 +76,7 @@ fun ProUpgradeDialog(
     // Safety timeout so UI never hangs on PROCESSING
     LaunchedEffect(isProcessing) {
         if (isProcessing) {
-            delay(10000L)
+            delay(12000L)
             if (isProcessing) {
                 isProcessing = false
             }
@@ -185,15 +189,15 @@ fun ProUpgradeDialog(
                             modifier = Modifier.testTag("btn_restore_pro")
                         ) {
                             Text(
-                                text = if (isRestoring) "Restoring..." else "Restore",
+                                text = if (isRestoring) "Restoring..." else "Restore Purchases",
                                 color = Color.White.copy(alpha = 0.75f),
-                                fontSize = 16.sp,
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.Medium
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(28.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
                     // Brand: SONANCE [PRO]
                     Row(
@@ -213,13 +217,6 @@ fun ProUpgradeDialog(
                                 .border(1.2.dp, goldDark, RoundedCornerShape(6.dp))
                                 .background(goldDark.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
                                 .clip(RoundedCornerShape(6.dp))
-                                .clickable {
-                                    val selectedPlan = if (selectedPlanIndex == 0) "yearly" else "lifetime"
-                                    val price = if (selectedPlanIndex == 0) yearlyPrice else oneTimePrice
-                                    onSubscribe(selectedPlan, price, "pro_tester", "direct_activation")
-                                    Toast.makeText(context, "Sonance PRO VIP Activated!", Toast.LENGTH_SHORT).show()
-                                    onClose()
-                                }
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
@@ -232,140 +229,253 @@ fun ProUpgradeDialog(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    // Big headline: Join PRO
-                    Text(
-                        text = "Join PRO",
-                        color = Color(0xFFF7F3EB),
-                        fontSize = 38.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        modifier = Modifier.padding(horizontal = 4.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(34.dp))
-
-                    // Features Checklist with checkmarks on the right
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(22.dp)
-                    ) {
-                        ProBenefitRow(
-                            icon = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(26.dp)
-                                        .border(1.5.dp, Color(0xFFF3C78B), CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "AD",
-                                        color = Color(0xFFF3C78B),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Black
-                                    )
-                                }
-                            },
-                            title = "Remove all ads"
+                    // Check if User already has PRO and is not requesting to switch/view plans
+                    if (subscription.isPro && !showPlansForActivePro) {
+                        // --- PRO ACTIVE SCREEN ---
+                        Text(
+                            text = "Sonance PRO VIP Active",
+                            color = Color(0xFFF7F3EB),
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 4.dp)
                         )
 
-                        ProBenefitRow(
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Default.Palette,
-                                    contentDescription = null,
-                                    tint = Color(0xFFF3C78B),
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            },
-                            title = "Unlock all themes"
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "You have full VIP access. Advertisements are removed, all themes are unlocked, and audio is set to lossless studio quality.",
+                            color = textMuted,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            modifier = Modifier.padding(horizontal = 4.dp)
                         )
 
-                        ProBenefitRow(
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Default.Diamond,
-                                    contentDescription = null,
-                                    tint = Color(0xFFF3C78B),
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            },
-                            title = "Enjoy all features"
-                        )
-                    }
+                        Spacer(modifier = Modifier.height(28.dp))
 
-                    Spacer(modifier = Modifier.height(44.dp))
-
-                    // Plan selection cards: [Yearly - $1.00] | [One-Time - $5.00]
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        // Yearly Card ($1.00)
-                        val isYearlySelected = selectedPlanIndex == 0
+                        // Active Benefits Card
                         Surface(
                             modifier = Modifier
-                                .weight(1f)
+                                .fillMaxWidth()
                                 .clip(RoundedCornerShape(18.dp))
-                                .border(
-                                    width = if (isYearlySelected) 2.dp else 1.dp,
-                                    color = if (isYearlySelected) goldBorder else Color(0xFF28272C),
-                                    shape = RoundedCornerShape(18.dp)
-                                )
-                                .clickable { selectedPlanIndex = 0 }
-                                .testTag("plan_card_yearly"),
-                            color = if (isYearlySelected) cardBg else cardUnselectedBg
+                                .border(1.dp, goldBorder.copy(alpha = 0.4f), RoundedCornerShape(18.dp)),
+                            color = cardBg
                         ) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 22.dp, horizontal = 12.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                    .padding(20.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                Text(
-                                    text = "Yearly",
-                                    color = Color(0xFFDCD8D0),
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Medium
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = "Current Status",
+                                        color = textMuted,
+                                        fontSize = 13.sp
+                                    )
+                                    Surface(
+                                        color = goldDark.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(6.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, goldDark)
+                                    ) {
+                                        Text(
+                                            text = "ACTIVE VIP",
+                                            color = goldDark,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+
+                                ProBenefitRow(
+                                    icon = {
+                                        Icon(Icons.Default.Block, contentDescription = null, tint = goldAccent, modifier = Modifier.size(22.dp))
+                                    },
+                                    title = "All Ads Removed Forever"
                                 )
-                                Spacer(modifier = Modifier.height(14.dp))
-                                Text(
-                                    text = yearlyPrice,
-                                    color = Color.White,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    textAlign = TextAlign.Center
+
+                                ProBenefitRow(
+                                    icon = {
+                                        Icon(Icons.Default.Palette, contentDescription = null, tint = goldAccent, modifier = Modifier.size(22.dp))
+                                    },
+                                    title = "All VIP Themes Unlocked"
                                 )
-                                Spacer(modifier = Modifier.height(14.dp))
-                                Text(
-                                    text = "yearly payments",
-                                    color = textMuted,
-                                    fontSize = 12.sp
+
+                                ProBenefitRow(
+                                    icon = {
+                                        Icon(Icons.Default.GraphicEq, contentDescription = null, tint = goldAccent, modifier = Modifier.size(22.dp))
+                                    },
+                                    title = "Lossless 32-bit Studio Audio"
+                                )
+
+                                ProBenefitRow(
+                                    icon = {
+                                        Icon(Icons.Default.Diamond, contentDescription = null, tint = goldAccent, modifier = Modifier.size(22.dp))
+                                    },
+                                    title = "Lifetime Future Updates & Features"
                                 )
                             }
                         }
 
-                        // One-Time Card ($5.00) with badge
-                        val isOneTimeSelected = selectedPlanIndex == 1
-                        Box(
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        // Action 1: Manage Google Play Subscription
+                        Button(
+                            onClick = {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/account/subscriptions"))
+                                    context.startActivity(intent)
+                                } catch (_: Throwable) {
+                                    Toast.makeText(context, "Open Google Play > Subscriptions to manage your plan", Toast.LENGTH_LONG).show()
+                                }
+                            },
                             modifier = Modifier
-                                .weight(1f)
-                                .padding(top = 8.dp)
+                                .fillMaxWidth()
+                                .height(52.dp)
+                                .testTag("btn_manage_google_play_subscriptions"),
+                            shape = RoundedCornerShape(26.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = goldAccent)
                         ) {
+                            Icon(
+                                imageVector = Icons.Default.ShoppingCart,
+                                contentDescription = null,
+                                tint = Color(0xFF1E170A),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Manage on Google Play",
+                                color = Color(0xFF1E170A),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Action 2: Close
+                        OutlinedButton(
+                            onClick = onClose,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                        ) {
+                            Text(
+                                text = "Close",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            TextButton(onClick = { showPlansForActivePro = true }) {
+                                Text(
+                                    text = "View Subscription Plans & Pricing",
+                                    color = goldAccent.copy(alpha = 0.7f),
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    } else {
+                        // --- PRO UPGRADE & PURCHASE SCREEN ---
+                        Text(
+                            text = "Join PRO",
+                            color = Color(0xFFF7F3EB),
+                            fontSize = 38.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(30.dp))
+
+                        // Features Checklist with checkmarks on the right
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(20.dp)
+                        ) {
+                            ProBenefitRow(
+                                icon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .border(1.5.dp, Color(0xFFF3C78B), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "AD",
+                                            color = Color(0xFFF3C78B),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                    }
+                                },
+                                title = "Remove all ads"
+                            )
+
+                            ProBenefitRow(
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Palette,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF3C78B),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
+                                title = "Unlock all themes"
+                            )
+
+                            ProBenefitRow(
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Diamond,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF3C78B),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
+                                title = "Enjoy all features"
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(38.dp))
+
+                        // Plan selection cards: [Yearly - $1.00] | [One-Time - $5.00]
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            // Yearly Card ($1.00)
+                            val isYearlySelected = selectedPlanIndex == 0
                             Surface(
                                 modifier = Modifier
-                                    .fillMaxWidth()
+                                    .weight(1f)
                                     .clip(RoundedCornerShape(18.dp))
                                     .border(
-                                        width = if (isOneTimeSelected) 2.dp else 1.dp,
-                                        color = if (isOneTimeSelected) goldBorder else Color(0xFF28272C),
+                                        width = if (isYearlySelected) 2.dp else 1.dp,
+                                        color = if (isYearlySelected) goldBorder else Color(0xFF28272C),
                                         shape = RoundedCornerShape(18.dp)
                                     )
-                                    .clickable { selectedPlanIndex = 1 }
-                                    .testTag("plan_card_lifetime"),
-                                color = if (isOneTimeSelected) cardBg else cardUnselectedBg
+                                    .clickable { selectedPlanIndex = 0 }
+                                    .testTag("plan_card_yearly"),
+                                color = if (isYearlySelected) cardBg else cardUnselectedBg
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -374,14 +484,14 @@ fun ProUpgradeDialog(
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Text(
-                                        text = "One-Time",
+                                        text = "Yearly",
                                         color = Color(0xFFDCD8D0),
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Medium
                                     )
                                     Spacer(modifier = Modifier.height(14.dp))
                                     Text(
-                                        text = oneTimePrice,
+                                        text = yearlyPrice,
                                         color = Color.White,
                                         fontSize = 18.sp,
                                         fontWeight = FontWeight.ExtraBold,
@@ -389,159 +499,187 @@ fun ProUpgradeDialog(
                                     )
                                     Spacer(modifier = Modifier.height(14.dp))
                                     Text(
-                                        text = "one time payment",
+                                        text = "yearly payments",
                                         color = textMuted,
                                         fontSize = 12.sp
                                     )
                                 }
                             }
 
-                            // ONE-TIME badge
+                            // One-Time Card ($5.00) with badge
+                            val isOneTimeSelected = selectedPlanIndex == 1
                             Box(
                                 modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .offset(y = (-11).dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFFF3C78B))
-                                    .padding(horizontal = 10.dp, vertical = 3.dp)
+                                    .weight(1f)
+                                    .padding(top = 8.dp)
                             ) {
-                                Text(
-                                    text = "LIFETIME",
-                                    color = Color(0xFF201607),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Black
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(36.dp))
-
-                    // SUBSCRIBE NOW Button (Full width warm gold pill)
-                    Button(
-                        onClick = {
-                            if (isProcessing) return@Button
-                            isProcessing = true
-                            val selectedPlan = if (selectedPlanIndex == 0) "yearly" else "lifetime"
-                            val price = if (selectedPlanIndex == 0) yearlyPrice else oneTimePrice
-
-                            val activity = context as? Activity
-                            if (activity != null && isBillingConnected) {
-                                billingManager.launchPurchaseFlow(
-                                    activity = activity,
-                                    plan = selectedPlan,
-                                    onFallbackSimulation = {
-                                        // When Google Play merchant sandbox or offline
-                                        coroutineScope.launch {
-                                            delay(500)
-                                            onSubscribe(selectedPlan, price, "guest_subscriber", "google_play")
-                                            isProcessing = false
-                                            Toast.makeText(context, "Google Play PRO Activated! All ads removed.", Toast.LENGTH_LONG).show()
-                                            onClose()
-                                        }
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(18.dp))
+                                        .border(
+                                            width = if (isOneTimeSelected) 2.dp else 1.dp,
+                                            color = if (isOneTimeSelected) goldBorder else Color(0xFF28272C),
+                                            shape = RoundedCornerShape(18.dp)
+                                        )
+                                        .clickable { selectedPlanIndex = 1 }
+                                        .testTag("plan_card_lifetime"),
+                                    color = if (isOneTimeSelected) cardBg else cardUnselectedBg
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 22.dp, horizontal = 12.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = "One-Time",
+                                            color = Color(0xFFDCD8D0),
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Spacer(modifier = Modifier.height(14.dp))
+                                        Text(
+                                            text = oneTimePrice,
+                                            color = Color.White,
+                                            fontSize = 18.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        Spacer(modifier = Modifier.height(14.dp))
+                                        Text(
+                                            text = "one time payment",
+                                            color = textMuted,
+                                            fontSize = 12.sp
+                                        )
                                     }
-                                )
-                            } else {
-                                coroutineScope.launch {
-                                    delay(400)
-                                    onSubscribe(selectedPlan, price, "guest_subscriber", "google_play")
-                                    isProcessing = false
-                                    Toast.makeText(context, "Google Play PRO Activated! All ads removed.", Toast.LENGTH_LONG).show()
-                                    onClose()
+                                }
+
+                                // ONE-TIME badge
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .offset(y = (-11).dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFFF3C78B))
+                                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        text = "LIFETIME",
+                                        color = Color(0xFF201607),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
                                 }
                             }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .testTag("btn_subscribe_now"),
-                        shape = RoundedCornerShape(28.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = goldAccent),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = if (isProcessing) "PROCESSING..." else "SUBSCRIBE NOW",
-                                color = Color(0xFF1E170A),
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Black,
-                                letterSpacing = 0.6.sp
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = null,
-                                tint = Color(0xFF1E170A),
-                                modifier = Modifier.size(20.dp)
-                            )
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(34.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        TextButton(
+                        // SUBSCRIBE NOW Button (Connected directly to Google Play Billing)
+                        Button(
                             onClick = {
+                                if (isProcessing) return@Button
+                                isProcessing = true
                                 val selectedPlan = if (selectedPlanIndex == 0) "yearly" else "lifetime"
-                                val price = if (selectedPlanIndex == 0) yearlyPrice else oneTimePrice
-                                onSubscribe(selectedPlan, price, "pro_tester", "direct_license")
-                                Toast.makeText(context, "Sonance PRO VIP Activated! All themes & features unlocked.", Toast.LENGTH_LONG).show()
-                                onClose()
+
+                                val activity = context as? Activity
+                                if (activity != null) {
+                                    billingManager.launchPurchaseFlow(
+                                        activity = activity,
+                                        plan = selectedPlan
+                                    )
+                                } else {
+                                    isProcessing = false
+                                    Toast.makeText(context, "Cannot find parent activity for Google Play Billing", Toast.LENGTH_SHORT).show()
+                                }
                             },
-                            modifier = Modifier.testTag("btn_activate_pro_direct")
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .testTag("btn_subscribe_now"),
+                            shape = RoundedCornerShape(28.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = goldAccent),
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Key,
-                                contentDescription = null,
-                                tint = goldAccent.copy(alpha = 0.75f),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                if (isProcessing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = Color(0xFF1E170A),
+                                        strokeWidth = 2.5.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "CONNECTING GOOGLE PLAY...",
+                                        color = Color(0xFF1E170A),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Black,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                } else {
+                                    Text(
+                                        text = "SUBSCRIBE NOW",
+                                        color = Color(0xFF1E170A),
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Black,
+                                        letterSpacing = 0.6.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                        contentDescription = null,
+                                        tint = Color(0xFF1E170A),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        if (showPlansForActivePro) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            TextButton(
+                                onClick = { showPlansForActivePro = false },
+                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                            ) {
+                                Text("Back to VIP Status", color = textMuted, fontSize = 13.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Legal disclaimers for Google Play subscriptions
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             Text(
-                                text = "Activate / Test PRO License",
-                                color = goldAccent.copy(alpha = 0.85f),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
+                                text = "1. If you do not cancel your subscription 24 hours before the end of the current period, it will automatically renew.",
+                                color = Color(0xFF6E6A63),
+                                fontSize = 11.5.sp,
+                                lineHeight = 16.sp
+                            )
+                            Text(
+                                text = "2. Once the purchase is confirmed, payment will be charged to your Google Play account.",
+                                color = Color(0xFF6E6A63),
+                                fontSize = 11.5.sp,
+                                lineHeight = 16.sp
+                            )
+                            Text(
+                                text = "3. Subscriptions can be managed or canceled anytime via Google Play Store > Payments & subscriptions.",
+                                color = Color(0xFF6E6A63),
+                                fontSize = 11.5.sp,
+                                lineHeight = 16.sp
                             )
                         }
+
+                        Spacer(modifier = Modifier.height(24.dp))
                     }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    // Legal disclaimers matching screenshot
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = "1. If you do not cancel your subscription 24 hours before the end of the current period, it will automatically renew.",
-                            color = Color(0xFF6E6A63),
-                            fontSize = 11.5.sp,
-                            lineHeight = 16.sp
-                        )
-                        Text(
-                            text = "2. Once the purchase is confirmed, the subscription fee will be charged to your Google Play account.",
-                            color = Color(0xFF6E6A63),
-                            fontSize = 11.5.sp,
-                            lineHeight = 16.sp
-                        )
-                        Text(
-                            text = "3. The renewal fee will be charged to your account 24 hours before the end of the subscription period.",
-                            color = Color(0xFF6E6A63),
-                            fontSize = 11.5.sp,
-                            lineHeight = 16.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }

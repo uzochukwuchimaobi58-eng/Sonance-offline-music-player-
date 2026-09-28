@@ -49,6 +49,8 @@ android {
             val localReleaseKeystore = file("${rootDir}/release.keystore")
             if ((cmKeystorePath != null && file(cmKeystorePath).exists()) || localReleaseKeystore.exists()) {
                 signingConfig = signingConfigs.getByName("release")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
             }
             isMinifyEnabled = false
             proguardFiles(

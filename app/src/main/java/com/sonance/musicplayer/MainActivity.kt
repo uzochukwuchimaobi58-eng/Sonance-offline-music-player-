@@ -48,15 +48,13 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 if (isRunningOnEmulator()) {
-                    android.util.Log.i("MainActivity", "Emulator environment detected: skipping MobileAds measurement daemon")
+                    android.util.Log.i("MainActivity", "Emulator environment detected: skipping MobileAds init")
                     return@launch
                 }
                 val gmsAvailability = com.google.android.gms.common.GoogleApiAvailability.getInstance()
                 val resultCode = gmsAvailability.isGooglePlayServicesAvailable(applicationContext)
                 if (resultCode == com.google.android.gms.common.ConnectionResult.SUCCESS) {
                     com.google.android.gms.ads.MobileAds.initialize(applicationContext) {}
-                } else {
-                    android.util.Log.i("MainActivity", "Skipping MobileAds init (Play Services status: $resultCode)")
                 }
             } catch (t: Throwable) {
                 android.util.Log.w("MainActivity", "MobileAds init safe catch: ${t.message}")
@@ -196,6 +194,14 @@ class MainActivity : ComponentActivity() {
                     scope.launch {
                         repository.scanMediaStore()
                     }
+                }
+
+                // Preload production AdMob Interstitial ad for free tier on real devices
+                if (!isProEffective && remoteSettings.admobEnabled && !isRunningOnEmulator()) {
+                    com.sonance.musicplayer.ui.components.InterstitialAdController.loadInterstitial(
+                        this@MainActivity,
+                        remoteSettings.admobInterstitialUnitId.ifBlank { com.sonance.musicplayer.ui.components.PRODUCTION_INTERSTITIAL_UNIT_ID }
+                    )
                 }
             }
 

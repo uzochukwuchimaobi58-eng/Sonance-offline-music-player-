@@ -1,5 +1,8 @@
 package com.sonance.musicplayer.ui.components
 
+import android.app.Activity
+import android.content.Context
+import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -23,13 +27,59 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.google.android.gms.ads.AdError
+import com.google.android.gms.ads.AdRequest
+import com.google.android.gms.ads.FullScreenContentCallback
+import com.google.android.gms.ads.LoadAdError
+import com.google.android.gms.ads.interstitial.InterstitialAd
+import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.sonance.musicplayer.model.ThemeConfig
 import kotlinx.coroutines.delay
 
+const val PRODUCTION_INTERSTITIAL_UNIT_ID = "ca-app-pub-6322953088287505/2734992395"
+
 object InterstitialAdController {
+    private const val TAG = "InterstitialAd"
     private var lastAdShownTimestamp: Long = 0L
-    // 35 seconds cooldown between interstitials to avoid spamming users
+    // 35 seconds cooldown between interstitials to respect user experience
     private const val COOLDOWN_INTERVAL_MS = 35_000L
+
+    var interstitialAd: InterstitialAd? = null
+        private set
+    private var isLoading = false
+
+    fun loadInterstitial(context: Context, adUnitId: String = PRODUCTION_INTERSTITIAL_UNIT_ID) {
+        if (interstitialAd != null || isLoading) return
+        if (com.sonance.musicplayer.MusicApplication.isEmulatorDevice()) {
+            Log.d(TAG, "Emulator device detected; skipping InterstitialAd load")
+            return
+        }
+        isLoading = true
+        val adRequest = AdRequest.Builder().build()
+        try {
+            InterstitialAd.load(
+                context.applicationContext,
+                adUnitId,
+                adRequest,
+                object : InterstitialAdLoadCallback() {
+                    override fun onAdLoaded(ad: InterstitialAd) {
+                        interstitialAd = ad
+                        isLoading = false
+                        Log.d(TAG, "Production AdMob Interstitial ad loaded successfully.")
+                    }
+
+                    override fun onAdFailedToLoad(loadAdError: LoadAdError) {
+                        interstitialAd = null
+                        isLoading = false
+                        Log.w(TAG, "Production AdMob Interstitial failed to load: ${loadAdError.message} (code ${loadAdError.code})")
+                    }
+                }
+            )
+        } catch (t: Throwable) {
+            isLoading = false
+            Log.e(TAG, "Error initiating InterstitialAd load", t)
+        }
+    }
 
     fun shouldTriggerInterstitial(isPro: Boolean, admobEnabled: Boolean): Boolean {
         if (isPro || !admobEnabled) return false
@@ -43,6 +93,42 @@ object InterstitialAdController {
     fun recordAdImpression() {
         lastAdShownTimestamp = System.currentTimeMillis()
     }
+
+    fun showInterstitial(
+        activity: Activity,
+        adUnitId: String = PRODUCTION_INTERSTITIAL_UNIT_ID,
+        onAdDismissed: () -> Unit
+    ): Boolean {
+        val ad = interstitialAd
+        if (ad != null) {
+            ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+                override fun onAdDismissedFullScreenContent() {
+                    interstitialAd = null
+                    recordAdImpression()
+                    loadInterstitial(activity, adUnitId)
+                    onAdDismissed()
+                }
+
+                override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                    interstitialAd = null
+                    Log.w(TAG, "Interstitial ad failed to show: ${adError.message}")
+                    loadInterstitial(activity, adUnitId)
+                    onAdDismissed()
+                }
+
+                override fun onAdShowedFullScreenContent() {
+                    recordAdImpression()
+                    Log.d(TAG, "AdMob Interstitial showed full screen content.")
+                }
+            }
+            ad.show(activity)
+            return true
+        } else {
+            // Not ready yet, start preload for next action
+            loadInterstitial(activity, adUnitId)
+            return false
+        }
+    }
 }
 
 @Composable
@@ -50,11 +136,31 @@ fun InterstitialAdDialog(
     isOpen: Boolean,
     onDismiss: () -> Unit,
     onOpenPro: () -> Unit,
-    theme: ThemeConfig
+    theme: ThemeConfig,
+    adUnitId: String = PRODUCTION_INTERSTITIAL_UNIT_ID
 ) {
     if (!isOpen) return
 
-    var countdownSeconds by remember { mutableStateOf(3) }
+    val context = LocalContext.current
+    val activity = context as? Activity
+
+    // Ensure interstitial is preloaded or try to display the native full-screen ad
+    LaunchedEffect(isOpen) {
+        if (activity != null) {
+            val shown = InterstitialAdController.showInterstitial(activity, adUnitId) {
+                onDismiss()
+            }
+            if (shown) {
+                // Real Google AdMob full-screen activity is now displaying on top
+                return@LaunchedEffect
+            } else {
+                InterstitialAdController.loadInterstitial(context, adUnitId)
+            }
+        }
+    }
+
+    // Fallback display if ad is still loading or running on device without Play Services
+    var countdownSeconds by remember { mutableIntStateOf(3) }
     var canSkip by remember { mutableStateOf(false) }
 
     LaunchedEffect(isOpen) {
@@ -122,7 +228,7 @@ fun InterstitialAdDialog(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "• Google AdMob (Unit: ...2395)",
+                                    text = "• Google AdMob Network",
                                     color = Color.White.copy(alpha = 0.7f),
                                     fontSize = 10.sp
                                 )
@@ -200,27 +306,27 @@ fun InterstitialAdDialog(
                                 Surface(
                                     shape = CircleShape,
                                     color = Color(0xFF38BDF8).copy(alpha = 0.2f),
-                                    modifier = Modifier.size(60.dp)
+                                    modifier = Modifier.size(56.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(
-                                            imageVector = Icons.Default.Headphones,
+                                            imageVector = Icons.Default.MusicNote,
                                             contentDescription = null,
                                             tint = Color(0xFF38BDF8),
-                                            modifier = Modifier.size(36.dp)
+                                            modifier = Modifier.size(30.dp)
                                         )
                                     }
                                 }
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
                                 Text(
-                                    text = "Ultra Hi-Res Audio Studio",
+                                    text = "Sonance Music Player PRO",
                                     color = Color.White,
-                                    fontSize = 14.sp,
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "32-bit DAC • Lossless Spatial Sound",
-                                    color = Color(0xFF94A3B8),
+                                    text = "Upgrade for Lossless Audio & Zero Ads",
+                                    color = Color.White.copy(alpha = 0.7f),
                                     fontSize = 11.sp
                                 )
                             }
@@ -229,69 +335,65 @@ fun InterstitialAdDialog(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
+                    // Title & Description
                     Text(
-                        text = "Experience Next-Gen Spatial Sound",
+                        text = "Support Sonance Free Edition",
                         color = Color.White,
-                        fontSize = 16.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center
                     )
-
                     Spacer(modifier = Modifier.height(6.dp))
-
                     Text(
-                        text = "Upgrade your daily music with studio-grade acoustic clarity. Free music continues seamlessly while viewing sponsored content.",
-                        color = Color(0xFF94A3B8),
+                        text = "Advertisements keep music features free. Upgrade to Sonance PRO to remove all ads forever.",
+                        color = Color.White.copy(alpha = 0.75f),
                         fontSize = 12.sp,
-                        lineHeight = 16.sp,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        lineHeight = 17.sp
                     )
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Install / Learn More Action
+                    // Actions: [Remove Ads with PRO]
                     Button(
-                        onClick = { onDismiss() },
+                        onClick = {
+                            onDismiss()
+                            onOpenPro()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB300)),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(46.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8))
-                    ) {
-                        Text(
-                            text = "Install & Learn More",
-                            color = Color(0xFF0F172A),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Remove ads with Pro option
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                onDismiss()
-                                onOpenPro()
-                            }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .height(46.dp)
+                            .testTag("btn_interstitial_upgrade_pro")
                     ) {
                         Icon(
                             imageVector = Icons.Default.WorkspacePremium,
                             contentDescription = null,
-                            tint = Color(0xFFFFD700),
-                            modifier = Modifier.size(14.dp)
+                            tint = Color.Black,
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Remove all ads with PRO VIP ($1/yr)",
-                            color = Color(0xFFFFD700),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
+                            text = "Remove All Ads with PRO",
+                            color = Color.Black,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
                         )
+                    }
+
+                    if (canSkip) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TextButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Continue to Music",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
             }

@@ -483,13 +483,10 @@ fun SettingsDialog(
                     )
 
                     SettingActionItem(
-                        title = if (userSubscription.isPro) "Sonance PRO VIP Active" else "Sonance PRO Status",
-                        subtitle = if (userSubscription.isPro) "All 5 VIP themes unlocked • Tap to toggle test state" else "Free Plan • Tap to activate Pro test mode",
+                        title = if (userSubscription.isPro) "Sonance PRO Active" else "Upgrade to Sonance PRO",
+                        subtitle = if (userSubscription.isPro) "PRO subscription active • Lifetime VIP & Zero Ads" else "Remove all ads, unlock all themes & VIP features",
                         onClick = {
-                            val newPro = !userSubscription.isPro
-                            onSetDevProState(newPro)
-                            val msg = if (newPro) "Pro Mode Activated! All VIP themes unlocked." else "Pro Mode Disabled (Free Plan active)"
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            onOpenProUpgrade()
                         },
                         theme = theme
                     )

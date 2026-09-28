@@ -198,7 +198,7 @@ class GooglePlayBillingManager private constructor(private val context: Context)
     fun launchPurchaseFlow(
         activity: Activity,
         plan: String = "yearly",
-        onFallbackSimulation: () -> Unit
+        onFallbackSimulation: (() -> Unit)? = null
     ) {
         val client = billingClient
         val isSubscription = plan.lowercase() == "monthly" || plan.lowercase() == "yearly"
@@ -236,16 +236,38 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                 val result = client.launchBillingFlow(activity, flowParams)
                 if (result.responseCode != BillingClient.BillingResponseCode.OK) {
                     Log.w(TAG, "launchBillingFlow failed: ${result.debugMessage}")
-                    onFallbackSimulation()
+                    if (onFallbackSimulation != null) {
+                        onFallbackSimulation()
+                    } else {
+                        coroutineScope.launch(Dispatchers.Main) {
+                            onPurchaseFailed?.invoke("Google Play: ${result.debugMessage.ifBlank { "Billing response code ${result.responseCode}" }}")
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Exception launching billing flow", e)
-                onFallbackSimulation()
+                if (onFallbackSimulation != null) {
+                    onFallbackSimulation()
+                } else {
+                    coroutineScope.launch(Dispatchers.Main) {
+                        onPurchaseFailed?.invoke("Billing error: ${e.message}")
+                    }
+                }
             }
         } else {
-            // When running on emulator or before Google Play Console is linked to active merchant
-            Log.i(TAG, "Google Play productDetails not active yet; running fallback transaction flow")
-            onFallbackSimulation()
+            // Re-trigger product query in case client was reconnecting
+            if (client != null && !client.isReady) {
+                startConnection()
+            } else {
+                queryProducts()
+            }
+            if (onFallbackSimulation != null) {
+                onFallbackSimulation()
+            } else {
+                coroutineScope.launch(Dispatchers.Main) {
+                    onPurchaseFailed?.invoke("Connecting to Google Play... Please check your internet connection or verify in-app products in Google Play Console.")
+                }
+            }
         }
     }
 
@@ -255,7 +277,7 @@ class GooglePlayBillingManager private constructor(private val context: Context)
     fun launchPurchaseFlow(
         activity: Activity,
         isYearly: Boolean,
-        onFallbackSimulation: () -> Unit
+        onFallbackSimulation: (() -> Unit)? = null
     ) {
         launchPurchaseFlow(activity, if (isYearly) "yearly" else "lifetime", onFallbackSimulation)
     }

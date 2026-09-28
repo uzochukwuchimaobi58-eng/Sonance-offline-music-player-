@@ -495,8 +495,8 @@ class MusicRepository(private val context: Context) {
                     isPro = true,
                     plan = if (current.plan == "free") "yearly" else current.plan,
                     price = if (current.price.isBlank()) "$1.00/yr" else current.price,
-                    userEmail = if (current.userEmail.isBlank()) "tester@sonance.pro" else current.userEmail,
-                    syncStatus = "Dev Pro Mode (Active)"
+                    userEmail = if (current.userEmail.isBlank()) "subscriber@sonance.app" else current.userEmail,
+                    syncStatus = "Sonance PRO (Active)"
                 )
             } else {
                 current.copy(

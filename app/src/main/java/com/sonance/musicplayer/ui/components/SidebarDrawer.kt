@@ -113,7 +113,7 @@ fun SidebarDrawer(
                         contentAlignment = Alignment.Center
                     ) {
                         Image(
-                            painter = painterResource(id = R.drawable.app_music_icon_1789760118594),
+                            painter = painterResource(id = R.drawable.playstore_icon),
                             contentDescription = "Sonance Music",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop

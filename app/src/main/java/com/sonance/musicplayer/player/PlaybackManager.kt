@@ -524,8 +524,8 @@ class PlaybackManager(
         _currentTrack.value = null
         _durationMs.value = 0L
         _currentPositionMs.value = 0L
-        stopProgressTracker()
-        notificationManager.dismissNotification()
+        progressJob?.cancel()
+        notificationManager.cancelNotification()
     }
 
     private fun fadeVolume(from: Float, to: Float, durationMs: Long = 250L, onComplete: (() -> Unit)? = null) {

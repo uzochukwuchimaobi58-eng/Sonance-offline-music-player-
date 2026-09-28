@@ -96,6 +96,7 @@ fun WebBrowserDialog(
             AndroidView(
                 factory = { ctx ->
                     WebView(ctx).apply {
+                        setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         webViewClient = WebViewClient()
