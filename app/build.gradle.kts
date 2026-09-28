@@ -13,8 +13,8 @@ android {
         applicationId = "com.sonance.musicplayer"
         minSdk = 26
         targetSdk = 36
-        versionCode = 25
-        versionName = "2.0.5"
+        versionCode = 26
+        versionName = "2.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
