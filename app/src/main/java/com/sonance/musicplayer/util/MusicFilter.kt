@@ -208,8 +208,10 @@ object MusicFilter {
         val hasValidExtension = extension in SUPPORTED_EXTENSIONS
         val mimeNorm = (mimeType ?: "").lowercase(Locale.ROOT)
         val hasValidMime = mimeNorm in SUPPORTED_MIME_TYPES || mimeNorm.startsWith("audio/")
+        val isExplicitMediaStoreMusic = (isMusic == 1) || (durationMs >= 3000L && title.isNotBlank())
 
-        if (!hasValidExtension && !hasValidMime) {
+        // If it has a known extension or audio MIME type, or is flagged as music by MediaStore
+        if (!hasValidExtension && !hasValidMime && !isExplicitMediaStoreMusic) {
             return false
         }
 

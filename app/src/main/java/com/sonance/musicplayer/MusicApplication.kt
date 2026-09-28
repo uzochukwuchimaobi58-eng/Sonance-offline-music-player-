@@ -10,11 +10,6 @@ class MusicApplication : Application() {
         super.onCreate()
         instance = this
 
-        // Force software rendering for MESA to prevent 'Failed to open rendernode' errors in container environments
-        try {
-            android.system.Os.setenv("LIBGL_ALWAYS_SOFTWARE", "1", true)
-        } catch (_: Throwable) {}
-
         // Clean up any corrupted Chromium Simple Cache directory structure from previous runs
         try {
             val httpCacheDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache")

@@ -100,9 +100,6 @@ class MusicRepository(private val context: Context) {
         val normKey = getNormTrackKey(track.title, track.artist)
         if (normKey.isNotBlank() && deletedSet.contains(normKey)) return true
 
-        val clean = cleanSongTitle(track.title)
-        if (clean.isNotBlank() && deletedSet.contains("title:$clean")) return true
-
         return false
     }
 
@@ -114,8 +111,6 @@ class MusicRepository(private val context: Context) {
         if (filePath.isNotBlank()) currentSet.add(filePath)
         val normKey = getNormTrackKey(track.title, track.artist)
         if (normKey.isNotBlank()) currentSet.add(normKey)
-        val clean = cleanSongTitle(track.title)
-        if (clean.isNotBlank()) currentSet.add("title:$clean")
 
         deletedPrefs.edit().putStringSet("deleted_keys_set", currentSet).apply()
     }
