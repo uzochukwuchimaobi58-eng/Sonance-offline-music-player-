@@ -120,12 +120,12 @@ class MainActivity : ComponentActivity() {
             var isInterstitialAdOpen by remember { mutableStateOf(false) }
             var pendingPostAdAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
-            // Effective Pro check (supports remote override or local subscription)
+            // Effective Pro check (strictly follows real verified subscription)
             val isProEffective = remember(userSubscription.isPro, remoteSettings.forceProOverride) {
-                when (remoteSettings.forceProOverride) {
-                    "force_true" -> true
-                    "force_false" -> false
-                    else -> userSubscription.isPro
+                if (remoteSettings.forceProOverride == "force_false") {
+                    false
+                } else {
+                    userSubscription.isPro
                 }
             }
 
@@ -162,12 +162,29 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            var hasAudioPermission by remember {
+                mutableStateOf(
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        ContextCompat.checkSelfPermission(
+                            this@MainActivity,
+                            Manifest.permission.READ_MEDIA_AUDIO
+                        ) == PackageManager.PERMISSION_GRANTED
+                    } else {
+                        ContextCompat.checkSelfPermission(
+                            this@MainActivity,
+                            Manifest.permission.READ_EXTERNAL_STORAGE
+                        ) == PackageManager.PERMISSION_GRANTED
+                    }
+                )
+            }
+
             val permissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestMultiplePermissions()
             ) { perms ->
                 val granted = perms[Manifest.permission.READ_MEDIA_AUDIO] == true ||
                         perms[Manifest.permission.READ_EXTERNAL_STORAGE] == true ||
                         perms.values.any { it }
+                hasAudioPermission = granted
                 if (granted) {
                     scope.launch {
                         repository.scanMediaStore()
@@ -176,7 +193,7 @@ class MainActivity : ComponentActivity() {
             }
 
             LaunchedEffect(Unit) {
-                val hasAudioPerm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val hasPerm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     ContextCompat.checkSelfPermission(
                         this@MainActivity,
                         Manifest.permission.READ_MEDIA_AUDIO
@@ -187,8 +204,9 @@ class MainActivity : ComponentActivity() {
                         Manifest.permission.READ_EXTERNAL_STORAGE
                     ) == PackageManager.PERMISSION_GRANTED
                 }
+                hasAudioPermission = hasPerm
 
-                if (!hasAudioPerm) {
+                if (!hasPerm) {
                     permissionLauncher.launch(permissionsToRequest)
                 } else {
                     scope.launch {
@@ -461,7 +479,8 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onOpenEqualizer = {
                                         executeWithInterstitialAd { isEqualizerOpen = true }
-                                    }
+                                    },
+                                    onOpenScan = { isScanModalOpen = true }
                                 )
                             } else {
                                 TrackListScreen(
@@ -480,6 +499,7 @@ class MainActivity : ComponentActivity() {
                                     isPro = isProEffective,
                                     admobEnabled = remoteSettings.admobEnabled,
                                     onOpenProUpgrade = { isProUpgradeOpen = true },
+                                    onOpenScan = { isScanModalOpen = true },
                                     onPlayTrack = { track, list ->
                                         if (currentTrack?.id == track.id) {
                                             // Tapping currently playing music brings up the full player interface directly
@@ -752,7 +772,9 @@ class MainActivity : ComponentActivity() {
                     onClose = { isScanModalOpen = false },
                     totalTrackCount = tracks.size,
                     onScan = { repository.scanMediaStore() },
-                    theme = theme
+                    theme = theme,
+                    hasPermission = hasAudioPermission,
+                    onRequestPermission = { permissionLauncher.launch(permissionsToRequest) }
                 )
 
                 // Web Browser Dialog

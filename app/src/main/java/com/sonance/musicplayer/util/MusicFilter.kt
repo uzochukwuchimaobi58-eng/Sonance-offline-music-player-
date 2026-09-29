@@ -66,9 +66,6 @@ object MusicFilter {
     private val EXCLUDED_FOLDER_KEYWORDS = listOf(
         "whatsapp voice notes",
         "whatsapp voice",
-        "whatsapp audio",
-        "whatsapp",
-        "com.whatsapp",
         "voice recorder",
         "voicerecorder",
         "sound recorder",
@@ -105,11 +102,7 @@ object MusicFilter {
         "notifications",
         "alarms",
         ".cache",
-        ".thumbnails",
-        "/android/data",
-        "/android/media/com.whatsapp",
-        "/android/media/org.telegram.messenger",
-        "/telegram/telegram audio"
+        ".thumbnails"
     )
 
     /**
@@ -144,18 +137,18 @@ object MusicFilter {
         val nameNorm = (displayName ?: File(dataPath ?: "").name).lowercase(Locale.ROOT)
         val titleNorm = (title ?: "").lowercase(Locale.ROOT)
 
-        // 1. Folder checks: Exclude WhatsApp, Voice Recorder, Call recordings, etc.
+        // 1. Folder checks: Exclude Voice Recorder, Call recordings, WhatsApp Voice Notes etc.
         for (keyword in EXCLUDED_FOLDER_KEYWORDS) {
             if (relPathNorm.contains(keyword) || dataPathNorm.contains(keyword)) {
                 return false
             }
         }
 
-        // Check if path is standalone system /Recordings/ directory
-        if (relPathNorm.startsWith("recordings/") ||
-            relPathNorm == "recordings" ||
-            dataPathNorm.contains("/recordings/") ||
-            dataPathNorm.endsWith("/recordings")
+        // Check if path is standalone system /Recordings/ directory (call or voice recording)
+        if (relPathNorm.startsWith("recordings/call") ||
+            relPathNorm.startsWith("recordings/voice") ||
+            dataPathNorm.contains("/recordings/call") ||
+            dataPathNorm.contains("/recordings/voice")
         ) {
             return false
         }
@@ -168,12 +161,12 @@ object MusicFilter {
         }
 
         // 2. Filename checks: Exclude WhatsApp voice note and call recording patterns
-        // e.g. PTT-20231012-WA0001.opus, AUD-20231012-WA0001.m4a
+        // e.g. PTT-20231012-WA0001.opus, AUD-20231012-WA0001.opus (in voice context)
         if (nameNorm.startsWith("ptt-") || titleNorm.startsWith("ptt-")) {
             return false
         }
         if ((nameNorm.startsWith("aud-") || titleNorm.startsWith("aud-")) &&
-            (nameNorm.contains("-wa") || nameNorm.contains("wa0") || dataPathNorm.contains("whatsapp"))
+            (nameNorm.endsWith(".opus") || relPathNorm.contains("voice notes"))
         ) {
             return false
         }
@@ -188,14 +181,11 @@ object MusicFilter {
         }
 
         // Voice recorder file prefixes if in a recording or generic folder:
-        // Recording_..., Record_..., Voice_..., Sound_..., New Recording...
-        if (nameNorm.startsWith("recording_") ||
-            nameNorm.startsWith("record_") ||
-            nameNorm.startsWith("voice_") ||
-            nameNorm.startsWith("rec_") ||
-            nameNorm.startsWith("new recording")
-        ) {
-            return false
+        // Recording_..., Sound_Recorder...
+        if (nameNorm.startsWith("recording_") || nameNorm.startsWith("sound_recorder")) {
+            val hasMusicMeta = (artist != null && artist != "Unknown Artist" && artist.isNotBlank()) ||
+                    (album != null && album != "Music" && album != "Download" && album.isNotBlank())
+            if (!hasMusicMeta) return false
         }
 
         // 3. Supported audio format check
@@ -208,10 +198,10 @@ object MusicFilter {
         val hasValidExtension = extension in SUPPORTED_EXTENSIONS
         val mimeNorm = (mimeType ?: "").lowercase(Locale.ROOT)
         val hasValidMime = mimeNorm in SUPPORTED_MIME_TYPES || mimeNorm.startsWith("audio/")
-        val isExplicitMediaStoreMusic = (isMusic == 1) || (durationMs >= 3000L && title.isNotBlank())
+        val isExplicitMediaStoreMusic = (isMusic == 1) || (durationMs >= 3000L) || (title?.isNotBlank() == true)
 
         // If it has a known extension or audio MIME type, or is flagged as music by MediaStore
-        if (!hasValidExtension && !hasValidMime && !isExplicitMediaStoreMusic) {
+        if (!hasValidExtension && !hasValidMime && !isExplicitMediaStoreMusic && extension.isNotBlank()) {
             return false
         }
 
@@ -248,10 +238,10 @@ object MusicFilter {
                 return false
             }
         }
-        if (folderNorm.startsWith("recordings/") ||
-            folderNorm == "recordings" ||
-            folderNorm.endsWith("/recordings") ||
-            folderNorm.contains("/recordings/")
+        if (folderNorm.startsWith("recordings/call") ||
+            folderNorm.startsWith("recordings/voice") ||
+            urlNorm.contains("/recordings/call") ||
+            urlNorm.contains("/recordings/voice")
         ) {
             return false
         }
@@ -263,16 +253,11 @@ object MusicFilter {
 
         // Filename / title prefixes
         if (titleNorm.startsWith("ptt-") ||
-            ((titleNorm.startsWith("aud-") || urlNorm.contains("/aud-")) && (titleNorm.contains("-wa") || urlNorm.contains("-wa"))) ||
+            ((titleNorm.startsWith("aud-") || urlNorm.contains("/aud-")) && (urlNorm.contains("voice notes") || urlNorm.endsWith(".opus"))) ||
             titleNorm.startsWith("call@") ||
             titleNorm.startsWith("call_") ||
             titleNorm.startsWith("call-") ||
-            titleNorm.startsWith("callrecording") ||
-            titleNorm.startsWith("recording_") ||
-            titleNorm.startsWith("record_") ||
-            titleNorm.startsWith("voice_") ||
-            titleNorm.startsWith("rec_") ||
-            titleNorm.startsWith("new recording")
+            titleNorm.startsWith("callrecording")
         ) {
             return false
         }

@@ -121,7 +121,21 @@ class FirebaseBackendService(private val context: Context) {
         val cached = prefs.getString(PREFS_KEY_SUBSCRIPTION, null)
         if (!cached.isNullOrBlank()) {
             try {
-                return jsonParser.decodeFromString<UserSubscription>(cached)
+                val sub = jsonParser.decodeFromString<UserSubscription>(cached)
+                // Require actual valid purchase token from Google Play (not unverified test orderId)
+                if (sub.isPro) {
+                    val hasRealPurchase = sub.purchaseToken.isNotBlank()
+                    val notExpired = sub.expiryTimestamp == 0L || sub.expiryTimestamp > System.currentTimeMillis()
+                    if (hasRealPurchase && notExpired) {
+                        return sub
+                    } else {
+                        // Purge unverified or expired Pro cache
+                        prefs.edit().remove(PREFS_KEY_SUBSCRIPTION).apply()
+                        return UserSubscription()
+                    }
+                } else {
+                    return sub
+                }
             } catch (e: Exception) {
                 Log.e("FirebaseBackend", "Error parsing cached user subscription", e)
             }
@@ -510,8 +524,8 @@ class FirebaseBackendService(private val context: Context) {
             val existing = fetchUserProfileFromFirestore(cleanEmail).getOrNull()
             val sub = fetchSubscriptionFromCloud(cleanEmail).getOrNull()
 
-            val isPro = sub?.isPro ?: existing?.isPro ?: false
-            val plan = sub?.plan ?: existing?.plan ?: "free"
+            val isPro = (sub?.isPro == true && sub.purchaseToken.isNotBlank())
+            val plan = if (isPro) (sub?.plan ?: "yearly") else "free"
 
             val profile = UserProfile(
                 uid = existing?.uid.takeIf { !it.isNullOrBlank() } ?: "google_${cleanEmail.hashCode()}",
@@ -529,7 +543,10 @@ class FirebaseBackendService(private val context: Context) {
             persistProfile(profile)
             pushUserProfileToFirestore(profile)
 
-            val userSub = (sub ?: _userSubscription.value).copy(
+            val baseSub = sub ?: _userSubscription.value
+            val userSub = baseSub.copy(
+                isPro = isPro,
+                plan = plan,
                 userEmail = cleanEmail,
                 userName = profile.displayName,
                 authProvider = "google",

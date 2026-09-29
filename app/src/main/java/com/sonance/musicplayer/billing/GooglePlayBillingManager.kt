@@ -67,6 +67,7 @@ class GooglePlayBillingManager private constructor(private val context: Context)
     // Callback when a purchase succeeds and is verified
     var onPurchaseCompleted: ((plan: String, price: String, orderId: String, purchaseToken: String) -> Unit)? = null
     var onPurchaseFailed: ((reason: String) -> Unit)? = null
+    var onNoPurchasesFound: (() -> Unit)? = null
 
     init {
         initBillingClient()
@@ -301,6 +302,9 @@ class GooglePlayBillingManager private constructor(private val context: Context)
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
                 Log.d(TAG, "Item already owned, querying purchases")
                 _statusMessage.value = "Item already owned. Restoring access..."
+                coroutineScope.launch(Dispatchers.Main) {
+                    onPurchaseFailed?.invoke("Item already owned. Restoring access...")
+                }
                 queryExistingPurchases()
             }
             else -> {
@@ -409,6 +413,9 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                         }
 
                         coroutineScope.launch(Dispatchers.Main) {
+                            if (!foundPro) {
+                                onNoPurchasesFound?.invoke()
+                            }
                             onResult?.invoke(foundPro, details)
                         }
                     }

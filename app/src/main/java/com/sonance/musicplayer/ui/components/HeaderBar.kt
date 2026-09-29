@@ -98,13 +98,13 @@ fun HeaderBar(
                     ) {
                         Icon(
                             imageVector = Icons.Default.WorkspacePremium,
-                            contentDescription = "Sonance PRO",
+                            contentDescription = if (isPro) "Sonance PRO VIP Active" else "Upgrade to PRO",
                             tint = if (isPro) Color.Black else goldColor,
                             modifier = Modifier.size(13.dp)
                         )
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = "PRO",
+                            text = if (isPro) "PRO VIP" else "GO PRO",
                             color = if (isPro) Color.Black else goldColor,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,

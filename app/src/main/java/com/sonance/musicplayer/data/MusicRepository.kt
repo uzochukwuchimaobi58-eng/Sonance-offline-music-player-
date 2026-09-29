@@ -294,9 +294,15 @@ class MusicRepository(private val context: Context) {
     val userProfile: StateFlow<UserProfile> = firebaseService.userProfile
 
     init {
+        // Purge any unverified PRO state on app update/start
+        val curSub = userSubscription.value
+        if (curSub.isPro && curSub.purchaseToken.isBlank()) {
+            firebaseService.updateSubscriptionLocal(com.sonance.musicplayer.model.UserSubscription())
+        }
+
         billingManager.onPurchaseCompleted = { plan, price, orderId, purchaseToken ->
             val email = userProfile.value.email.ifBlank {
-                userSubscription.value.userEmail.ifBlank { "uzochukwuchimaobi58@gmail.com" }
+                userSubscription.value.userEmail.ifBlank { "subscriber@sonance.app" }
             }
             subscribePro(
                 plan = plan,
@@ -306,6 +312,19 @@ class MusicRepository(private val context: Context) {
                 orderId = orderId,
                 purchaseToken = purchaseToken
             )
+        }
+
+        billingManager.onNoPurchasesFound = {
+            // No real active purchases in Google Play - reset to free tier
+            val current = userSubscription.value
+            if (current.isPro && current.purchaseToken.isBlank()) {
+                val freeSub = com.sonance.musicplayer.model.UserSubscription(
+                    isPro = false,
+                    plan = "free",
+                    syncStatus = "Free Tier"
+                )
+                firebaseService.updateSubscriptionLocal(freeSub)
+            }
         }
     }
 
@@ -348,7 +367,7 @@ class MusicRepository(private val context: Context) {
     fun syncFirebaseSettings() {
         coroutineScope.launch {
             firebaseService.fetchSettingsFromCloud()
-            val email = userProfile.value.email.ifBlank { userSubscription.value.userEmail }
+            val email = userProfile.value.email
             if (email.isNotBlank()) {
                 firebaseService.fetchSubscriptionFromCloud(email)
                 firebaseService.fetchUserProfileFromFirestore(email)
@@ -684,15 +703,41 @@ class MusicRepository(private val context: Context) {
         val projection = projectionList.toTypedArray()
 
         fun queryUri(contentUriBase: Uri, selection: String?) {
+            var cursor: android.database.Cursor? = null
             try {
-                val cursor = context.contentResolver.query(
+                cursor = context.contentResolver.query(
                     contentUriBase,
                     projection,
                     selection,
                     null,
                     "${MediaStore.Audio.Media.DATE_ADDED} DESC"
                 )
+            } catch (e: Exception) {
+                Log.w("MusicRepository", "MediaStore query error on $contentUriBase: ${e.message}, attempting safe fallback")
+                try {
+                    val safeProjection = arrayOf(
+                        MediaStore.Audio.Media._ID,
+                        MediaStore.Audio.Media.TITLE,
+                        MediaStore.Audio.Media.ARTIST,
+                        MediaStore.Audio.Media.ALBUM,
+                        MediaStore.Audio.Media.DURATION,
+                        MediaStore.MediaColumns.DISPLAY_NAME,
+                        MediaStore.MediaColumns.MIME_TYPE,
+                        MediaStore.Audio.Media.IS_MUSIC
+                    )
+                    cursor = context.contentResolver.query(
+                        contentUriBase,
+                        safeProjection,
+                        selection,
+                        null,
+                        null
+                    )
+                } catch (e2: Exception) {
+                    Log.e("MusicRepository", "Safe fallback query also failed on $contentUriBase: ${e2.message}")
+                }
+            }
 
+            try {
                 cursor?.use {
                     val idCol = it.getColumnIndex(MediaStore.Audio.Media._ID)
                     if (idCol < 0) return@use
@@ -975,13 +1020,27 @@ class MusicRepository(private val context: Context) {
                 candidateDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS))
             } catch (_: Exception) {}
 
-            // 2. Standard device storage paths
+            // 2. Standard device storage paths (including Telegram, Snaptube, Vidmate, Xender, ShareIt, WhatsApp Audio)
             val commonPaths = listOf(
                 "/storage/emulated/0/Download",
                 "/storage/emulated/0/Downloads",
                 "/storage/emulated/0/Music",
                 "/storage/emulated/0/Audio",
-                "/storage/emulated/0/bluetooth"
+                "/storage/emulated/0/bluetooth",
+                "/storage/emulated/0/Telegram",
+                "/storage/emulated/0/Telegram/Telegram Audio",
+                "/storage/emulated/0/Snaptube",
+                "/storage/emulated/0/Snaptube/download/Audio",
+                "/storage/emulated/0/Vidmate",
+                "/storage/emulated/0/Vidmate/download",
+                "/storage/emulated/0/Audiomack",
+                "/storage/emulated/0/Xender",
+                "/storage/emulated/0/Xender/audio",
+                "/storage/emulated/0/Shareit",
+                "/storage/emulated/0/Shareit/audio",
+                "/storage/emulated/0/WhatsApp/Media/WhatsApp Audio",
+                "/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Audio",
+                "/storage/emulated/0/Android/media/org.telegram.messenger/Telegram/Telegram Audio"
             )
             for (p in commonPaths) {
                 candidateDirs.add(File(p))
@@ -1034,9 +1093,10 @@ class MusicRepository(private val context: Context) {
                                     name != "Android" &&
                                     name != "data" &&
                                     name != "cache" &&
-                                    !name.equals("Recordings", ignoreCase = true) &&
-                                    !name.equals("WhatsApp", ignoreCase = true) &&
-                                    !name.contains("Voice", ignoreCase = true)
+                                    !name.equals("WhatsApp Voice Notes", ignoreCase = true) &&
+                                    !name.equals("Voice Notes", ignoreCase = true) &&
+                                    !name.equals("Voice Recorder", ignoreCase = true) &&
+                                    !name.equals("Call Recordings", ignoreCase = true)
                             } else {
                                 file.isFile && file.length() >= 10240L &&
                                     MusicFilter.isMusicTrack(

@@ -48,7 +48,8 @@ fun HomeScreen(
     onOpenMusicTrim: () -> Unit,
     onOpenKaraoke: () -> Unit,
     onOpenBeatInstrumental: () -> Unit,
-    onOpenEqualizer: () -> Unit
+    onOpenEqualizer: () -> Unit,
+    onOpenScan: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var isAnnouncementDismissed by remember { mutableStateOf(false) }
@@ -268,6 +269,63 @@ fun HomeScreen(
                     tag = "card_most_play",
                     onClick = { onSelectView(ActiveView.MOST_PLAY) }
                 )
+            }
+
+            if (libraryCount == 0) {
+                Spacer(modifier = Modifier.height(14.dp))
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, theme.accentColor.copy(alpha = 0.4f), RoundedCornerShape(14.dp)),
+                    color = theme.sidebarBg.copy(alpha = 0.90f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(theme.accentColor.copy(alpha = 0.18f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                tint = theme.accentColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "No offline music indexed",
+                                color = theme.textPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Scan phone storage, SD card & downloads for audio files.",
+                                color = theme.textSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+                        if (onOpenScan != null) {
+                            Button(
+                                onClick = onOpenScan,
+                                colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text("Scan Now", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

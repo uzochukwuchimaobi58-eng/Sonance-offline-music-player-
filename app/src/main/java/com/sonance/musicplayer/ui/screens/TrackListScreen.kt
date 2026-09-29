@@ -80,7 +80,8 @@ fun TrackListScreen(
     onAddTracksToPlaylist: ((trackIds: List<String>, playlistId: String) -> Unit)? = null,
     onDeleteTracks: ((trackIds: List<String>) -> Unit)? = null,
     onAddTracksToFavorites: ((trackIds: List<String>) -> Unit)? = null,
-    onEnqueueTracks: ((List<Track>) -> Unit)? = null
+    onEnqueueTracks: ((List<Track>) -> Unit)? = null,
+    onOpenScan: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -364,11 +365,47 @@ fun TrackListScreen(
                                 .padding(32.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = if (selectionSearchQuery.isNotEmpty()) "No songs matching '$selectionSearchQuery'" else "No songs found in this category",
-                                color = theme.textSecondary,
-                                fontSize = 14.sp
-                            )
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = theme.textSecondary.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(52.dp)
+                                )
+                                Text(
+                                    text = if (selectionSearchQuery.isNotEmpty()) "No songs matching '$selectionSearchQuery'" else "No songs found in this category",
+                                    color = theme.textPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                Text(
+                                    text = "Scan your device storage & folders to load offline audio tracks.",
+                                    color = theme.textSecondary,
+                                    fontSize = 12.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                if (onOpenScan != null) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Button(
+                                        onClick = onOpenScan,
+                                        colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = null,
+                                            tint = Color.Black,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Scan Library", color = Color.Black, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
                         }
                     } else {
                         val listState = rememberLazyListState()

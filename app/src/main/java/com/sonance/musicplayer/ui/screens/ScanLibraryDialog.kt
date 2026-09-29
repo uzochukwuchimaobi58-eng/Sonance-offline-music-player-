@@ -24,7 +24,9 @@ fun ScanLibraryDialog(
     onClose: () -> Unit,
     totalTrackCount: Int,
     onScan: suspend () -> Int,
-    theme: ThemeConfig
+    theme: ThemeConfig,
+    hasPermission: Boolean = true,
+    onRequestPermission: (() -> Unit)? = null
 ) {
     if (!isOpen) return
 
@@ -63,17 +65,36 @@ fun ScanLibraryDialog(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Search phone storage and SD card for newly added audio tracks, podcasts, and offline music.",
+                text = "Search phone storage, SD card, WhatsApp Audio, Telegram, and downloads for newly added songs and offline music.",
                 color = theme.textSecondary,
-                fontSize = 13.sp
+                fontSize = 13.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
+
+            if (!hasPermission) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Storage / Audio permission required to read offline music files on your device.",
+                        color = Color(0xFFFCA5A5),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(10.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             if (isScanning) {
                 CircularProgressIndicator(color = theme.accentColor)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("Scanning files...", color = theme.textSecondary, fontSize = 12.sp)
+                Text("Scanning device storage & folders...", color = theme.textSecondary, fontSize = 12.sp)
             } else if (scanResult != null) {
                 Text(
                     text = scanResult ?: "",
@@ -104,6 +125,9 @@ fun ScanLibraryDialog(
 
                 Button(
                     onClick = {
+                        if (!hasPermission) {
+                            onRequestPermission?.invoke()
+                        }
                         isScanning = true
                         scope.launch {
                             val found = onScan()
@@ -114,7 +138,11 @@ fun ScanLibraryDialog(
                     colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Scan Now", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (!hasPermission) "Grant & Scan" else "Scan Now",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
 
