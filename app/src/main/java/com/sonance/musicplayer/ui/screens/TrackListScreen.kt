@@ -64,7 +64,7 @@ fun TrackListScreen(
     isShuffle: Boolean = false,
     onToggleShuffle: () -> Unit = {},
     isPro: Boolean = false,
-    admobEnabled: Boolean = true,
+    admobEnabled: Boolean = false,
     onOpenProUpgrade: () -> Unit = {},
     onPlayTrack: (Track, List<Track>) -> Unit,
     onToggleFavorite: (String) -> Unit,

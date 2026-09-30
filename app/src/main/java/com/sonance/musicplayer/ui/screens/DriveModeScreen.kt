@@ -35,7 +35,7 @@ fun DriveModeScreen(
     onExit: () -> Unit,
     theme: ThemeConfig,
     isPro: Boolean = false,
-    admobEnabled: Boolean = true,
+    admobEnabled: Boolean = false,
     onOpenProUpgrade: () -> Unit = {}
 ) {
     Column(

@@ -190,19 +190,16 @@ class MainActivity : ComponentActivity() {
                             ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
                 }
                 hasAudioPermission = granted
-                // Immediately scan so newly permitted music is discovered and shown without delay
-                scope.launch {
-                    repository.scanMediaStore()
+                if (granted) {
+                    // Immediately scan so newly permitted music is discovered and shown without delay
+                    scope.launch {
+                        repository.scanMediaStore()
+                    }
                 }
             }
 
             LaunchedEffect(Unit) {
-                // 1. Immediately initiate background music scan so existing music is discovered on launch
-                scope.launch {
-                    repository.scanMediaStore()
-                }
-
-                // 2. Check and prompt permissions if not yet granted
+                // Check and prompt permissions if not yet granted
                 val hasPerm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     ContextCompat.checkSelfPermission(
                         this@MainActivity,
@@ -216,7 +213,13 @@ class MainActivity : ComponentActivity() {
                 }
                 hasAudioPermission = hasPerm
 
-                if (!hasPerm) {
+                if (hasPerm) {
+                    // Immediately initiate background music scan so existing music is discovered on launch
+                    scope.launch {
+                        repository.scanMediaStore()
+                    }
+                } else {
+                    // Prompt permission dialog immediately upon installation so user can allow access right away
                     permissionLauncher.launch(permissionsToRequest)
                 }
 

@@ -38,7 +38,7 @@ const val PRODUCTION_BANNER_UNIT_ID = "ca-app-pub-6322953088287505/5517813262"
 @Composable
 fun AdMobBanner(
     isPro: Boolean,
-    admobEnabled: Boolean = true,
+    admobEnabled: Boolean = false,
     onOpenProUpgrade: () -> Unit,
     theme: ThemeConfig,
     adUnitId: String = PRODUCTION_BANNER_UNIT_ID,

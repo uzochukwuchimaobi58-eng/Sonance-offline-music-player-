@@ -46,7 +46,7 @@ fun LyricsModeScreen(
     onClose: () -> Unit,
     theme: ThemeConfig,
     isPro: Boolean = false,
-    admobEnabled: Boolean = true,
+    admobEnabled: Boolean = false,
     onOpenProUpgrade: () -> Unit = {},
     onUpdateLyrics: ((String) -> Unit)? = null
 ) {

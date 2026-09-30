@@ -279,45 +279,6 @@ fun HomeScreen(
                 )
             }
 
-            // 1. Live Scanning Progress Banner (if scanning is in progress)
-            if (isScanning) {
-                Spacer(modifier = Modifier.height(14.dp))
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .border(1.dp, theme.accentColor.copy(alpha = 0.5f), RoundedCornerShape(14.dp)),
-                    color = theme.sidebarBg.copy(alpha = 0.95f)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = theme.accentColor,
-                            strokeWidth = 2.5.dp
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Scanning device for music...",
-                                color = theme.textPrimary,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = if (tracks.isNotEmpty()) "Found ${tracks.size} songs so far • checking storage" else "Searching phone storage, SD card & downloads",
-                                color = theme.textSecondary,
-                                fontSize = 11.5.sp
-                            )
-                        }
-                    }
-                }
-            }
-
             // 2. Offline Songs Display Section (Directly visible on Home screen)
             Spacer(modifier = Modifier.height(18.dp))
 
@@ -504,7 +465,7 @@ fun HomeScreen(
                         }
                     }
                 }
-            } else if (!isScanning) {
+            } else {
                 // Empty state card when 0 tracks found
                 Surface(
                     modifier = Modifier
