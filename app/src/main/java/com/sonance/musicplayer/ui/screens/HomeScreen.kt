@@ -26,8 +26,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.sonance.musicplayer.model.ActiveView
 import com.sonance.musicplayer.model.Playlist
 import com.sonance.musicplayer.model.RemoteBackendSettings
@@ -41,6 +43,9 @@ fun HomeScreen(
     theme: ThemeConfig,
     showShuffleButton: Boolean = true,
     remoteSettings: RemoteBackendSettings? = null,
+    currentTrack: Track? = null,
+    isPlaying: Boolean = false,
+    isScanning: Boolean = false,
     onSelectView: (ActiveView) -> Unit,
     onSelectPlaylist: (String) -> Unit,
     onOpenCreatePlaylist: () -> Unit,
@@ -49,7 +54,10 @@ fun HomeScreen(
     onOpenKaraoke: () -> Unit,
     onOpenBeatInstrumental: () -> Unit,
     onOpenEqualizer: () -> Unit,
-    onOpenScan: (() -> Unit)? = null
+    onOpenScan: (() -> Unit)? = null,
+    onPlayTrack: ((Track, List<Track>) -> Unit)? = null,
+    onToggleFavorite: ((String) -> Unit)? = null,
+    onRequestPermissionAndScan: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var isAnnouncementDismissed by remember { mutableStateOf(false) }
@@ -271,14 +279,15 @@ fun HomeScreen(
                 )
             }
 
-            if (libraryCount == 0) {
+            // 1. Live Scanning Progress Banner (if scanning is in progress)
+            if (isScanning) {
                 Spacer(modifier = Modifier.height(14.dp))
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
-                        .border(1.dp, theme.accentColor.copy(alpha = 0.4f), RoundedCornerShape(14.dp)),
-                    color = theme.sidebarBg.copy(alpha = 0.90f)
+                        .border(1.dp, theme.accentColor.copy(alpha = 0.5f), RoundedCornerShape(14.dp)),
+                    color = theme.sidebarBg.copy(alpha = 0.95f)
                 ) {
                     Row(
                         modifier = Modifier
@@ -286,43 +295,273 @@ fun HomeScreen(
                             .padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(theme.accentColor.copy(alpha = 0.18f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = null,
-                                tint = theme.accentColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = theme.accentColor,
+                            strokeWidth = 2.5.dp
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "No offline music indexed",
+                                text = "Scanning device for music...",
                                 color = theme.textPrimary,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Scan phone storage, SD card & downloads for audio files.",
+                                text = if (tracks.isNotEmpty()) "Found ${tracks.size} songs so far • checking storage" else "Searching phone storage, SD card & downloads",
                                 color = theme.textSecondary,
-                                fontSize = 12.sp
+                                fontSize = 11.5.sp
                             )
                         }
-                        if (onOpenScan != null) {
-                            Button(
-                                onClick = onOpenScan,
-                                colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    }
+                }
+            }
+
+            // 2. Offline Songs Display Section (Directly visible on Home screen)
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(4.dp, 14.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(theme.accentColor)
+                    )
+                    Text(
+                        text = if (tracks.isNotEmpty()) "SONGS (${tracks.size})" else "SONGS",
+                        color = theme.textPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                }
+
+                if (tracks.isNotEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(
+                            onClick = { onSelectView(ActiveView.LIBRARY) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "SEE ALL (${tracks.size})",
+                                color = theme.accentColor,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = theme.accentColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (tracks.isNotEmpty()) {
+                // Display the user's songs right on the Home Screen!
+                val displaySubset = tracks.take(20)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    displaySubset.forEach { track ->
+                        val isCurrent = currentTrack?.id == track.id
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .border(
+                                    width = if (isCurrent) 1.2.dp else 1.dp,
+                                    color = if (isCurrent) theme.accentColor else theme.headerBorder.copy(alpha = 0.5f),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .clickable {
+                                    if (onPlayTrack != null) {
+                                        onPlayTrack(track, tracks)
+                                    }
+                                }
+                                .testTag("home_track_${track.id}"),
+                            color = if (isCurrent) theme.accentColor.copy(alpha = 0.12f) else theme.sidebarBg.copy(alpha = 0.85f)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Scan Now", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                // Artwork or Musical Note
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(theme.accentColor.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (track.coverArt.isNotBlank() && track.coverArt != "null") {
+                                        AsyncImage(
+                                            model = track.coverArt,
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = if (isCurrent && isPlaying) Icons.Default.GraphicEq else Icons.Default.MusicNote,
+                                            contentDescription = null,
+                                            tint = if (isCurrent) theme.accentColor else theme.textSecondary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = track.title,
+                                        color = if (isCurrent) theme.accentColor else theme.textPrimary,
+                                        fontSize = 13.5.sp,
+                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = if (track.artist == "<unknown>") "Unknown Artist" else track.artist,
+                                            color = theme.textSecondary,
+                                            fontSize = 11.5.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (track.duration > 0) {
+                                            val m = track.duration / 60
+                                            val s = track.duration % 60
+                                            Text(
+                                                text = "• ${String.format("%d:%02d", m, s)}",
+                                                color = theme.textSecondary.copy(alpha = 0.7f),
+                                                fontSize = 10.5.sp
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Favorite Button
+                                IconButton(
+                                    onClick = { onToggleFavorite?.invoke(track.id) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                        contentDescription = "Favorite",
+                                        tint = if (track.isFavorite) Color(0xFFF43F5E) else theme.textSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
+                        }
+                    }
+
+                    if (tracks.size > 20) {
+                        Button(
+                            onClick = { onSelectView(ActiveView.LIBRARY) },
+                            colors = ButtonDefaults.buttonColors(containerColor = theme.sidebarBg),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
+                        ) {
+                            Text(
+                                text = "View All ${tracks.size} Songs",
+                                color = theme.accentColor,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+            } else if (!isScanning) {
+                // Empty state card when 0 tracks found
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, theme.accentColor.copy(alpha = 0.4f), RoundedCornerShape(14.dp)),
+                    color = theme.sidebarBg.copy(alpha = 0.90f)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(theme.accentColor.copy(alpha = 0.18f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MusicOff,
+                                contentDescription = null,
+                                tint = theme.accentColor,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "No offline music found yet",
+                            color = theme.textPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Sonance scans your device storage, SD card, and downloads for songs.",
+                            color = theme.textSecondary,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Button(
+                            onClick = { onRequestPermissionAndScan?.invoke() ?: onOpenScan?.invoke() },
+                            colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                tint = Color.Black,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Scan Device For Music", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
                 }

@@ -882,7 +882,7 @@ class FirebaseBackendService(private val context: Context) {
                 enableGearBillboard = getBoolean("enable_gear_billboard", true),
                 defaultCrossfadeSeconds = getInt("default_crossfade_seconds", 0),
                 showShuffleButtonDefault = getBoolean("show_shuffle_button_default", true),
-                admobEnabled = getBoolean("admob_enabled", true),
+                admobEnabled = getBoolean("admob_enabled", false), // Paused for Play Store release
                 forceProOverride = getString("force_pro_override", "none"),
                 proYearlyPrice = getString("pro_yearly_price", "$1.00"),
                 proLifetimePrice = getString("pro_lifetime_price", "$2.00"),

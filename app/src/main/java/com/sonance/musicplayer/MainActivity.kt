@@ -81,6 +81,7 @@ class MainActivity : ComponentActivity() {
             val remoteSettings by repository.remoteSettingsFlow.collectAsState()
             val userSubscription by repository.userSubscriptionFlow.collectAsState()
             val userProfile by repository.userProfileFlow.collectAsState()
+            val isScanning by repository.isScanning.collectAsState()
 
             val currentTrack by playbackManager.currentTrack.collectAsState()
             val isPlaying by playbackManager.isPlaying.collectAsState()
@@ -181,18 +182,27 @@ class MainActivity : ComponentActivity() {
             val permissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestMultiplePermissions()
             ) { perms ->
-                val granted = perms[Manifest.permission.READ_MEDIA_AUDIO] == true ||
-                        perms[Manifest.permission.READ_EXTERNAL_STORAGE] == true ||
-                        perms.values.any { it }
+                val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    perms[Manifest.permission.READ_MEDIA_AUDIO] == true ||
+                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
+                } else {
+                    perms[Manifest.permission.READ_EXTERNAL_STORAGE] == true ||
+                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+                }
                 hasAudioPermission = granted
-                if (granted) {
-                    scope.launch {
-                        repository.scanMediaStore()
-                    }
+                // Immediately scan so newly permitted music is discovered and shown without delay
+                scope.launch {
+                    repository.scanMediaStore()
                 }
             }
 
             LaunchedEffect(Unit) {
+                // 1. Immediately initiate background music scan so existing music is discovered on launch
+                scope.launch {
+                    repository.scanMediaStore()
+                }
+
+                // 2. Check and prompt permissions if not yet granted
                 val hasPerm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     ContextCompat.checkSelfPermission(
                         this@MainActivity,
@@ -208,10 +218,6 @@ class MainActivity : ComponentActivity() {
 
                 if (!hasPerm) {
                     permissionLauncher.launch(permissionsToRequest)
-                } else {
-                    scope.launch {
-                        repository.scanMediaStore()
-                    }
                 }
 
                 // Preload production AdMob Interstitial ad for free tier on real devices
@@ -444,6 +450,9 @@ class MainActivity : ComponentActivity() {
                                     theme = theme,
                                     showShuffleButton = playerSettings.showShuffleButton,
                                     remoteSettings = remoteSettings,
+                                    currentTrack = currentTrack,
+                                    isPlaying = isPlaying,
+                                    isScanning = isScanning,
                                     onSelectView = { selected ->
                                         when (selected) {
                                             ActiveView.RECENT_ADD,
@@ -462,8 +471,8 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onOpenCreatePlaylist = { isCreatePlaylistOpen = true },
                                     onShuffleAll = {
-                                        if (tracks.isNotEmpty()) {
-                                            playbackManager.setQueue(tracks.shuffled(), 0)
+                                        if (musicOnlyTracks.isNotEmpty()) {
+                                            playbackManager.setQueue(musicOnlyTracks.shuffled(), 0)
                                         }
                                     },
                                     onOpenMusicTrim = {
@@ -480,7 +489,17 @@ class MainActivity : ComponentActivity() {
                                     onOpenEqualizer = {
                                         executeWithInterstitialAd { isEqualizerOpen = true }
                                     },
-                                    onOpenScan = { isScanModalOpen = true }
+                                    onOpenScan = { isScanModalOpen = true },
+                                    onPlayTrack = { tr, list ->
+                                        playbackManager.setQueue(list, list.indexOf(tr))
+                                    },
+                                    onToggleFavorite = { trId ->
+                                        repository.toggleFavorite(trId)
+                                    },
+                                    onRequestPermissionAndScan = {
+                                        permissionLauncher.launch(permissionsToRequest)
+                                        scope.launch { repository.scanMediaStore() }
+                                    }
                                 )
                             } else {
                                 TrackListScreen(

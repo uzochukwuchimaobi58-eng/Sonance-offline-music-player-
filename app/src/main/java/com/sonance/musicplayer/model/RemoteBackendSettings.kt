@@ -18,7 +18,7 @@ data class RemoteBackendSettings(
     val enableGearBillboard: Boolean = true,
     val defaultCrossfadeSeconds: Int = 0,
     val showShuffleButtonDefault: Boolean = true,
-    val admobEnabled: Boolean = true,
+    val admobEnabled: Boolean = false, // Paused for Play Store release; will be re-enabled on instruction
     val forceProOverride: String = "none", // "none", "force_true", "force_false"
     val proYearlyPrice: String = "$1.00",
     val proLifetimePrice: String = "$5.00",

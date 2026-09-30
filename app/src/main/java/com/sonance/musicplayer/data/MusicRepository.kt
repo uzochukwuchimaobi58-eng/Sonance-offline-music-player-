@@ -284,6 +284,12 @@ class MusicRepository(private val context: Context) {
     private val _equalizerSettings = MutableStateFlow(EqualizerSettings())
     val equalizerSettings: StateFlow<EqualizerSettings> = _equalizerSettings.asStateFlow()
 
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
+    private val _scanStatus = MutableStateFlow("")
+    val scanStatus: StateFlow<String> = _scanStatus.asStateFlow()
+
     val firebaseService = FirebaseBackendService(context)
     val billingManager = com.sonance.musicplayer.billing.GooglePlayBillingManager.getInstance(context)
 
@@ -678,6 +684,8 @@ class MusicRepository(private val context: Context) {
     }
 
     suspend fun scanMediaStore(): Int = withContext(Dispatchers.IO) {
+        _isScanning.value = true
+        _scanStatus.value = "Scanning storage for music..."
         val deviceTracks = mutableListOf<Track>()
         val existingMediaIds = mutableSetOf<Long>()
         val existingUrls = mutableSetOf<String>()
@@ -853,6 +861,23 @@ class MusicRepository(private val context: Context) {
         // Query external storage for audio
         queryUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, null)
 
+        // Immediately emit any found tracks so user sees songs within 100ms
+        if (deviceTracks.isNotEmpty()) {
+            val preliminary = deduplicateTracks(deviceTracks.filter { MusicFilter.isMusicTrack(it) && !isTrackDeleted(it) })
+                .sortedWith(com.sonance.musicplayer.util.TrackComparators.TitleComparator)
+            _tracks.value = preliminary
+        }
+
+        // Also query internal storage if external returned 0
+        if (deviceTracks.isEmpty()) {
+            queryUri(MediaStore.Audio.Media.INTERNAL_CONTENT_URI, null)
+            if (deviceTracks.isNotEmpty()) {
+                val preliminary = deduplicateTracks(deviceTracks.filter { MusicFilter.isMusicTrack(it) && !isTrackDeleted(it) })
+                    .sortedWith(com.sonance.musicplayer.util.TrackComparators.TitleComparator)
+                _tracks.value = preliminary
+            }
+        }
+
         // On Android 10+ (API 29+), check MediaStore.Downloads for newly downloaded Chrome songs
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             try {
@@ -990,6 +1015,8 @@ class MusicRepository(private val context: Context) {
 
         _tracks.value = newTrackList
         persistTracks(newTrackList)
+        _isScanning.value = false
+        _scanStatus.value = "Found ${newTrackList.size} songs"
         newTrackList.size
     }
 
@@ -1090,8 +1117,8 @@ class MusicRepository(private val context: Context) {
                             if (file.isDirectory) {
                                 val name = file.name
                                 !name.startsWith(".") &&
-                                    name != "Android" &&
                                     name != "data" &&
+                                    name != "obb" &&
                                     name != "cache" &&
                                     !name.equals("WhatsApp Voice Notes", ignoreCase = true) &&
                                     !name.equals("Voice Notes", ignoreCase = true) &&
