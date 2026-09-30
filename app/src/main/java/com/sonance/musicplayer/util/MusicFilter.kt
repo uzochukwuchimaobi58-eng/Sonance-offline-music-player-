@@ -31,7 +31,15 @@ object MusicFilter {
         "aac",
         "flac",
         "ogg",
-        "opus"
+        "opus",
+        "mp4",
+        "wma",
+        "alac",
+        "aiff",
+        "mid",
+        "midi",
+        "3gp",
+        "amr"
     )
 
     val SUPPORTED_MIME_TYPES = setOf(
@@ -50,6 +58,10 @@ object MusicFilter {
         "audio/ogg",
         "audio/opus",
         "audio/x-ogg",
+        "audio/3gpp",
+        "audio/amr",
+        "audio/midi",
+        "audio/x-midi",
         "application/ogg",
         "application/x-ogg"
     )

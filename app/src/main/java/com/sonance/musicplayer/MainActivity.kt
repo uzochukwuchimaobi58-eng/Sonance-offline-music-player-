@@ -149,54 +149,53 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Permissions request
-            val permissionsToRequest = remember {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    arrayOf(
-                        Manifest.permission.READ_MEDIA_AUDIO,
-                        Manifest.permission.READ_EXTERNAL_STORAGE
-                    )
+            // Helper function to check if audio permission is currently granted
+            fun checkAudioPermission(): Boolean {
+                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
                 } else {
-                    arrayOf(
-                        Manifest.permission.READ_EXTERNAL_STORAGE
-                    )
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+                }
+            }
+
+            // Accurate single permission for this Android OS version
+            val audioPermissionToRequest = remember {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    Manifest.permission.READ_MEDIA_AUDIO
+                } else {
+                    Manifest.permission.READ_EXTERNAL_STORAGE
                 }
             }
 
             var hasAudioPermission by remember {
-                mutableStateOf(
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED ||
-                            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED)
-                )
+                mutableStateOf(checkAudioPermission())
             }
 
             val permissionLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.RequestMultiplePermissions()
-            ) { perms ->
-                val granted = perms.values.any { it } ||
-                        ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED ||
-                        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED)
+                ActivityResultContracts.RequestPermission()
+            ) { isGranted ->
+                val granted = isGranted || checkAudioPermission()
                 hasAudioPermission = granted
-                // Immediately scan so newly permitted music is discovered and shown without delay
-                scope.launch {
-                    repository.scanMediaStore()
+                if (granted) {
+                    // Immediately scan so newly permitted music is discovered and shown without delay
+                    scope.launch {
+                        repository.scanMediaStore()
+                    }
                 }
             }
 
             LaunchedEffect(Unit) {
-                // 1. Immediately initiate background music scan on launch so music shows in under 1 second
-                scope.launch {
-                    repository.scanMediaStore()
-                }
-
-                // 2. Check and prompt permissions if not yet granted
-                val hasPerm = ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED ||
-                        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED)
+                val hasPerm = checkAudioPermission()
                 hasAudioPermission = hasPerm
 
-                if (!hasPerm) {
+                if (hasPerm) {
+                    // Immediately initiate background music scan on launch so music shows right away
+                    scope.launch {
+                        repository.scanMediaStore()
+                    }
+                } else {
                     // Prompt permission dialog immediately upon installation so user can allow access right away
-                    permissionLauncher.launch(permissionsToRequest)
+                    permissionLauncher.launch(audioPermissionToRequest)
                 }
 
                 // Preload production AdMob Interstitial ad for free tier on real devices
@@ -477,7 +476,7 @@ class MainActivity : ComponentActivity() {
                                         repository.toggleFavorite(trId)
                                     },
                                     onRequestPermissionAndScan = {
-                                        permissionLauncher.launch(permissionsToRequest)
+                                        permissionLauncher.launch(audioPermissionToRequest)
                                         scope.launch { repository.scanMediaStore() }
                                     }
                                 )
@@ -773,7 +772,7 @@ class MainActivity : ComponentActivity() {
                     onScan = { repository.scanMediaStore() },
                     theme = theme,
                     hasPermission = hasAudioPermission,
-                    onRequestPermission = { permissionLauncher.launch(permissionsToRequest) }
+                    onRequestPermission = { permissionLauncher.launch(audioPermissionToRequest) }
                 )
 
                 // Web Browser Dialog
