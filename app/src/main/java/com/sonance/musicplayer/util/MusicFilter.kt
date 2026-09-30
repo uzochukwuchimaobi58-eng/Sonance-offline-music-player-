@@ -138,9 +138,12 @@ object MusicFilter {
         val titleNorm = (title ?: "").lowercase(Locale.ROOT)
 
         // 1. Folder checks: Exclude Voice Recorder, Call recordings, WhatsApp Voice Notes etc.
-        for (keyword in EXCLUDED_FOLDER_KEYWORDS) {
-            if (relPathNorm.contains(keyword) || dataPathNorm.contains(keyword)) {
-                return false
+        // If track is 30s or longer, it is a legitimate music piece and should not be discarded
+        if (durationMs < 30000L) {
+            for (keyword in EXCLUDED_FOLDER_KEYWORDS) {
+                if (relPathNorm.contains(keyword) || dataPathNorm.contains(keyword)) {
+                    return false
+                }
             }
         }
 
@@ -232,18 +235,20 @@ object MusicFilter {
         val titleNorm = track.title.lowercase(Locale.ROOT)
         val urlNorm = track.url.lowercase(Locale.ROOT)
 
-        // Folder check
-        for (keyword in EXCLUDED_FOLDER_KEYWORDS) {
-            if (folderNorm.contains(keyword) || urlNorm.contains(keyword)) {
+        // Folder check: Only filter out voice folders if the audio duration is under 30s
+        if (track.duration in 0..29) {
+            for (keyword in EXCLUDED_FOLDER_KEYWORDS) {
+                if (folderNorm.contains(keyword) || urlNorm.contains(keyword)) {
+                    return false
+                }
+            }
+            if (folderNorm.startsWith("recordings/call") ||
+                folderNorm.startsWith("recordings/voice") ||
+                urlNorm.contains("/recordings/call") ||
+                urlNorm.contains("/recordings/voice")
+            ) {
                 return false
             }
-        }
-        if (folderNorm.startsWith("recordings/call") ||
-            folderNorm.startsWith("recordings/voice") ||
-            urlNorm.contains("/recordings/call") ||
-            urlNorm.contains("/recordings/voice")
-        ) {
-            return false
         }
         for (sysFolder in SYSTEM_SOUND_FOLDERS) {
             if (folderNorm.contains(sysFolder) || urlNorm.contains(sysFolder)) {

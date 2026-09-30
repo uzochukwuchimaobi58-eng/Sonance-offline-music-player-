@@ -465,67 +465,6 @@ fun HomeScreen(
                         }
                     }
                 }
-            } else {
-                // Empty state card when 0 tracks found
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .border(1.dp, theme.accentColor.copy(alpha = 0.4f), RoundedCornerShape(14.dp)),
-                    color = theme.sidebarBg.copy(alpha = 0.90f)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(theme.accentColor.copy(alpha = 0.18f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MusicOff,
-                                contentDescription = null,
-                                tint = theme.accentColor,
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "No offline music found yet",
-                            color = theme.textPrimary,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Sonance scans your device storage, SD card, and downloads for songs.",
-                            color = theme.textSecondary,
-                            fontSize = 12.sp,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Button(
-                            onClick = { onRequestPermissionAndScan?.invoke() ?: onOpenScan?.invoke() },
-                            colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = null,
-                                tint = Color.Black,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Scan Device For Music", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-                    }
-                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

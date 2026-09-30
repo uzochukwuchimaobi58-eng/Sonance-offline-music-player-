@@ -690,17 +690,6 @@ class MusicRepository(private val context: Context) {
     }
 
     suspend fun scanMediaStore(): Int = withContext(Dispatchers.IO) {
-        val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
-        } else {
-            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-        }
-
-        if (!hasPermission) {
-            Log.d("MusicRepository", "scanMediaStore skipped: Audio storage permission not yet granted")
-            return@withContext _tracks.value.size
-        }
-
         scanMutex.withLock {
             _isScanning.value = true
             _scanStatus.value = "Scanning storage for music..."
@@ -870,21 +859,30 @@ class MusicRepository(private val context: Context) {
                     }
                 }
 
-                // Query external storage for audio
+                // 1. Query all external storage volumes on Android 10+ (includes SD cards & OTG)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    try {
+                        queryUri(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL), null)
+                    } catch (e: Exception) {
+                        Log.w("MusicRepository", "VOLUME_EXTERNAL query fallback: ${e.message}")
+                    }
+                }
+
+                // 2. Query primary external storage URI
                 queryUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, null)
 
                 // Immediately emit any found tracks so user sees songs within milliseconds
                 if (deviceTracks.isNotEmpty()) {
-                    val preliminary = deduplicateTracks(deviceTracks.filter { MusicFilter.isMusicTrack(it) && !isTrackDeleted(it) })
+                    val preliminary = deduplicateTracks(deviceTracks.filter { !isTrackDeleted(it) })
                         .sortedWith(com.sonance.musicplayer.util.TrackComparators.TitleComparator)
                     _tracks.value = preliminary
                 }
 
-                // Also query internal storage if external returned 0
+                // 3. Also query internal storage
                 if (deviceTracks.isEmpty()) {
                     queryUri(MediaStore.Audio.Media.INTERNAL_CONTENT_URI, null)
                     if (deviceTracks.isNotEmpty()) {
-                        val preliminary = deduplicateTracks(deviceTracks.filter { MusicFilter.isMusicTrack(it) && !isTrackDeleted(it) })
+                        val preliminary = deduplicateTracks(deviceTracks.filter { !isTrackDeleted(it) })
                             .sortedWith(com.sonance.musicplayer.util.TrackComparators.TitleComparator)
                         _tracks.value = preliminary
                     }
@@ -983,7 +981,7 @@ class MusicRepository(private val context: Context) {
                 val existingLyrics = existingTracks.filter { it.lyrics.isNotBlank() }.associate { it.id to it.lyrics }
 
                 val newTrackList = if (deviceTracks.isNotEmpty()) {
-                    val deduplicated = deduplicateTracks(deviceTracks.filter { MusicFilter.isMusicTrack(it) && !isTrackDeleted(it) })
+                    val deduplicated = deduplicateTracks(deviceTracks.filter { !isTrackDeleted(it) })
                     val updatedDeviceTracks = deduplicated.map { t ->
                         val normKey = getNormTrackKey(t.title, t.artist)
                         val persistentPlayCount = maxOf(
