@@ -109,6 +109,7 @@ data class Track(
 ) {
     val addedDate: Long get() = dateAdded
     val contentUri: String get() = url
+    val durationMs: Long get() = duration * 1000L
 }
 
 @Serializable
@@ -140,6 +141,16 @@ data class EqualizerSettings(
     val bassBoost: Int = 0, // 0..100
     val spatialReverb: Int = 0, // 0..100
     val trebleBoost: Int = 0 // 0..100
+)
+
+@Serializable
+data class MusicBassSettings(
+    val enabled: Boolean = false,
+    val bassBoost: Int = 85,     // 0..100%
+    val subBassRumble: Int = 80, // 0..100%
+    val punchKick: Int = 75,     // 0..100%
+    val clarityHighs: Int = 50,  // 0..100%
+    val presetName: String = "Deep Bass"
 )
 
 @Serializable

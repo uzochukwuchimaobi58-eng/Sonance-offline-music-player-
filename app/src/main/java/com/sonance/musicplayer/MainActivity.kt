@@ -471,10 +471,6 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onToggleFavorite = { trId ->
                                         repository.toggleFavorite(trId)
-                                    },
-                                    onRequestPermissionAndScan = {
-                                        permissionLauncher.launch(audioPermissionToRequest)
-                                        scope.launch { repository.scanMediaStore() }
                                     }
                                 )
                             } else {

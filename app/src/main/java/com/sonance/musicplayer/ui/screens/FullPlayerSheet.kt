@@ -5,6 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,6 +22,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -26,6 +30,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.sonance.musicplayer.data.LyricsRepository
+import com.sonance.musicplayer.data.LyricsState
 import com.sonance.musicplayer.model.RepeatMode
 import com.sonance.musicplayer.model.ThemeConfig
 import com.sonance.musicplayer.model.Track
@@ -67,7 +73,42 @@ fun FullPlayerSheet(
 ) {
     if (!isOpen || track == null) return
 
-    var showVisualizer by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val lyricsRepo = remember { LyricsRepository(context) }
+    var lyricsState by remember { mutableStateOf<LyricsState>(LyricsState.None) }
+    val lyricsListState = rememberLazyListState()
+    var centerMode by remember { mutableIntStateOf(0) } // 0: ARTWORK, 1: LYRICS, 2: WAVE
+
+    LaunchedEffect(track.id) {
+        lyricsState = LyricsState.Loading
+        lyricsState = lyricsRepo.load(track)
+    }
+
+    val activeLineIndex = remember(currentPosMs, lyricsState) {
+        when (val state = lyricsState) {
+            is LyricsState.Found -> {
+                if (state.synced && state.lines.isNotEmpty()) {
+                    var found = -1
+                    for (i in state.lines.indices) {
+                        if (currentPosMs >= state.lines[i].timeMs) {
+                            found = i
+                        } else {
+                            break
+                        }
+                    }
+                    found
+                } else -1
+            }
+            else -> -1
+        }
+    }
+
+    LaunchedEffect(activeLineIndex) {
+        if (activeLineIndex >= 0) {
+            lyricsListState.animateScrollToItem((activeLineIndex - 2).coerceAtLeast(0))
+        }
+    }
+
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showEffectDialog by remember { mutableStateOf(false) }
 
@@ -180,55 +221,144 @@ fun FullPlayerSheet(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Main Artwork or Visualizer Box
+            // Main Artwork, Lyrics, or Visualizer Box
             Box(
                 modifier = Modifier
                     .fillMaxWidth(0.85f)
                     .aspectRatio(1f)
                     .clip(RoundedCornerShape(24.dp))
                     .background(Color(0xFF1E1E24))
-                    .clickable { showVisualizer = !showVisualizer },
+                    .clickable { centerMode = (centerMode + 1) % 3 },
                 contentAlignment = Alignment.Center
             ) {
-                if (!showVisualizer && track.coverArt.isNotEmpty()) {
-                    AsyncImage(
-                        model = track.coverArt,
-                        contentDescription = track.title,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(20.dp),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        VisualizerWaveform(
-                            isPlaying = isPlaying,
-                            accentColor = theme.accentColor
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = if (isPlaying) "Live Audio Visualizer" else "Visualizer Paused",
-                            color = theme.textSecondary,
-                            fontSize = 12.sp
-                        )
+                when (centerMode) {
+                    0 -> {
+                        // ARTWORK
+                        if (track.coverArt.isNotEmpty()) {
+                            AsyncImage(
+                                model = track.coverArt,
+                                contentDescription = track.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(theme.headerBg),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = theme.accentColor,
+                                    modifier = Modifier.size(72.dp)
+                                )
+                            }
+                        }
+                    }
+                    1 -> {
+                        // SYNCHRONIZED LYRICS
+                        when (val state = lyricsState) {
+                            is LyricsState.Loading, is LyricsState.None -> {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(color = theme.accentColor, modifier = Modifier.size(36.dp))
+                                }
+                            }
+                            is LyricsState.NotFound -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(16.dp),
+                                    verticalArrangement = Arrangement.Center,
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "No lyrics found for this song",
+                                        color = theme.textPrimary,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Check network or tap Full View",
+                                        color = theme.textSecondary,
+                                        fontSize = 11.sp,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    TextButton(onClick = onOpenLyrics) {
+                                        Text("Full Lyrics Mode", color = theme.accentColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                            is LyricsState.Found -> {
+                                LazyColumn(
+                                    state = lyricsListState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(vertical = 24.dp, horizontal = 16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    itemsIndexed(state.lines) { idx, line ->
+                                        val isActive = idx == activeLineIndex
+                                        Text(
+                                            text = line.text.ifBlank { "♪" },
+                                            fontSize = if (isActive) 18.sp else 14.sp,
+                                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isActive) theme.accentColor else theme.textSecondary.copy(alpha = if (state.synced) 0.5f else 0.85f),
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    if (state.synced && line.timeMs >= 0) {
+                                                        onSeek(line.timeMs)
+                                                    }
+                                                }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else -> {
+                        // VISUALIZER WAVE
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(20.dp),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            VisualizerWaveform(
+                                isPlaying = isPlaying,
+                                accentColor = theme.accentColor
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = if (isPlaying) "Live Audio Visualizer" else "Visualizer Paused",
+                                color = theme.textSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
 
-                // Small badge to toggle visualizer
+                // Small badge to toggle visualizer / lyrics
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(12.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color.Black.copy(alpha = 0.6f))
+                        .background(Color.Black.copy(alpha = 0.65f))
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = if (showVisualizer) "ARTWORK" else "WAVE",
+                        text = when (centerMode) {
+                            0 -> "ARTWORK"
+                            1 -> "LYRICS"
+                            else -> "WAVE"
+                        },
                         color = Color.White,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
@@ -559,11 +689,17 @@ fun FullPlayerSheet(
                 }
 
                 // Lyrics
-                IconButton(onClick = onOpenLyrics) {
+                IconButton(onClick = {
+                    if (centerMode != 1) {
+                        centerMode = 1
+                    } else {
+                        onOpenLyrics()
+                    }
+                }) {
                     Icon(
                         imageVector = Icons.Default.Subtitles,
                         contentDescription = "Lyrics",
-                        tint = theme.accentColor,
+                        tint = if (centerMode == 1) theme.accentColor else theme.textPrimary,
                         modifier = Modifier.size(22.dp)
                     )
                 }

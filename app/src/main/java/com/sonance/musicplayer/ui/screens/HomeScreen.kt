@@ -55,8 +55,7 @@ fun HomeScreen(
     onOpenBeatInstrumental: () -> Unit,
     onOpenEqualizer: () -> Unit,
     onPlayTrack: ((Track, List<Track>) -> Unit)? = null,
-    onToggleFavorite: ((String) -> Unit)? = null,
-    onRequestPermissionAndScan: (() -> Unit)? = null
+    onToggleFavorite: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     var isAnnouncementDismissed by remember { mutableStateOf(false) }
@@ -278,7 +277,110 @@ fun HomeScreen(
                 )
             }
 
-            // 2. Offline Songs Display Section (Directly visible on Home screen when songs exist)
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // STUDIO TOOLS SECTION (Permanent directly below RECENT PLAY / RECENT ADD / MOST PLAY)
+            Row(
+                modifier = Modifier.padding(start = 2.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(4.dp, 14.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(theme.accentColor)
+                )
+                Text(
+                    text = "STUDIO TOOLS",
+                    color = theme.textPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                StudioToolCard(
+                    title = "Music Trim",
+                    subtitle = "Ringtone, Alarm & Cutter",
+                    badge = "TRIM",
+                    icon = Icons.Default.ContentCut,
+                    iconTint = theme.accentColor,
+                    badgeBg = theme.accentColor.copy(alpha = 0.2f),
+                    badgeText = theme.accentColor,
+                    cardBg = theme.sidebarBg.copy(alpha = 0.90f),
+                    cardBorder = theme.headerBorder,
+                    textColor = theme.textPrimary,
+                    subtextColor = theme.textSecondary,
+                    modifier = Modifier.weight(1f),
+                    tag = "card_music_trim",
+                    onClick = onOpenMusicTrim
+                )
+
+                StudioToolCard(
+                    title = "Karaoke Mode",
+                    subtitle = "Vocal Remover & Synced Lyrics",
+                    badge = "AI VOCAL",
+                    icon = Icons.Default.Mic,
+                    iconTint = Color(0xFFFB7185),
+                    badgeBg = Color(0xFFF43F5E).copy(alpha = 0.2f),
+                    badgeText = Color(0xFFFDA4AF),
+                    cardBg = theme.sidebarBg.copy(alpha = 0.90f),
+                    cardBorder = theme.headerBorder,
+                    textColor = theme.textPrimary,
+                    subtextColor = theme.textSecondary,
+                    modifier = Modifier.weight(1f),
+                    tag = "card_karaoke_studio",
+                    onClick = onOpenKaraoke
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                StudioToolCard(
+                    title = "Beat Instrumental",
+                    subtitle = "Convert & Isolate AI Stems",
+                    badge = "AI STEMS",
+                    icon = Icons.Default.AutoFixHigh,
+                    iconTint = Color(0xFFFBBF24),
+                    badgeBg = Color(0xFFF59E0B).copy(alpha = 0.2f),
+                    badgeText = Color(0xFFFDE68A),
+                    cardBg = theme.sidebarBg.copy(alpha = 0.90f),
+                    cardBorder = theme.headerBorder,
+                    textColor = theme.textPrimary,
+                    subtextColor = theme.textSecondary,
+                    modifier = Modifier.weight(1f),
+                    tag = "card_beat_instrumental",
+                    onClick = onOpenBeatInstrumental
+                )
+
+                StudioToolCard(
+                    title = "Sound Equalizer",
+                    subtitle = "Bass Boost, 3D Sound & Presets",
+                    badge = "10-BAND EQ",
+                    icon = Icons.Default.Tune,
+                    iconTint = Color(0xFFC084FC),
+                    badgeBg = Color(0xFFA855F7).copy(alpha = 0.2f),
+                    badgeText = Color(0xFFE9D5FF),
+                    cardBg = theme.sidebarBg.copy(alpha = 0.90f),
+                    cardBorder = theme.headerBorder,
+                    textColor = theme.textPrimary,
+                    subtextColor = theme.textSecondary,
+                    modifier = Modifier.weight(1f),
+                    tag = "card_sound_equalizer",
+                    onClick = onOpenEqualizer
+                )
+            }
+
+            // 2. Offline Songs Display Section (Directly visible below Studio Tools)
             if (tracks.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(18.dp))
 
@@ -461,163 +563,6 @@ fun HomeScreen(
                         }
                     }
                 }
-            } else if (onRequestPermissionAndScan != null) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onRequestPermissionAndScan.invoke() }
-                        .testTag("home_grant_permission_card"),
-                    color = theme.sidebarBg.copy(alpha = 0.9f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.4f)),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(theme.accentColor.copy(alpha = 0.2f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MusicNote,
-                                contentDescription = null,
-                                tint = theme.accentColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Allow Audio Access",
-                                color = theme.textPrimary,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Tap here to display your device music library",
-                                color = theme.textSecondary,
-                                fontSize = 12.sp
-                            )
-                        }
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = null,
-                            tint = theme.accentColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // STUDIO TOOLS SECTION
-            Row(
-                modifier = Modifier.padding(start = 2.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(4.dp, 14.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(theme.accentColor)
-                )
-                Text(
-                    text = "STUDIO TOOLS",
-                    color = theme.textPrimary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                StudioToolCard(
-                    title = "Music Trim",
-                    subtitle = "Ringtone, Alarm & Cutter",
-                    badge = "TRIM",
-                    icon = Icons.Default.ContentCut,
-                    iconTint = theme.accentColor,
-                    badgeBg = theme.accentColor.copy(alpha = 0.2f),
-                    badgeText = theme.accentColor,
-                    cardBg = theme.sidebarBg.copy(alpha = 0.90f),
-                    cardBorder = theme.headerBorder,
-                    textColor = theme.textPrimary,
-                    subtextColor = theme.textSecondary,
-                    modifier = Modifier.weight(1f),
-                    tag = "card_music_trim",
-                    onClick = onOpenMusicTrim
-                )
-
-                StudioToolCard(
-                    title = "Karaoke Mode",
-                    subtitle = "Vocal Remover & Synced Lyrics",
-                    badge = "AI VOCAL",
-                    icon = Icons.Default.Mic,
-                    iconTint = Color(0xFFFB7185),
-                    badgeBg = Color(0xFFF43F5E).copy(alpha = 0.2f),
-                    badgeText = Color(0xFFFDA4AF),
-                    cardBg = theme.sidebarBg.copy(alpha = 0.90f),
-                    cardBorder = theme.headerBorder,
-                    textColor = theme.textPrimary,
-                    subtextColor = theme.textSecondary,
-                    modifier = Modifier.weight(1f),
-                    tag = "card_karaoke_studio",
-                    onClick = onOpenKaraoke
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                StudioToolCard(
-                    title = "Beat Instrumental",
-                    subtitle = "Convert & Isolate AI Stems",
-                    badge = "AI STEMS",
-                    icon = Icons.Default.AutoFixHigh,
-                    iconTint = Color(0xFFFBBF24),
-                    badgeBg = Color(0xFFF59E0B).copy(alpha = 0.2f),
-                    badgeText = Color(0xFFFDE68A),
-                    cardBg = theme.sidebarBg.copy(alpha = 0.90f),
-                    cardBorder = theme.headerBorder,
-                    textColor = theme.textPrimary,
-                    subtextColor = theme.textSecondary,
-                    modifier = Modifier.weight(1f),
-                    tag = "card_beat_instrumental",
-                    onClick = onOpenBeatInstrumental
-                )
-
-                StudioToolCard(
-                    title = "Sound Equalizer",
-                    subtitle = "Bass Boost, 3D Sound & Presets",
-                    badge = "10-BAND EQ",
-                    icon = Icons.Default.Tune,
-                    iconTint = Color(0xFFC084FC),
-                    badgeBg = Color(0xFFA855F7).copy(alpha = 0.2f),
-                    badgeText = Color(0xFFE9D5FF),
-                    cardBg = theme.sidebarBg.copy(alpha = 0.90f),
-                    cardBorder = theme.headerBorder,
-                    textColor = theme.textPrimary,
-                    subtextColor = theme.textSecondary,
-                    modifier = Modifier.weight(1f),
-                    tag = "card_sound_equalizer",
-                    onClick = onOpenEqualizer
-                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
