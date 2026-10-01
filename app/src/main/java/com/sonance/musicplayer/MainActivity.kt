@@ -109,7 +109,6 @@ class MainActivity : ComponentActivity() {
             var isSleepTimerOpen by remember { mutableStateOf(false) }
             var isThemePickerOpen by remember { mutableStateOf(false) }
             var isSettingsOpen by remember { mutableStateOf(false) }
-            var isScanModalOpen by remember { mutableStateOf(false) }
             var isWebBrowserOpen by remember { mutableStateOf(false) }
             var isCreatePlaylistOpen by remember { mutableStateOf(false) }
             var isDriveModeOpen by remember { mutableStateOf(false) }
@@ -361,7 +360,6 @@ class MainActivity : ComponentActivity() {
                                     onSearchChange = { searchQuery = it },
                                     isPro = isProEffective,
                                     onOpenPro = { isProUpgradeOpen = true },
-                                    onOpenScanModal = { isScanModalOpen = true },
                                     onOpenEqualizer = { isEqualizerOpen = true },
                                     onOpenSettings = { isSettingsOpen = true },
                                     onSortSelected = { sortKey -> currentSortBy = sortKey },
@@ -468,7 +466,6 @@ class MainActivity : ComponentActivity() {
                                     onOpenEqualizer = {
                                         executeWithInterstitialAd { isEqualizerOpen = true }
                                     },
-                                    onOpenScan = { isScanModalOpen = true },
                                     onPlayTrack = { tr, list ->
                                         playbackManager.setQueue(list, list.indexOf(tr))
                                     },
@@ -497,7 +494,6 @@ class MainActivity : ComponentActivity() {
                                     isPro = isProEffective,
                                     admobEnabled = remoteSettings.admobEnabled,
                                     onOpenProUpgrade = { isProUpgradeOpen = true },
-                                    onOpenScan = { isScanModalOpen = true },
                                     onPlayTrack = { track, list ->
                                         if (currentTrack?.id == track.id) {
                                             // Tapping currently playing music brings up the full player interface directly
@@ -600,7 +596,6 @@ class MainActivity : ComponentActivity() {
                         activeView = ActiveView.PLAYLIST_DETAIL
                     },
                     onOpenCreatePlaylist = { isCreatePlaylistOpen = true },
-                    onOpenScanModal = { isScanModalOpen = true },
                     onOpenEqualizer = {
                         executeWithInterstitialAd { isEqualizerOpen = true }
                     },
@@ -762,17 +757,6 @@ class MainActivity : ComponentActivity() {
                     onOpenProUpgrade = { isProUpgradeOpen = true },
                     onSetDevProState = { isPro -> repository.setDevProState(isPro) },
                     theme = theme
-                )
-
-                // Scan Library Dialog
-                ScanLibraryDialog(
-                    isOpen = isScanModalOpen,
-                    onClose = { isScanModalOpen = false },
-                    totalTrackCount = tracks.size,
-                    onScan = { repository.scanMediaStore() },
-                    theme = theme,
-                    hasPermission = hasAudioPermission,
-                    onRequestPermission = { permissionLauncher.launch(audioPermissionToRequest) }
                 )
 
                 // Web Browser Dialog

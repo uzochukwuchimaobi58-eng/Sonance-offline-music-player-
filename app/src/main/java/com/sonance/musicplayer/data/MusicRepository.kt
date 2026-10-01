@@ -152,8 +152,7 @@ class MusicRepository(private val context: Context) {
     }
 
     /**
-     * Resolves duplicates between tracks:
-     * "resolve them to only with the one with artwork"
+     * Resolves duplicates between tracks in O(N) time using HashMaps:
      * When two or more tracks are identified as the same song,
      * the one with artwork is strictly kept and the non-artwork duplicate is discarded.
      * All richer metadata (duration, real artist, lyrics, favorites, play count) is merged into the winner.
@@ -161,16 +160,39 @@ class MusicRepository(private val context: Context) {
     fun deduplicateTracks(rawTracks: List<Track>): List<Track> {
         if (rawTracks.isEmpty()) return emptyList()
 
-        val result = mutableListOf<Track>()
+        val result = ArrayList<Track>(rawTracks.size)
+        val idToIndex = HashMap<String, Int>(rawTracks.size)
+        val urlToIndex = HashMap<String, Int>(rawTracks.size)
+        val keyToIndex = HashMap<String, Int>(rawTracks.size)
+
         for (incoming in rawTracks) {
             if (isTrackDeleted(incoming)) continue
 
-            val matchIndex = result.indexOfFirst { existing ->
-                areTracksDuplicate(existing, incoming)
+            val normUrl = incoming.url.lowercase(java.util.Locale.ROOT).removePrefix("file://")
+            val cleanT = cleanSongTitle(incoming.title)
+            val cleanA = cleanArtist(incoming.artist)
+            val songKey = if (cleanT.isNotEmpty() && cleanT.length >= 2) "$cleanT|$cleanA" else ""
+
+            var matchIndex = idToIndex[incoming.id]
+            if (matchIndex == null && normUrl.isNotEmpty()) {
+                matchIndex = urlToIndex[normUrl]
+            }
+            if (matchIndex == null && songKey.isNotEmpty()) {
+                val candidateIdx = keyToIndex[songKey]
+                if (candidateIdx != null) {
+                    val candidate = result[candidateIdx]
+                    if (candidate.duration <= 0L || incoming.duration <= 0L || Math.abs(candidate.duration - incoming.duration) <= 5L) {
+                        matchIndex = candidateIdx
+                    }
+                }
             }
 
-            if (matchIndex < 0) {
+            if (matchIndex == null) {
+                val newIdx = result.size
                 result.add(incoming)
+                idToIndex[incoming.id] = newIdx
+                if (normUrl.isNotEmpty()) urlToIndex[normUrl] = newIdx
+                if (songKey.isNotEmpty()) keyToIndex[songKey] = newIdx
             } else {
                 val existing = result[matchIndex]
                 val existingHasArt = hasValidArtwork(existing)
@@ -180,15 +202,12 @@ class MusicRepository(private val context: Context) {
                 val loser: Track
 
                 if (incomingHasArt && !existingHasArt) {
-                    // Incoming has artwork, existing does not -> Incoming WINS!
                     winner = incoming
                     loser = existing
                 } else if (existingHasArt && !incomingHasArt) {
-                    // Existing has artwork, incoming does not -> Existing WINS!
                     winner = existing
                     loser = incoming
                 } else {
-                    // Both have artwork or neither has artwork:
                     val existingIsMediaStore = existing.id.startsWith("local-") && !existing.id.startsWith("local-file-")
                     val incomingIsMediaStore = incoming.id.startsWith("local-") && !incoming.id.startsWith("local-file-")
 
@@ -583,7 +602,7 @@ class MusicRepository(private val context: Context) {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
                 super.onChange(selfChange, uri)
                 val now = System.currentTimeMillis()
-                if (now - lastScanTime > 1500L) {
+                if (now - lastScanTime > 500L) {
                     lastScanTime = now
                     coroutineScope.launch {
                         scanMediaStore()
@@ -703,11 +722,10 @@ class MusicRepository(private val context: Context) {
                     MediaStore.Audio.Media.DURATION,
                     MediaStore.Audio.Media.DATA,
                     MediaStore.Audio.Media.DATE_ADDED,
-                    MediaStore.Audio.Media.DATE_MODIFIED,
-                    MediaStore.Audio.Media.SIZE,
-                    MediaStore.MediaColumns.DISPLAY_NAME,
-                    MediaStore.MediaColumns.MIME_TYPE,
-                    MediaStore.Audio.Media.IS_MUSIC
+                    MediaStore.Audio.Media.IS_RINGTONE,
+                    MediaStore.Audio.Media.IS_ALARM,
+                    MediaStore.Audio.Media.IS_NOTIFICATION,
+                    MediaStore.Audio.Media.SIZE
                 )
 
                 fun queryUri(contentUriBase: Uri, selection: String? = null) {
@@ -729,9 +747,11 @@ class MusicRepository(private val context: Context) {
                                 MediaStore.Audio.Media.ARTIST,
                                 MediaStore.Audio.Media.ALBUM,
                                 MediaStore.Audio.Media.DURATION,
-                                MediaStore.MediaColumns.DISPLAY_NAME,
-                                MediaStore.MediaColumns.MIME_TYPE,
-                                MediaStore.Audio.Media.IS_MUSIC
+                                MediaStore.Audio.Media.DATE_ADDED,
+                                MediaStore.Audio.Media.IS_RINGTONE,
+                                MediaStore.Audio.Media.IS_ALARM,
+                                MediaStore.Audio.Media.IS_NOTIFICATION,
+                                MediaStore.Audio.Media.SIZE
                             )
                             cursor = context.contentResolver.query(
                                 contentUriBase,
@@ -755,60 +775,73 @@ class MusicRepository(private val context: Context) {
                             val durationCol = it.getColumnIndex(MediaStore.Audio.Media.DURATION)
                             val dataCol = it.getColumnIndex(MediaStore.Audio.Media.DATA)
                             val dateAddedCol = it.getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
-                            val dateModifiedCol = it.getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
+                            val isRingtoneCol = it.getColumnIndex(MediaStore.Audio.Media.IS_RINGTONE)
+                            val isAlarmCol = it.getColumnIndex(MediaStore.Audio.Media.IS_ALARM)
+                            val isNotificationCol = it.getColumnIndex(MediaStore.Audio.Media.IS_NOTIFICATION)
                             val sizeCol = it.getColumnIndex(MediaStore.Audio.Media.SIZE)
-                            val displayNameCol = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                            val mimeTypeCol = it.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
-                            val isMusicCol = it.getColumnIndex(MediaStore.Audio.Media.IS_MUSIC)
 
                             while (it.moveToNext()) {
                                 val mediaId = it.getLong(idCol)
                                 if (existingMediaIds.contains(mediaId)) continue
 
+                                val durationMs = if (durationCol >= 0) it.getLong(durationCol) else 0L
+
+                                // Filter out sub-5-second audio clicks/chimes
+                                if (durationMs in 1..4999L) {
+                                    continue
+                                }
+
+                                val isRingtone = if (isRingtoneCol >= 0) it.getInt(isRingtoneCol) else 0
+                                val isAlarm = if (isAlarmCol >= 0) it.getInt(isAlarmCol) else 0
+                                val isNotification = if (isNotificationCol >= 0) it.getInt(isNotificationCol) else 0
+
+                                // Only exclude ringtones, alarms, and notifications if short audio clip (< 30s)
+                                if (durationMs in 1..29999L && (isRingtone != 0 || isAlarm != 0 || isNotification != 0)) {
+                                    continue
+                                }
+
                                 val rawTitle = if (titleCol >= 0) it.getString(titleCol) else null
                                 val rawArtist = if (artistCol >= 0) it.getString(artistCol) else null
                                 val rawAlbum = if (albumCol >= 0) it.getString(albumCol) else null
-                                val displayName = if (displayNameCol >= 0) it.getString(displayNameCol) else null
-                                val durationMs = if (durationCol >= 0) it.getLong(durationCol) else 0L
                                 val dataPath = if (dataCol >= 0) it.getString(dataCol) ?: "" else ""
                                 val dateAddedSec = if (dateAddedCol >= 0) it.getLong(dateAddedCol) else 0L
-                                val dateModifiedSec = if (dateModifiedCol >= 0) it.getLong(dateModifiedCol) else 0L
                                 val sizeBytes = if (sizeCol >= 0) it.getLong(sizeCol) else 0L
-                                val mimeType = if (mimeTypeCol >= 0) it.getString(mimeTypeCol) else null
-                                val isMusic = if (isMusicCol >= 0) it.getInt(isMusicCol) else null
 
-                                val title = rawTitle?.takeIf { t -> t.isNotBlank() }
-                                    ?: displayName?.substringBeforeLast('.')?.takeIf { d -> d.isNotBlank() }
-                                    ?: "Track $mediaId"
-                                val artist = rawArtist?.takeIf { a -> a.isNotBlank() && a != "<unknown>" } ?: "Unknown Artist"
-                                val album = rawAlbum?.takeIf { al -> al.isNotBlank() } ?: "Music"
+                                val fileName = if (dataPath.isNotEmpty()) File(dataPath).name else ""
+                                val lowerData = dataPath.lowercase(java.util.Locale.ROOT)
+                                val lowerName = fileName.lowercase(java.util.Locale.ROOT)
+                                val lowerTitle = (rawTitle ?: "").lowercase(java.util.Locale.ROOT)
 
-                                // Central filter: exclude system sounds, recordings, voice notes
-                                if (!MusicFilter.isMusicTrack(
-                                        displayName = displayName,
-                                        mimeType = mimeType,
-                                        isMusic = isMusic,
-                                        dataPath = dataPath,
-                                        title = title,
-                                        artist = artist,
-                                        album = album,
-                                        durationMs = durationMs,
-                                        sizeBytes = sizeBytes
-                                    )
+                                // Filter out WhatsApp voice notes and phone call recordings if duration < 30 seconds
+                                if (durationMs < 30000L && durationMs > 0L) {
+                                    if (lowerData.contains("whatsapp voice notes") ||
+                                        lowerData.contains("call recording") ||
+                                        lowerData.contains("voice recorder")
+                                    ) {
+                                        continue
+                                    }
+                                }
+
+                                if (lowerName.startsWith("ptt-") || lowerTitle.startsWith("ptt-") ||
+                                    lowerName.startsWith("call@") || lowerTitle.startsWith("call@")
                                 ) {
                                     continue
                                 }
 
+                                val title = rawTitle?.takeIf { t -> t.isNotBlank() }
+                                    ?: fileName.substringBeforeLast('.').takeIf { d -> d.isNotBlank() }
+                                    ?: "Track $mediaId"
+                                val artist = rawArtist?.takeIf { a -> a.isNotBlank() && a != "<unknown>" } ?: "Unknown Artist"
+                                val album = rawAlbum?.takeIf { al -> al.isNotBlank() } ?: "Music"
+
                                 existingMediaIds.add(mediaId)
-                                if (dataPath.isNotEmpty()) existingFilePaths.add(dataPath.lowercase())
+                                if (dataPath.isNotEmpty()) existingFilePaths.add(dataPath.lowercase(java.util.Locale.ROOT))
 
                                 val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, mediaId).toString()
                                 existingUrls.add(contentUri)
 
                                 val effectiveAdded = if (dateAddedSec > 0L) {
                                     dateAddedSec * 1000L
-                                } else if (dateModifiedSec > 0L) {
-                                    dateModifiedSec * 1000L
                                 } else {
                                     System.currentTimeMillis()
                                 }
@@ -817,7 +850,7 @@ class MusicRepository(private val context: Context) {
                                     try { File(dataPath).parent ?: "Phone Storage" } catch (_: Exception) { "Phone Storage" }
                                 } else "Phone Storage"
 
-                                val sizeMb = String.format("%.1f MB", sizeBytes / (1024.0 * 1024.0))
+                                val sizeMb = String.format(java.util.Locale.ROOT, "%.1f MB", sizeBytes / (1024.0 * 1024.0))
                                 val albumArtUri = "content://media/external/audio/media/$mediaId/albumart"
 
                                 val track = Track(
@@ -843,7 +876,7 @@ class MusicRepository(private val context: Context) {
                     }
                 }
 
-                // 1. Query Primary External Storage MediaStore (Where all phone music is stored)
+                // 1. Query Primary External Storage MediaStore (Where phone music is stored)
                 queryUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
 
                 // 2. Query any SD card / external storage volume names on Android 10+
@@ -860,9 +893,13 @@ class MusicRepository(private val context: Context) {
                     }
                 }
 
-                // 3. Fallback to internal storage if 0 tracks found on external
-                if (deviceTracks.isEmpty()) {
-                    queryUri(MediaStore.Audio.Media.INTERNAL_CONTENT_URI)
+                // 3. Fallback to VOLUME_EXTERNAL if primary returned 0 on Android 10+
+                if (deviceTracks.isEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    try {
+                        queryUri(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL))
+                    } catch (e: Exception) {
+                        Log.w("MusicRepository", "VOLUME_EXTERNAL note: ${e.message}")
+                    }
                 }
 
                 val existingTracks = _tracks.value

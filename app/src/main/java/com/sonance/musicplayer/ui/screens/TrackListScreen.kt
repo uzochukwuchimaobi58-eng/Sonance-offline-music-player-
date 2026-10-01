@@ -383,28 +383,11 @@ fun TrackListScreen(
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
                                 Text(
-                                    text = "Scan your device storage & folders to load offline audio tracks.",
+                                    text = "Your music library is automatically synced in the background.",
                                     color = theme.textSecondary,
                                     fontSize = 12.sp,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
-                                if (onOpenScan != null) {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Button(
-                                        onClick = onOpenScan,
-                                        colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
-                                        shape = RoundedCornerShape(10.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Refresh,
-                                            contentDescription = null,
-                                            tint = Color.Black,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Scan Library", color = Color.Black, fontWeight = FontWeight.Bold)
-                                    }
-                                }
                             }
                         }
                     } else {

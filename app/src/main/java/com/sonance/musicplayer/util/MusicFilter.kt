@@ -247,7 +247,7 @@ object MusicFilter {
         val titleNorm = track.title.lowercase(Locale.ROOT)
         val urlNorm = track.url.lowercase(Locale.ROOT)
 
-        // Folder check: Only filter out voice folders if the audio duration is under 30s
+        // Folder check: Only filter out voice/system sound folders if the audio duration is under 30s
         if (track.duration in 0..29) {
             for (keyword in EXCLUDED_FOLDER_KEYWORDS) {
                 if (folderNorm.contains(keyword) || urlNorm.contains(keyword)) {
@@ -261,10 +261,10 @@ object MusicFilter {
             ) {
                 return false
             }
-        }
-        for (sysFolder in SYSTEM_SOUND_FOLDERS) {
-            if (folderNorm.contains(sysFolder) || urlNorm.contains(sysFolder)) {
-                return false
+            for (sysFolder in SYSTEM_SOUND_FOLDERS) {
+                if (folderNorm.contains(sysFolder) || urlNorm.contains(sysFolder)) {
+                    return false
+                }
             }
         }
 

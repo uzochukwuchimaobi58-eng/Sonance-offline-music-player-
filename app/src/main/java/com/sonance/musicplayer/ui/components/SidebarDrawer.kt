@@ -40,7 +40,7 @@ fun SidebarDrawer(
     sleepTimerSec: Int?,
     onSelectPlaylist: (String) -> Unit,
     onOpenCreatePlaylist: () -> Unit,
-    onOpenScanModal: () -> Unit,
+    onOpenScanModal: (() -> Unit) = {},
     onOpenEqualizer: () -> Unit,
     onToggleRepeat: () -> Unit,
     onOpenThemes: () -> Unit,
@@ -336,15 +336,6 @@ fun SidebarDrawer(
                     HorizontalDivider(
                         color = theme.headerBorder.copy(alpha = 0.5f),
                         modifier = Modifier.padding(vertical = 4.dp)
-                    )
-
-                    // Scan Library
-                    SidebarItem(
-                        icon = Icons.Default.Refresh,
-                        title = "Scan Library",
-                        onClick = { onClose(); onOpenScanModal() },
-                        tag = "menu_scan_library",
-                        theme = theme
                     )
 
                     // Equalizer

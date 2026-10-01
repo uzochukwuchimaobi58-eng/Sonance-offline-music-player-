@@ -339,17 +339,6 @@ fun HeaderBar(
                         )
 
                         DropdownMenuItem(
-                            text = { Text("Scan Library", color = theme.textPrimary) },
-                            onClick = {
-                                showOverflowMenu = false
-                                onOpenScanModal()
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Refresh, contentDescription = null, tint = theme.accentColor)
-                            }
-                        )
-
-                        DropdownMenuItem(
                             text = { Text("Sound Equalizer", color = theme.textPrimary) },
                             onClick = {
                                 showOverflowMenu = false

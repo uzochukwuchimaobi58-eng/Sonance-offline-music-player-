@@ -54,7 +54,6 @@ fun HomeScreen(
     onOpenKaraoke: () -> Unit,
     onOpenBeatInstrumental: () -> Unit,
     onOpenEqualizer: () -> Unit,
-    onOpenScan: (() -> Unit)? = null,
     onPlayTrack: ((Track, List<Track>) -> Unit)? = null,
     onToggleFavorite: ((String) -> Unit)? = null,
     onRequestPermissionAndScan: (() -> Unit)? = null
@@ -279,36 +278,36 @@ fun HomeScreen(
                 )
             }
 
-            // 2. Offline Songs Display Section (Directly visible on Home screen)
-            Spacer(modifier = Modifier.height(18.dp))
+            // 2. Offline Songs Display Section (Directly visible on Home screen when songs exist)
+            if (tracks.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(18.dp))
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
                 Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(4.dp, 14.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(theme.accentColor)
-                    )
-                    Text(
-                        text = if (tracks.isNotEmpty()) "SONGS (${tracks.size})" else "SONGS",
-                        color = theme.textPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
-                }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(4.dp, 14.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(theme.accentColor)
+                        )
+                        Text(
+                            text = "SONGS (${tracks.size})",
+                            color = theme.textPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                    }
 
-                if (tracks.isNotEmpty()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(
                             onClick = { onSelectView(ActiveView.LIBRARY) },
@@ -330,12 +329,9 @@ fun HomeScreen(
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-            if (tracks.isNotEmpty()) {
-                // Display the user's songs right on the Home Screen!
                 val displaySubset = tracks.take(20)
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -465,64 +461,58 @@ fun HomeScreen(
                         }
                     }
                 }
-            } else {
+            } else if (onRequestPermissionAndScan != null) {
+                Spacer(modifier = Modifier.height(16.dp))
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .border(
-                            width = 1.dp,
-                            color = theme.headerBorder.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(12.dp)
-                        ),
-                    color = theme.sidebarBg.copy(alpha = 0.85f)
+                        .clickable { onRequestPermissionAndScan.invoke() }
+                        .testTag("home_grant_permission_card"),
+                    color = theme.sidebarBg.copy(alpha = 0.9f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.4f)),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Column(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            tint = theme.accentColor,
-                            modifier = Modifier.size(36.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "No Music Indexed Yet",
-                            color = theme.textPrimary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Grant audio access or scan storage to find your offline songs.",
-                            color = theme.textSecondary,
-                            fontSize = 12.sp,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Button(
-                            onClick = {
-                                if (onRequestPermissionAndScan != null) {
-                                    onRequestPermissionAndScan()
-                                } else if (onOpenScan != null) {
-                                    onOpenScan()
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.height(36.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(theme.accentColor.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = "Scan For Music",
-                                color = Color.Black,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.5.sp
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = null,
+                                tint = theme.accentColor,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Allow Audio Access",
+                                color = theme.textPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Tap here to display your device music library",
+                                color = theme.textSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = theme.accentColor,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             }
