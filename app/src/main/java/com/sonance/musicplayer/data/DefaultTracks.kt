@@ -19,13 +19,6 @@ object DefaultTracks {
             color = "#f97316",
             trackIds = emptyList(),
             createdAt = System.currentTimeMillis()
-        ),
-        Playlist(
-            id = "playlist-chill",
-            name = "Deep Focus & Study",
-            color = "#10b981",
-            trackIds = emptyList(),
-            createdAt = System.currentTimeMillis()
         )
     )
 

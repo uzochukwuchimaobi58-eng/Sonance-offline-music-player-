@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.*
@@ -47,7 +48,9 @@ fun LyricsModeScreen(
     isPro: Boolean = false,
     admobEnabled: Boolean = false,
     onOpenProUpgrade: () -> Unit = {},
-    onUpdateLyrics: ((String) -> Unit)? = null
+    onUpdateLyrics: ((String) -> Unit)? = null,
+    isKaraokeMode: Boolean = false,
+    onToggleKaraoke: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val listState = rememberLazyListState()
@@ -168,6 +171,41 @@ fun LyricsModeScreen(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Karaoke Mode Toggle Chip in Lyrics Screen
+                if (onToggleKaraoke != null) {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isKaraokeMode) Color(0xFFFB7185) else theme.headerBg.copy(alpha = 0.8f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isKaraokeMode) Color(0xFFFB7185) else theme.headerBorder
+                        ),
+                        modifier = Modifier
+                            .clickable { onToggleKaraoke() }
+                            .padding(end = 6.dp)
+                            .testTag("chip_lyrics_karaoke")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = null,
+                                tint = if (isKaraokeMode) Color.White else theme.textSecondary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isKaraokeMode) "Karaoke ON" else "Karaoke",
+                                color = if (isKaraokeMode) Color.White else theme.textPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
                 // Refresh / Re-fetch Button
                 IconButton(
                     onClick = { loadLyricsForTrack(track) },

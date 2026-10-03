@@ -654,9 +654,14 @@ fun FullPlayerSheet(
 
                 // Karaoke Vocal Toggle
                 PlayerPillChip(
-                    label = "Karaoke",
+                    label = if (isKaraokeMode) "🎤 Karaoke ON" else "Karaoke",
                     isActive = isKaraokeMode,
-                    onClick = onToggleKaraoke,
+                    onClick = {
+                        onToggleKaraoke()
+                        if (!isKaraokeMode) {
+                            centerMode = 1 // Switch to lyrics so user can sing along
+                        }
+                    },
                     theme = theme
                 )
 

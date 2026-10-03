@@ -296,7 +296,7 @@ class MusicRepository(private val context: Context) {
     private val _settings = MutableStateFlow(PlayerSettings())
     val settings: StateFlow<PlayerSettings> = _settings.asStateFlow()
 
-    private val _currentTheme = MutableStateFlow(AppTheme.DARK_AMOLED)
+    private val _currentTheme = MutableStateFlow(AppTheme.NATURE_FLOWER)
     val currentTheme: StateFlow<AppTheme> = _currentTheme.asStateFlow()
 
     private val _unlockedThemeIds = MutableStateFlow<Set<String>>(emptySet())
@@ -317,6 +317,8 @@ class MusicRepository(private val context: Context) {
 
     val firebaseService = FirebaseBackendService(context)
     val billingManager = com.sonance.musicplayer.billing.GooglePlayBillingManager.getInstance(context)
+    val revenueCatBilling: com.sonance.musicplayer.billing.RevenueCatBillingManager =
+        com.sonance.musicplayer.billing.RevenueCatBillingManager.getInstance(context)
 
     val remoteSettings: StateFlow<com.sonance.musicplayer.model.RemoteBackendSettings> =
         firebaseService.remoteSettings
@@ -325,6 +327,29 @@ class MusicRepository(private val context: Context) {
     val userProfile: StateFlow<UserProfile> = firebaseService.userProfile
 
     init {
+        // Listen to RevenueCat Pro entitlement changes
+        revenueCatBilling.onProStatusChanged = { isPro ->
+            if (isPro) {
+                val customerInfo = revenueCatBilling.customerInfo.value
+                val ent = customerInfo?.entitlements?.get(com.sonance.musicplayer.billing.RevenueCatBillingManager.ENTITLEMENT_ID_PRO)
+                val isYearly = ent?.productIdentifier?.contains("yearly", ignoreCase = true) == true
+                val isMonthly = ent?.productIdentifier?.contains("monthly", ignoreCase = true) == true
+                val plan = when {
+                    isYearly -> "yearly"
+                    isMonthly -> "monthly"
+                    else -> "lifetime"
+                }
+                subscribePro(
+                    plan = plan,
+                    price = "",
+                    email = userProfile.value.email.ifBlank { "subscriber@sonance.app" },
+                    provider = "revenuecat",
+                    orderId = ent?.originalPurchaseDate?.toString() ?: "",
+                    purchaseToken = ent?.identifier ?: "rc_verified"
+                )
+            }
+        }
+
         // Purge any unverified PRO state on app update/start
         val curSub = userSubscription.value
         if (curSub.isPro && curSub.purchaseToken.isBlank()) {
@@ -527,8 +552,18 @@ class MusicRepository(private val context: Context) {
     }
 
     fun restorePurchases(onResult: (Boolean, String) -> Unit) {
-        billingManager.queryExistingPurchases { success, message ->
-            onResult(success, message)
+        revenueCatBilling.restorePurchases { rcSuccess, rcMsg ->
+            if (rcSuccess) {
+                onResult(true, rcMsg)
+            } else {
+                billingManager.queryExistingPurchases { success, message ->
+                    if (success) {
+                        onResult(true, message)
+                    } else {
+                        onResult(false, rcMsg.ifBlank { message })
+                    }
+                }
+            }
         }
     }
 
@@ -635,8 +670,12 @@ class MusicRepository(private val context: Context) {
             }
 
             // Load Theme & Unlocked Themes
-            val themeStr = prefs.getString("app_theme", AppTheme.DARK_AMOLED.idStr)
-            val matchingTheme = AppTheme.entries.find { it.idStr == themeStr } ?: AppTheme.DARK_AMOLED
+            val themeStr = prefs.getString("app_theme", AppTheme.NATURE_FLOWER.idStr)
+            val matchingTheme = if (themeStr == AppTheme.DARK_AMOLED.idStr || themeStr == null) {
+                AppTheme.NATURE_FLOWER
+            } else {
+                AppTheme.entries.find { it.idStr == themeStr } ?: AppTheme.NATURE_FLOWER
+            }
             _currentTheme.value = matchingTheme
             val savedUnlocked = prefs.getStringSet("unlocked_themes", emptySet()) ?: emptySet()
             _unlockedThemeIds.value = savedUnlocked
@@ -656,7 +695,10 @@ class MusicRepository(private val context: Context) {
             val playlistsJson = prefs.getString("playlists", null)
             if (playlistsJson != null) {
                 try {
-                    _playlists.value = json.decodeFromString(playlistsJson)
+                    val loaded: List<Playlist> = json.decodeFromString(playlistsJson)
+                    // If loaded contains legacy empty 3rd default playlist, normalize to 2
+                    val cleaned = loaded.filterNot { it.id == "playlist-chill" && it.trackIds.isEmpty() }
+                    _playlists.value = if (cleaned.isNotEmpty()) cleaned else DefaultTracks.initialPlaylists
                 } catch (e: Exception) {
                     Log.e("MusicRepository", "Failed to parse playlists", e)
                     _playlists.value = DefaultTracks.initialPlaylists
@@ -969,6 +1011,28 @@ class MusicRepository(private val context: Context) {
         }
         val updated = _tracks.value.map {
             if (it.id == trackId) it.copy(isFavorite = newFav) else it
+        }
+        _tracks.value = updated
+        persistTracks(updated)
+    }
+
+    fun recordRecentPlay(trackId: String, title: String = "", artist: String = "") {
+        val now = System.currentTimeMillis()
+        val targetTrack = _tracks.value.find { it.id == trackId }
+        val effectiveTitle = title.ifBlank { targetTrack?.title ?: "" }
+        val effectiveArtist = artist.ifBlank { targetTrack?.artist ?: "" }
+        val normKey = getNormTrackKey(effectiveTitle, effectiveArtist)
+
+        lastPlayedPrefs.edit().putLong(trackId, now).apply()
+        if (normKey.isNotBlank()) {
+            lastPlayedPrefs.edit().putLong(normKey, now).apply()
+        }
+
+        val updated = _tracks.value.map {
+            val matches = it.id == trackId || (normKey.isNotBlank() && getNormTrackKey(it.title, it.artist) == normKey)
+            if (matches) {
+                it.copy(lastPlayed = now)
+            } else it
         }
         _tracks.value = updated
         persistTracks(updated)

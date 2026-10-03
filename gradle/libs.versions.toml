@@ -13,6 +13,7 @@ media3 = "1.5.1"
 playBilling = "8.0.0"
 playServicesAds = "23.6.0"
 junit = "4.13.2"
+revenueCat = "10.24.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -36,6 +37,8 @@ androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.re
 androidx-media = { group = "androidx.media", name = "media", version = "1.7.0" }
 play-billing-ktx = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "playBilling" }
 play-services-ads = { group = "com.google.android.gms", name = "play-services-ads", version.ref = "playServicesAds" }
+revenuecat-purchases = { group = "com.revenuecat.purchases", name = "purchases", version.ref = "revenueCat" }
+revenuecat-purchases-ui = { group = "com.revenuecat.purchases", name = "purchases-ui", version.ref = "revenueCat" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]

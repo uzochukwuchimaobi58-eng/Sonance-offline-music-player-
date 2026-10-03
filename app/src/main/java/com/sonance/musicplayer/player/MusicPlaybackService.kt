@@ -10,6 +10,16 @@ import android.util.Log
 
 class MusicPlaybackService : Service() {
 
+    private lateinit var store: com.sonance.musicplayer.data.MusicStore
+    private lateinit var playbackManager: PlaybackManager
+
+    override fun onCreate() {
+        super.onCreate()
+        store = com.sonance.musicplayer.data.MusicStore(applicationContext)
+        playbackManager = PlaybackManager.getInstance(applicationContext)
+        Log.i(TAG, "MusicPlaybackService created with MusicStore and PlaybackManager")
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -57,9 +67,13 @@ class MusicPlaybackService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        // User swiped away app from recents screen.
-        // We explicitly keep this service running so music continues playing uninterrupted!
-        Log.i(TAG, "App swiped away from recents. Keeping music playback active in background.")
+        // Swiping the app from recents must NOT stop music if currently playing.
+        // It keeps playing in the background and tracking completed plays.
+        if (::playbackManager.isInitialized && !playbackManager.isPlaying.value) {
+            stopSelf()
+        } else {
+            Log.i(TAG, "App swiped away from recents. Keeping music playback and play counting active in background.")
+        }
     }
 
     override fun onDestroy() {

@@ -110,6 +110,11 @@ fun TrackListScreen(
         selectionSearchQuery = ""
     }
 
+    // Back button inside a specific folder returns to the folder list
+    BackHandler(enabled = !isSelectionMode && selectedFolder != null) {
+        selectedFolder = null
+    }
+
     // Folder view logic
     val folderGroups = remember(tracks) {
         val map = mutableMapOf<String, MutableList<Track>>()
@@ -376,14 +381,25 @@ fun TrackListScreen(
                                     modifier = Modifier.size(52.dp)
                                 )
                                 Text(
-                                    text = if (selectionSearchQuery.isNotEmpty()) "No songs matching '$selectionSearchQuery'" else "No songs found in this category",
+                                    text = if (selectionSearchQuery.isNotEmpty()) {
+                                        "No songs matching '$selectionSearchQuery'"
+                                    } else when (view) {
+                                        ActiveView.MOST_PLAY -> "Songs you play all the way to the end will be counted here."
+                                        ActiveView.RECENT_PLAY -> "Songs you play will show up here."
+                                        ActiveView.FAVORITE -> "Tap the heart on a song to add it here."
+                                        else -> "No songs found in this category"
+                                    },
                                     color = theme.textPrimary,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
                                 Text(
-                                    text = "Your music library is automatically synced in the background.",
+                                    text = if (view == ActiveView.MOST_PLAY) {
+                                        "Play tracks to the end to build your Most Played playlist."
+                                    } else {
+                                        "Your music library is automatically synced in the background."
+                                    },
                                     color = theme.textSecondary,
                                     fontSize = 12.sp,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -554,8 +570,19 @@ fun TrackListScreen(
                                                 }
                                             }
                                         } else {
-                                            // Actions (Favorite & More)
+                                            // Actions (Play Count, Favorite & 3-dot More options)
                                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                                // Headphone icon + number of times played
+                                                if (view == ActiveView.MOST_PLAY || track.playCount > 0) {
+                                                    Text(
+                                                        text = "\uD83C\uDFA7 ${track.playCount}",
+                                                        color = if (view == ActiveView.MOST_PLAY) theme.accentColor else theme.textSecondary,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        fontSize = 12.sp,
+                                                        modifier = Modifier.padding(end = 4.dp)
+                                                    )
+                                                }
+
                                                 IconButton(
                                                     onClick = { onToggleFavorite(track.id) },
                                                     modifier = Modifier.size(30.dp)
@@ -568,9 +595,12 @@ fun TrackListScreen(
                                                     )
                                                 }
 
+                                                // Every music from the side of most play has its own three side dot
                                                 IconButton(
                                                     onClick = { activeTrackForMenu = track },
-                                                    modifier = Modifier.size(30.dp)
+                                                    modifier = Modifier
+                                                        .size(30.dp)
+                                                        .testTag("btn_more_${track.id}")
                                                 ) {
                                                     Icon(
                                                         imageVector = Icons.Default.MoreVert,

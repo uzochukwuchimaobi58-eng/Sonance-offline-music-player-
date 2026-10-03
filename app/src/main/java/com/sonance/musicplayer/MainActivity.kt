@@ -1,11 +1,13 @@
 package com.sonance.musicplayer
 
 import android.Manifest
+import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -98,6 +100,18 @@ class MainActivity : ComponentActivity() {
             // Navigation state
             var activeView by remember { mutableStateOf(ActiveView.HOME) }
             var activePlaylistId by remember { mutableStateOf<String?>(null) }
+            val viewBackStack = remember { mutableStateListOf<ActiveView>() }
+            val playlistIdBackStack = remember { mutableStateListOf<String?>() }
+
+            fun navigateTo(newView: ActiveView, newPlaylistId: String? = null) {
+                if (activeView != newView || activePlaylistId != newPlaylistId) {
+                    viewBackStack.add(activeView)
+                    playlistIdBackStack.add(activePlaylistId)
+                    activeView = newView
+                    activePlaylistId = newPlaylistId
+                }
+            }
+
             var searchQuery by remember { mutableStateOf("") }
             var currentSortBy by remember { mutableStateOf("title") }
 
@@ -116,9 +130,60 @@ class MainActivity : ComponentActivity() {
             var isProUpgradeOpen by remember { mutableStateOf(false) }
             var trimmingTrack by remember { mutableStateOf<Track?>(null) }
             var isKaraokeStudioOpen by remember { mutableStateOf(false) }
-            var isBeatInstrumentalOpen by remember { mutableStateOf(false) }
+            var isMusicBassOpen by remember { mutableStateOf(false) }
             var isInterstitialAdOpen by remember { mutableStateOf(false) }
             var pendingPostAdAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+            // Double tap back to exit on Home screen
+            var lastBackPressTime by remember { mutableLongStateOf(0L) }
+
+            val handleBack: () -> Unit = {
+                when {
+                    isInterstitialAdOpen -> {
+                        isInterstitialAdOpen = false
+                        pendingPostAdAction = null
+                    }
+                    isProUpgradeOpen -> isProUpgradeOpen = false
+                    trimmingTrack != null -> trimmingTrack = null
+                    isKaraokeStudioOpen -> isKaraokeStudioOpen = false
+                    isMusicBassOpen -> isMusicBassOpen = false
+                    isEqualizerOpen -> isEqualizerOpen = false
+                    isSettingsOpen -> isSettingsOpen = false
+                    isThemePickerOpen -> isThemePickerOpen = false
+                    isSleepTimerOpen -> isSleepTimerOpen = false
+                    isWebBrowserOpen -> isWebBrowserOpen = false
+                    isCreatePlaylistOpen -> isCreatePlaylistOpen = false
+                    isDriveModeOpen -> isDriveModeOpen = false
+                    isLyricsModeOpen -> isLyricsModeOpen = false
+                    isQueueOpen -> isQueueOpen = false
+                    isFullPlayerOpen -> isFullPlayerOpen = false
+                    isSidebarOpen -> isSidebarOpen = false
+                    searchQuery.isNotEmpty() -> searchQuery = ""
+                    viewBackStack.isNotEmpty() -> {
+                        val prevView = viewBackStack.removeAt(viewBackStack.size - 1)
+                        val prevPlId = playlistIdBackStack.removeAt(playlistIdBackStack.size - 1)
+                        activeView = prevView
+                        activePlaylistId = prevPlId
+                    }
+                    activeView != ActiveView.HOME -> {
+                        activeView = ActiveView.HOME
+                        activePlaylistId = null
+                    }
+                    else -> {
+                        val now = System.currentTimeMillis()
+                        if (now - lastBackPressTime < 2000L) {
+                            (this@MainActivity as Activity).finish()
+                        } else {
+                            lastBackPressTime = now
+                            android.widget.Toast.makeText(this@MainActivity, "Click back again to exit", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+
+            BackHandler(enabled = true) {
+                handleBack()
+            }
 
             // Effective Pro check (strictly follows real verified subscription)
             val isProEffective = remember(userSubscription.isPro, remoteSettings.forceProOverride) {
@@ -253,8 +318,13 @@ class MainActivity : ComponentActivity() {
                         ActiveView.LYRICS_MODE -> musicOnlyTracks
                         ActiveView.FAVORITE -> musicOnlyTracks.filter { it.isFavorite }
                         ActiveView.RECENT_PLAY -> {
-                            musicOnlyTracks.filter { it.playCount > 0 || it.lastPlayed > 0L }
+                            val recentIds = playbackManager.store.recent()
+                            val trackMap = musicOnlyTracks.associateBy { it.id }
+                            val orderedFromRecent = recentIds.mapNotNull { trackMap[it] }
+                            val remainingWithLastPlayed = musicOnlyTracks
+                                .filter { (it.lastPlayed > 0L || it.playCount > 0) && it.id !in recentIds }
                                 .sortedByDescending { it.lastPlayed }
+                            (orderedFromRecent + remainingWithLastPlayed).distinctBy { it.id }
                         }
                         ActiveView.RECENT_ADD -> {
                             // Show tracks ordered by MediaStore DATE_ADDED (or DATE_MODIFIED fallback), newest first
@@ -264,6 +334,7 @@ class MainActivity : ComponentActivity() {
                             // Show tracks that have been played, ordered by play count descending
                             musicOnlyTracks.filter { it.playCount > 0 }
                                 .sortedByDescending { it.playCount }
+                                .take(100)
                         }
                         ActiveView.PLAYLIST_DETAIL -> {
                             val pl = playlists.find { it.id == activePlaylistId }
@@ -322,6 +393,16 @@ class MainActivity : ComponentActivity() {
                         onOpenProUpgrade = { isProUpgradeOpen = true },
                         onUpdateLyrics = { lyrics ->
                             currentTrack?.let { repository.updateLyrics(it.id, lyrics) }
+                        },
+                        isKaraokeMode = isKaraokeMode,
+                        onToggleKaraoke = {
+                            playbackManager.toggleKaraokeMode()
+                            val isNowActive = playbackManager.isKaraokeMode.value
+                            android.widget.Toast.makeText(
+                                applicationContext,
+                                if (isNowActive) "🎤 Karaoke Mode ON: Center vocals attenuated" else "Karaoke Mode turned OFF",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
                         }
                     )
                 } else {
@@ -342,7 +423,7 @@ class MainActivity : ComponentActivity() {
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
-                            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.42f)))
+                            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
                         }
 
                         Scaffold(
@@ -352,9 +433,7 @@ class MainActivity : ComponentActivity() {
                                     isHome = activeView == ActiveView.HOME,
                                     onOpenSidebar = { isSidebarOpen = true },
                                     onBack = {
-                                        activeView = ActiveView.HOME
-                                        activePlaylistId = null
-                                        searchQuery = ""
+                                        handleBack()
                                     },
                                     searchQuery = searchQuery,
                                     onSearchChange = { searchQuery = it },
@@ -430,6 +509,8 @@ class MainActivity : ComponentActivity() {
                                     currentTrack = currentTrack,
                                     isPlaying = isPlaying,
                                     isScanning = isScanning,
+                                    recentPlayCount = (playbackManager.store.recent().size).coerceAtLeast(musicOnlyTracks.count { it.lastPlayed > 0L || it.playCount > 0 }),
+                                    mostPlayCount = musicOnlyTracks.count { it.playCount > 0 },
                                     onSelectView = { selected ->
                                         when (selected) {
                                             ActiveView.RECENT_ADD,
@@ -437,14 +518,13 @@ class MainActivity : ComponentActivity() {
                                             ActiveView.RECENT_PLAY,
                                             ActiveView.FOLDER,
                                             ActiveView.FAVORITE -> {
-                                                executeWithInterstitialAd { activeView = selected }
+                                                executeWithInterstitialAd { navigateTo(selected) }
                                             }
-                                            else -> activeView = selected
+                                            else -> navigateTo(selected)
                                         }
                                     },
                                     onSelectPlaylist = { plId ->
-                                        activePlaylistId = plId
-                                        activeView = ActiveView.PLAYLIST_DETAIL
+                                        navigateTo(ActiveView.PLAYLIST_DETAIL, plId)
                                     },
                                     onOpenCreatePlaylist = { isCreatePlaylistOpen = true },
                                     onShuffleAll = {
@@ -460,13 +540,15 @@ class MainActivity : ComponentActivity() {
                                     onOpenKaraoke = {
                                         executeWithInterstitialAd { isKaraokeStudioOpen = true }
                                     },
-                                    onOpenBeatInstrumental = {
-                                        executeWithInterstitialAd { isBeatInstrumentalOpen = true }
+                                    onOpenMusicBass = {
+                                        executeWithInterstitialAd { isMusicBassOpen = true }
                                     },
                                     onOpenEqualizer = {
                                         executeWithInterstitialAd { isEqualizerOpen = true }
                                     },
                                     onPlayTrack = { tr, list ->
+                                        repository.recordRecentPlay(tr.id, tr.title, tr.artist)
+                                        playbackManager.statsTracker.onTrackStarted(tr.id)
                                         playbackManager.setQueue(list, list.indexOf(tr))
                                     },
                                     onToggleFavorite = { trId ->
@@ -491,6 +573,8 @@ class MainActivity : ComponentActivity() {
                                     admobEnabled = remoteSettings.admobEnabled,
                                     onOpenProUpgrade = { isProUpgradeOpen = true },
                                     onPlayTrack = { track, list ->
+                                        repository.recordRecentPlay(track.id, track.title, track.artist)
+                                        playbackManager.statsTracker.onTrackStarted(track.id)
                                         if (currentTrack?.id == track.id) {
                                             // Tapping currently playing music brings up the full player interface directly
                                             isFullPlayerOpen = true
@@ -568,8 +652,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     onSelectView = { targetView ->
-                                        activeView = targetView
-                                        activePlaylistId = null
+                                        navigateTo(targetView, null)
                                     },
                                     onPlayNext = { tr -> playbackManager.playNext(tr) },
                                     activeSortBy = currentSortBy
@@ -588,8 +671,7 @@ class MainActivity : ComponentActivity() {
                     repeatMode = repeatMode,
                     sleepTimerSec = sleepTimerSec,
                     onSelectPlaylist = { plId ->
-                        activePlaylistId = plId
-                        activeView = ActiveView.PLAYLIST_DETAIL
+                        navigateTo(ActiveView.PLAYLIST_DETAIL, plId)
                     },
                     onOpenCreatePlaylist = { isCreatePlaylistOpen = true },
                     onOpenEqualizer = {
@@ -637,7 +719,15 @@ class MainActivity : ComponentActivity() {
                     onToggleFavorite = { trId -> repository.toggleFavorite(trId) },
                     onSetSpeed = { playbackManager.setSpeed(it) },
                     onSetAudioEffect = { playbackManager.setAudioEffect(it) },
-                    onToggleKaraoke = { playbackManager.toggleKaraokeMode() },
+                    onToggleKaraoke = {
+                        playbackManager.toggleKaraokeMode()
+                        val isNowActive = playbackManager.isKaraokeMode.value
+                        android.widget.Toast.makeText(
+                            applicationContext,
+                            if (isNowActive) "🎤 Karaoke Mode ON: Center vocals attenuated" else "Karaoke Mode turned OFF",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    },
                     onOpenEqualizer = { isEqualizerOpen = true },
                     onOpenSleepTimer = { isSleepTimerOpen = true },
                     onOpenLyrics = {
@@ -687,21 +777,36 @@ class MainActivity : ComponentActivity() {
                     onClose = { isKaraokeStudioOpen = false },
                     track = currentTrack,
                     isKaraokeActive = isKaraokeMode,
-                    onToggleKaraoke = { playbackManager.toggleKaraokeMode() },
-                    theme = theme
+                    onToggleKaraoke = {
+                        playbackManager.toggleKaraokeMode()
+                        val isNowActive = playbackManager.isKaraokeMode.value
+                        android.widget.Toast.makeText(
+                            applicationContext,
+                            if (isNowActive) "🎤 Karaoke Mode ON: Center vocals attenuated" else "Karaoke Mode turned OFF",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    theme = theme,
+                    playbackManager = playbackManager,
+                    allTracks = musicOnlyTracks.ifEmpty { tracks },
+                    isPlaying = isPlaying,
+                    onPlayTrack = { tr ->
+                        val list = musicOnlyTracks.ifEmpty { tracks }
+                        playbackManager.setQueue(list, list.indexOf(tr).coerceAtLeast(0))
+                    },
+                    onOpenLyrics = {
+                        isLyricsModeOpen = true
+                    }
                 )
 
-                // Beat Instrumental Dialog
-                BeatInstrumentalDialog(
-                    isOpen = isBeatInstrumentalOpen,
-                    onClose = { isBeatInstrumentalOpen = false },
+                // Music Bass Dialog
+                MusicBassDialog(
+                    isOpen = isMusicBassOpen,
+                    onClose = { isMusicBassOpen = false },
                     track = currentTrack,
                     theme = theme,
                     playbackManager = playbackManager,
-                    repository = repository,
-                    onConversionFinished = {
-                        executeWithInterstitialAd {}
-                    }
+                    repository = repository
                 )
 
                 // Sleep Timer Dialog

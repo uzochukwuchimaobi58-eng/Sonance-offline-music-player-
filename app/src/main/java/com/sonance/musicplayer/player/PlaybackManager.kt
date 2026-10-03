@@ -115,8 +115,32 @@ class PlaybackManager(
     private var headsetReceiver: BroadcastReceiver? = null
     private val notificationManager = PlaybackNotificationManager(context)
     var repository: com.sonance.musicplayer.data.MusicRepository? = null
+    val store = com.sonance.musicplayer.data.MusicStore(context.applicationContext)
+    val statsTracker = com.sonance.musicplayer.data.PlayStatsTracker(store)
+    private var currentStatsTrackId: String? = null
+    private val audioPrefs = context.getSharedPreferences("sonance_audio_effects", Context.MODE_PRIVATE)
 
     init {
+        val savedBassEnabled = audioPrefs.getBoolean("bass_enabled", false)
+        val savedBassBoost = audioPrefs.getInt("bass_boost", 85)
+        val savedSubRumble = audioPrefs.getInt("bass_sub_rumble", 80)
+        val savedPunchKick = audioPrefs.getInt("bass_punch_kick", 75)
+        val savedClarity = audioPrefs.getInt("bass_clarity", 50)
+        val savedPreset = audioPrefs.getString("bass_preset", "Deep Bass") ?: "Deep Bass"
+        _musicBassSettings.value = MusicBassSettings(
+            enabled = savedBassEnabled,
+            bassBoost = savedBassBoost,
+            subBassRumble = savedSubRumble,
+            punchKick = savedPunchKick,
+            clarityHighs = savedClarity,
+            presetName = savedPreset
+        )
+
+        val savedKaraokeEnabled = audioPrefs.getBoolean("karaoke_enabled", false)
+        val savedVocalReduction = audioPrefs.getFloat("karaoke_reduction", 85f)
+        _isKaraokeMode.value = savedKaraokeEnabled
+        karaokeVocalReduction = savedVocalReduction
+
         startProgressTracker()
         setupHeadsetReceiver()
         startNotificationTracker()
@@ -295,6 +319,8 @@ class PlaybackManager(
         }
 
         _currentTrack.value = track
+        statsTracker.onTrackStarted(track.id)
+        repository?.recordRecentPlay(track.id, track.title, track.artist)
         loadAndPlay(track, startPositionMs)
     }
 
@@ -303,6 +329,9 @@ class PlaybackManager(
     private fun loadAndPlay(track: Track, startPositionMs: Long = 0L) {
         playJob?.cancel()
         releasePlayer()
+
+        statsTracker.onTrackStarted(track.id)
+        repository?.recordRecentPlay(track.id, track.title, track.artist)
 
         val initialDuration = if (track.duration > 0L) track.duration * 1000L else 0L
         _durationMs.value = initialDuration
@@ -408,10 +437,11 @@ class PlaybackManager(
                         }
                         player.start()
                         _isPlaying.value = true
-                        repository?.recordTrackPlayed(track.id, track.title, track.artist)
+                        currentStatsTrackId = track.id
+                        statsTracker.onTrackStarted(track.id)
+                        repository?.recordRecentPlay(track.id, track.title, track.artist)
                         val updatedTrack = track.copy(
                             duration = if (safeDuration > 0L) safeDuration / 1000L else track.duration,
-                            playCount = track.playCount + 1,
                             lastPlayed = System.currentTimeMillis()
                         )
                         _currentTrack.value = updatedTrack
@@ -446,8 +476,19 @@ class PlaybackManager(
     }
 
     private fun handleTrackCompletion() {
+        val completedTrack = _currentTrack.value
+        val trackId = completedTrack?.id ?: currentStatsTrackId
+        if (trackId != null) {
+            statsTracker.onTrackFinished(trackId)
+            repository?.incrementPlayCount(trackId, completedTrack?.title ?: "", completedTrack?.artist ?: "")
+            if (completedTrack != null) {
+                onTrackCompletedCallback?.invoke(completedTrack)
+            }
+        }
+
         when (_repeatMode.value) {
             RepeatMode.ONE -> {
+                statsTracker.resetCountedForRepeat()
                 _currentTrack.value?.let { loadAndPlay(it) }
             }
             RepeatMode.ALL -> {
@@ -668,25 +709,77 @@ class PlaybackManager(
     fun setKaraokeMode(enabled: Boolean, vocalReductionPercent: Float = 85f) {
         _isKaraokeMode.value = enabled
         karaokeVocalReduction = vocalReductionPercent
-        applyKaraokeProcessing(enabled, vocalReductionPercent)
+        audioPrefs.edit()
+            .putBoolean("karaoke_enabled", enabled)
+            .putFloat("karaoke_reduction", vocalReductionPercent)
+            .apply()
+        applyEffectiveAudioEffects()
     }
 
     fun toggleKaraoke() {
         val newState = !_isKaraokeMode.value
-        _isKaraokeMode.value = newState
-        applyKaraokeProcessing(newState, karaokeVocalReduction)
+        setKaraokeMode(newState, karaokeVocalReduction)
     }
 
     fun applyKaraokeProcessing(enabled: Boolean, vocalReductionPercent: Float = 85f) {
-        if (!enabled) {
-            if (_musicBassSettings.value.enabled) {
-                applyMusicBassInternal(_musicBassSettings.value)
-            } else {
-                applyEqualizerSettings(currentEqSettings)
+        setKaraokeMode(enabled, vocalReductionPercent)
+    }
+
+    fun applyMusicBass(settings: MusicBassSettings) {
+        _musicBassSettings.value = settings
+        audioPrefs.edit()
+            .putBoolean("bass_enabled", settings.enabled)
+            .putInt("bass_boost", settings.bassBoost)
+            .putInt("bass_sub_rumble", settings.subBassRumble)
+            .putInt("bass_punch_kick", settings.punchKick)
+            .putInt("bass_clarity", settings.clarityHighs)
+            .putString("bass_preset", settings.presetName)
+            .apply()
+        applyEffectiveAudioEffects()
+    }
+
+    fun applyEffectiveAudioEffects() {
+        val bassSettings = _musicBassSettings.value
+        val karaokeActive = _isKaraokeMode.value
+
+        // 1. Hardware BassBoost Engine: Active when Music Bass is enabled or Equalizer Bass Boost is > 0
+        bassBoost?.let { bb ->
+            try {
+                if (bassSettings.enabled) {
+                    bb.enabled = true
+                    val strength = ((bassSettings.bassBoost / 100f) * 1000).toInt().coerceIn(200, 1000).toShort()
+                    bb.setStrength(strength)
+                } else if (currentEqSettings.bassBoost > 0) {
+                    bb.enabled = true
+                    val str = ((currentEqSettings.bassBoost / 100f) * 1000).toInt().coerceIn(0, 1000).toShort()
+                    bb.setStrength(str)
+                } else {
+                    bb.enabled = false
+                }
+            } catch (e: Exception) {
+                Log.w(tag, "Failed to apply bass boost: ${e.message}")
             }
-            return
         }
 
+        // 2. Hardware 3D Virtualizer: In Karaoke mode, expand stereo field to suppress center-panned vocals
+        virtualizer?.let { vz ->
+            try {
+                if (karaokeActive) {
+                    vz.enabled = true
+                    vz.setStrength(850.toShort())
+                } else if (currentEqSettings.spatialReverb > 0) {
+                    vz.enabled = true
+                    val strength = ((currentEqSettings.spatialReverb / 100f) * 1000).toInt().coerceIn(0, 1000)
+                    vz.setStrength(strength.toShort())
+                } else {
+                    vz.enabled = false
+                }
+            } catch (e: Exception) {
+                Log.w(tag, "Failed to apply virtualizer: ${e.message}")
+            }
+        }
+
+        // 3. Hardware Equalizer bands
         equalizer?.let { eq ->
             try {
                 eq.enabled = true
@@ -695,105 +788,70 @@ class PlaybackManager(
                 val minLevel = levelRange[0] // e.g. -1500 millibels (-15 dB)
                 val maxLevel = levelRange[1] // e.g. +1500 millibels (+15 dB)
 
-                val cutRatio = (vocalReductionPercent / 100f).coerceIn(0.4f, 1.0f)
-                val vocalCutLevel = (minLevel * cutRatio).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+                if (karaokeActive) {
+                    // Deep vocal cut: center frequencies of human vocal cords (200Hz - 4500Hz)
+                    val cutRatio = (karaokeVocalReduction / 100f).coerceIn(0.6f, 1.0f)
+                    val vocalCutLevel = (minLevel * cutRatio).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
 
-                for (i in 0 until numBands) {
-                    val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
-                    when {
-                        // Deep bass & kick: boost slightly (+3dB) so backing track rhythm stays strong
-                        centerFreqHz < 200 -> {
-                            val boost = (maxLevel * 0.35f).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
-                            eq.setBandLevel(i.toShort(), boost)
+                    // If bass is also enabled, use bassBoost/subBass settings for low frequencies
+                    val subBassBoost = if (bassSettings.enabled) {
+                        val subBassRatio = (bassSettings.subBassRumble / 100f).coerceIn(0f, 1f)
+                        ((subBassRatio * 0.75f + 0.25f) * maxLevel).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+                    } else {
+                        (maxLevel * 0.35f).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+                    }
+
+                    for (i in 0 until numBands) {
+                        val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
+                        val bandLevel: Short = when {
+                            // Low end (rhythm / kick / bass): keep strong or boosted
+                            centerFreqHz < 200 -> subBassBoost
+                            // Human vocal range: severely attenuate center vocals
+                            centerFreqHz in 200..4500 -> vocalCutLevel
+                            // High frequencies (air, shimmer): keep clear so instrumentals sound crisp
+                            else -> (maxLevel * 0.20f).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
                         }
-                        // Fundamental human voice and vocal presence range (200Hz - 4500Hz): DEEP VOCAL ATTENUATION
-                        centerFreqHz in 200..4500 -> {
-                            eq.setBandLevel(i.toShort(), vocalCutLevel)
+                        eq.setBandLevel(i.toShort(), bandLevel)
+                    }
+                } else if (bassSettings.enabled) {
+                    // Music Bass DSP profile
+                    val subBassRatio = (bassSettings.subBassRumble / 100f).coerceIn(0f, 1f)
+                    val punchRatio = (bassSettings.punchKick / 100f).coerceIn(0f, 1f)
+                    val clarityRatio = (bassSettings.clarityHighs / 100f).coerceIn(0f, 1f)
+
+                    for (i in 0 until numBands) {
+                        val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
+                        val targetLevel: Short = when {
+                            centerFreqHz < 100 -> {
+                                val boost = ((subBassRatio * 0.75f + 0.25f) * maxLevel).toInt()
+                                boost.coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+                            }
+                            centerFreqHz in 100..350 -> {
+                                val boost = ((punchRatio * 0.65f + 0.15f) * maxLevel).toInt()
+                                boost.coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+                            }
+                            centerFreqHz in 351..4000 -> 0.toShort()
+                            else -> {
+                                val treble = (((clarityRatio - 0.5f) * 0.5f) * maxLevel).toInt()
+                                treble.coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+                            }
                         }
-                        // High air and cymbals: keep clear
-                        else -> {
-                            val highBoost = (maxLevel * 0.15f).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
-                            eq.setBandLevel(i.toShort(), highBoost)
-                        }
+                        eq.setBandLevel(i.toShort(), targetLevel)
+                    }
+                } else if (currentEqSettings.enabled) {
+                    for (i in 0 until numBands) {
+                        val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
+                        val targetGain = currentEqSettings.bands.minByOrNull { Math.abs(it.key - centerFreqHz) }?.value ?: 0
+                        val scaledLevel = ((targetGain / 12f) * maxLevel).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt())
+                        eq.setBandLevel(i.toShort(), scaledLevel.toShort())
+                    }
+                } else {
+                    for (i in 0 until numBands) {
+                        eq.setBandLevel(i.toShort(), 0)
                     }
                 }
             } catch (e: Exception) {
-                Log.w(tag, "Failed to apply karaoke EQ: ${e.message}")
-            }
-        }
-    }
-
-    fun applyMusicBass(settings: MusicBassSettings) {
-        _musicBassSettings.value = settings
-        applyMusicBassInternal(settings)
-    }
-
-    private fun applyMusicBassInternal(settings: MusicBassSettings) {
-        if (!settings.enabled) {
-            bassBoost?.let { bb ->
-                bb.enabled = currentEqSettings.bassBoost > 0
-                val str = ((currentEqSettings.bassBoost / 100f) * 1000).toInt().coerceIn(0, 1000).toShort()
-                bb.setStrength(str)
-            }
-            if (_isKaraokeMode.value) {
-                applyKaraokeProcessing(true, karaokeVocalReduction)
-            } else {
-                applyEqualizerSettings(currentEqSettings)
-            }
-            return
-        }
-
-        // 1. Hardware BassBoost effect: set strength to match settings.bassBoost (0..1000)
-        bassBoost?.let { bb ->
-            try {
-                bb.enabled = true
-                val strength = ((settings.bassBoost / 100f) * 1000).toInt().coerceIn(200, 1000).toShort()
-                bb.setStrength(strength)
-            } catch (e: Exception) {
-                Log.w(tag, "Failed to apply bass boost strength: ${e.message}")
-            }
-        }
-
-        // 2. Equalizer low-frequency DSP shaping
-        equalizer?.let { eq ->
-            try {
-                eq.enabled = true
-                val numBands = eq.numberOfBands
-                val levelRange = eq.bandLevelRange
-                val minLevel = levelRange[0]
-                val maxLevel = levelRange[1]
-
-                val subBassRatio = (settings.subBassRumble / 100f).coerceIn(0f, 1f)
-                val punchRatio = (settings.punchKick / 100f).coerceIn(0f, 1f)
-                val clarityRatio = (settings.clarityHighs / 100f).coerceIn(0f, 1f)
-
-                for (i in 0 until numBands) {
-                    val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
-                    val targetLevel: Short = when {
-                        // Lowest band (< 100 Hz, e.g. 60 Hz): Sub-bass 808 rumble
-                        centerFreqHz < 100 -> {
-                            val boost = ((subBassRatio * 0.75f + 0.25f) * maxLevel).toInt()
-                            boost.coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
-                        }
-                        // Mid-bass band (100 Hz - 350 Hz, e.g. 230 Hz): Punch & kick
-                        centerFreqHz in 100..350 -> {
-                            val boost = ((punchRatio * 0.65f + 0.15f) * maxLevel).toInt()
-                            boost.coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
-                        }
-                        // Mid-range (350 Hz - 4000 Hz): kept clean/neutral to prevent muddy distortion
-                        centerFreqHz in 351..4000 -> {
-                            0.toShort()
-                        }
-                        // Highs (> 4000 Hz): clarity adjustment
-                        else -> {
-                            val treble = (((clarityRatio - 0.5f) * 0.5f) * maxLevel).toInt()
-                            treble.coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
-                        }
-                    }
-                    eq.setBandLevel(i.toShort(), targetLevel)
-                }
-            } catch (e: Exception) {
-                Log.w(tag, "Failed to apply music bass EQ: ${e.message}")
+                Log.w(tag, "Failed to apply combined audio effects: ${e.message}")
             }
         }
     }
@@ -927,7 +985,7 @@ class PlaybackManager(
             Log.w(tag, "Virtualizer effect not supported: ${e.message}")
         }
 
-        applyEqualizerSettings(currentEqSettings)
+        applyEffectiveAudioEffects()
 
         // Visualizer requires android.permission.RECORD_AUDIO.
         // Attempting to instantiate Visualizer without RECORD_AUDIO permission

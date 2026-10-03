@@ -19,6 +19,13 @@ class MusicApplication : Application() {
             }
         } catch (_: Throwable) {}
 
+        // Initialize RevenueCat SDK for subscription and entitlement management
+        try {
+            com.sonance.musicplayer.billing.RevenueCatBillingManager.initialize(this)
+        } catch (t: Throwable) {
+            Log.w("RevenueCat", "RevenueCat init status: ${t.message}")
+        }
+
         // Initialize Google Mobile Ads SDK for production ad serving on real devices
         Thread {
             try {

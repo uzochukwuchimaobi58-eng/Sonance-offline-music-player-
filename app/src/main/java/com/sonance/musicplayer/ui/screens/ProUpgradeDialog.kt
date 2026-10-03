@@ -63,6 +63,8 @@ fun ProUpgradeDialog(
     var isRestoring by remember { mutableStateOf(false) }
     var isProcessing by remember { mutableStateOf(false) }
     var showPlansForActivePro by remember { mutableStateOf(false) }
+    var isRevenueCatPaywallOpen by remember { mutableStateOf(false) }
+    var isRevenueCatCustomerCenterOpen by remember { mutableStateOf(false) }
 
     // Auto-dismiss ONLY if we were actively processing a purchase flow that just succeeded
     LaunchedEffect(subscription.isPro, isProcessing) {
@@ -365,6 +367,33 @@ fun ProUpgradeDialog(
                             )
                         }
 
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Action: Open RevenueCat Customer Center
+                        OutlinedButton(
+                            onClick = { isRevenueCatCustomerCenterOpen = true },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .testTag("btn_customer_center"),
+                            shape = RoundedCornerShape(25.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, goldAccent.copy(alpha = 0.8f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SupportAgent,
+                                contentDescription = null,
+                                tint = goldAccent,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Customer Support & Subscriptions",
+                                color = goldAccent,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
                         Spacer(modifier = Modifier.height(12.dp))
 
                         // Action 2: Close
@@ -654,6 +683,32 @@ fun ProUpgradeDialog(
                             }
                         }
 
+                        // Open Native RevenueCat Remote Paywall
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = { isRevenueCatPaywallOpen = true },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .testTag("btn_open_revenuecat_paywall"),
+                            shape = RoundedCornerShape(25.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, goldBorder.copy(alpha = 0.6f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = goldAccent,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "View RevenueCat Paywall",
+                                color = goldAccent,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
                         if (showPlansForActivePro) {
                             Spacer(modifier = Modifier.height(10.dp))
                             TextButton(
@@ -699,6 +754,23 @@ fun ProUpgradeDialog(
             }
         }
     }
+
+    // RevenueCat Native Paywall Dialog
+    RevenueCatPaywallDialog(
+        isOpen = isRevenueCatPaywallOpen,
+        onClose = { isRevenueCatPaywallOpen = false },
+        onProGranted = { customerInfo ->
+            isRevenueCatPaywallOpen = false
+            Toast.makeText(context, "Sonance PRO VIP Activated!", Toast.LENGTH_SHORT).show()
+            onClose()
+        }
+    )
+
+    // RevenueCat Customer Center Dialog
+    RevenueCatCustomerCenterDialog(
+        isOpen = isRevenueCatCustomerCenterOpen,
+        onClose = { isRevenueCatCustomerCenterOpen = false }
+    )
 }
 
 @Composable
