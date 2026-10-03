@@ -117,12 +117,13 @@ class PlaybackNotificationManager(private val context: Context) {
             return
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val granted = ContextCompat.checkSelfPermission(
+        val hasNotificationPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
-            if (!granted) return
+        } else {
+            true
         }
 
         scope.launch {
@@ -130,7 +131,7 @@ class PlaybackNotificationManager(private val context: Context) {
 
             withContext(Dispatchers.Main) {
                 try {
-                    buildAndPostNotification(track, isPlaying, currentPosMs, durationMs, artBitmap)
+                    buildAndPostNotification(track, isPlaying, currentPosMs, durationMs, artBitmap, hasNotificationPermission)
                 } catch (e: Exception) {
                     android.util.Log.e("PlaybackNotification", "Error posting notification", e)
                 }
@@ -143,7 +144,8 @@ class PlaybackNotificationManager(private val context: Context) {
         isPlaying: Boolean,
         currentPosMs: Long,
         durationMs: Long,
-        artBitmap: Bitmap?
+        artBitmap: Bitmap?,
+        hasNotificationPermission: Boolean
     ) {
         val session = mediaSession ?: return
 
@@ -308,9 +310,13 @@ class PlaybackNotificationManager(private val context: Context) {
             }
         }
 
-        try {
-            notificationManager.notify(NOTIFICATION_ID, notification)
-        } catch (_: Exception) {}
+        if (hasNotificationPermission) {
+            try {
+                notificationManager.notify(NOTIFICATION_ID, notification)
+            } catch (e: Exception) {
+                android.util.Log.w("PlaybackNotification", "Could not post notification", e)
+            }
+        }
     }
 
     private fun loadAlbumArtBitmap(track: Track): Bitmap? {

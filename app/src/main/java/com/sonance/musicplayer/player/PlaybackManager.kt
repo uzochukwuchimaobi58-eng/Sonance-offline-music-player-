@@ -156,6 +156,11 @@ class PlaybackManager(
         }
     }
 
+    fun updateNotificationImmediate() {
+        val track = _currentTrack.value ?: return
+        notificationManager.updateNotification(track, _isPlaying.value, _currentPositionMs.value, _durationMs.value)
+    }
+
     fun updateSettings(settings: PlayerSettings) {
         playerSettings = settings
         updateShakeDetection(settings.shakeToPlayNext)

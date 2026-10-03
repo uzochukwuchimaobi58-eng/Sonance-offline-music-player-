@@ -9,8 +9,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -73,9 +75,11 @@ fun HomeScreen(
         modifier = Modifier
             .fillMaxSize()
     ) {
+        val scrollState = rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(scrollState)
                 .padding(horizontal = 14.dp, vertical = 6.dp)
         ) {
             // Cloud Broadcast Announcement from Firebase Backend
@@ -201,13 +205,14 @@ fun HomeScreen(
                 }
             }
 
-            // 6 Category Tiles Grid (3 columns, 2 rows)
+            // 6 Category Tiles Grid (3 columns, 2 rows with count numbers)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 CategoryCard(
                     title = "LIBRARY",
+                    count = libraryCount,
                     icon = Icons.Default.MusicNote,
                     bg = theme.libraryCard.bg,
                     modifier = Modifier.weight(1f),
@@ -216,6 +221,7 @@ fun HomeScreen(
                 )
                 CategoryCard(
                     title = "FOLDER",
+                    count = folderCount,
                     icon = Icons.Default.Folder,
                     bg = theme.folderCard.bg,
                     modifier = Modifier.weight(1f),
@@ -224,6 +230,7 @@ fun HomeScreen(
                 )
                 CategoryCard(
                     title = "FAVORITE",
+                    count = favoriteCount,
                     icon = Icons.Default.Favorite,
                     bg = theme.favoriteCard.bg,
                     modifier = Modifier.weight(1f),
@@ -232,7 +239,7 @@ fun HomeScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -240,6 +247,7 @@ fun HomeScreen(
             ) {
                 CategoryCard(
                     title = "RECENT PLAY",
+                    count = effectiveRecentPlayCount,
                     icon = Icons.Default.History,
                     bg = theme.recentPlayCard.bg,
                     modifier = Modifier.weight(1f),
@@ -248,6 +256,7 @@ fun HomeScreen(
                 )
                 CategoryCard(
                     title = "RECENT ADD",
+                    count = recentAddCount,
                     icon = Icons.Default.PlaylistAddCheck,
                     bg = theme.recentAddCard.bg,
                     modifier = Modifier.weight(1f),
@@ -256,6 +265,7 @@ fun HomeScreen(
                 )
                 CategoryCard(
                     title = "MOST PLAY",
+                    count = effectiveMostPlayCount,
                     icon = Icons.Default.Equalizer,
                     bg = theme.mostPlayCard.bg,
                     modifier = Modifier.weight(1f),
@@ -264,11 +274,11 @@ fun HomeScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // STUDIO TOOLS SECTION (Matching Image 1)
             Row(
-                modifier = Modifier.padding(start = 2.dp, bottom = 8.dp),
+                modifier = Modifier.padding(start = 2.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -299,10 +309,10 @@ fun HomeScreen(
                     iconTint = theme.accentColor,
                     badgeBg = theme.accentColor.copy(alpha = 0.20f),
                     badgeText = theme.accentColor,
-                    cardBg = theme.sidebarBg.copy(alpha = 0.65f),
-                    cardBorder = Color.White.copy(alpha = 0.12f),
+                    cardBg = theme.sidebarBg.copy(alpha = 0.70f),
+                    cardBorder = Color.White.copy(alpha = 0.10f),
                     textColor = Color.White,
-                    subtextColor = Color(0xFF86EFAC).copy(alpha = 0.85f),
+                    subtextColor = Color(0xFF8E8E93),
                     modifier = Modifier.weight(1f),
                     tag = "card_music_trim",
                     onClick = onOpenMusicTrim
@@ -316,36 +326,36 @@ fun HomeScreen(
                     iconTint = Color(0xFFFB7185),
                     badgeBg = Color(0xFFF43F5E).copy(alpha = 0.20f),
                     badgeText = Color(0xFFFDA4AF),
-                    cardBg = theme.sidebarBg.copy(alpha = 0.65f),
-                    cardBorder = Color.White.copy(alpha = 0.12f),
+                    cardBg = theme.sidebarBg.copy(alpha = 0.70f),
+                    cardBorder = Color.White.copy(alpha = 0.10f),
                     textColor = Color.White,
-                    subtextColor = Color(0xFF86EFAC).copy(alpha = 0.85f),
+                    subtextColor = Color(0xFF8E8E93),
                     modifier = Modifier.weight(1f),
                     tag = "card_karaoke_studio",
                     onClick = onOpenKaraoke
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 StudioToolCard(
-                    title = "Beat Instrumental",
-                    subtitle = "Convert & Isolate AI Stems",
-                    badge = "AI STEMS",
-                    icon = Icons.Default.AutoFixHigh,
+                    title = "Music Bass",
+                    subtitle = "Deep Bass Boost & Subwoofer",
+                    badge = "BASS BOOST",
+                    icon = Icons.Default.GraphicEq,
                     iconTint = Color(0xFFFBBF24),
                     badgeBg = Color(0xFFF59E0B).copy(alpha = 0.20f),
                     badgeText = Color(0xFFFDE68A),
-                    cardBg = theme.sidebarBg.copy(alpha = 0.65f),
-                    cardBorder = Color.White.copy(alpha = 0.12f),
+                    cardBg = theme.sidebarBg.copy(alpha = 0.70f),
+                    cardBorder = Color.White.copy(alpha = 0.10f),
                     textColor = Color.White,
-                    subtextColor = Color(0xFF86EFAC).copy(alpha = 0.85f),
+                    subtextColor = Color(0xFF8E8E93),
                     modifier = Modifier.weight(1f),
-                    tag = "card_beat_instrumental",
+                    tag = "card_music_bass",
                     onClick = onOpenMusicBass
                 )
 
@@ -357,17 +367,17 @@ fun HomeScreen(
                     iconTint = Color(0xFFC084FC),
                     badgeBg = Color(0xFFA855F7).copy(alpha = 0.20f),
                     badgeText = Color(0xFFE9D5FF),
-                    cardBg = theme.sidebarBg.copy(alpha = 0.65f),
-                    cardBorder = Color.White.copy(alpha = 0.12f),
+                    cardBg = theme.sidebarBg.copy(alpha = 0.70f),
+                    cardBorder = Color.White.copy(alpha = 0.10f),
                     textColor = Color.White,
-                    subtextColor = Color(0xFF86EFAC).copy(alpha = 0.85f),
+                    subtextColor = Color(0xFF8E8E93),
                     modifier = Modifier.weight(1f),
                     tag = "card_sound_equalizer",
                     onClick = onOpenEqualizer
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // PLAYLISTS SECTION (Matching Image 1)
             Row(
@@ -429,20 +439,23 @@ fun HomeScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(50.dp)
+                                .height(48.dp)
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(theme.sidebarBg.copy(alpha = 0.65f))
-                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
+                                .background(theme.sidebarBg.copy(alpha = 0.70f))
+                                .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(14.dp))
                                 .clickable { onSelectPlaylist(pl.id) }
                                 .padding(horizontal = 12.dp)
                                 .testTag("home_playlist_${pl.id}"),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(34.dp)
+                                        .size(32.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(theme.accentColor.copy(alpha = 0.20f)),
                                     contentAlignment = Alignment.Center
@@ -451,7 +464,7 @@ fun HomeScreen(
                                         imageVector = Icons.Default.QueueMusic,
                                         contentDescription = null,
                                         tint = theme.accentColor,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(17.dp)
                                     )
                                 }
                                 Spacer(modifier = Modifier.width(10.dp))
@@ -459,15 +472,15 @@ fun HomeScreen(
                                     Text(
                                         text = pl.name,
                                         color = Color.White,
-                                        fontSize = 13.5.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         text = "${pl.trackIds.size} songs",
-                                        color = Color(0xFF86EFAC).copy(alpha = 0.85f),
-                                        fontSize = 11.sp
+                                        color = theme.textSecondary,
+                                        fontSize = 10.5.sp
                                     )
                                 }
                             }
@@ -475,20 +488,23 @@ fun HomeScreen(
                             Icon(
                                 imageVector = Icons.Default.ChevronRight,
                                 contentDescription = null,
-                                tint = Color(0xFF86EFAC).copy(alpha = 0.70f),
+                                tint = theme.textSecondary,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
                     }
                 }
             }
+
+            // Bottom breathing spacer for scroll clearance over FAB and MiniPlayer
+            Spacer(modifier = Modifier.height(76.dp))
         }
 
         // Floating Action Button (Shuffle All)
         if (showShuffleButton) {
             FloatingActionButton(
                 onClick = onShuffleAll,
-                containerColor = theme.shuffleFabBg,
+                containerColor = theme.accentColor,
                 contentColor = Color.White,
                 shape = CircleShape,
                 modifier = Modifier
@@ -510,6 +526,7 @@ fun HomeScreen(
 @Composable
 private fun CategoryCard(
     title: String,
+    count: Int,
     icon: ImageVector,
     bg: Color,
     modifier: Modifier = Modifier,
@@ -518,17 +535,17 @@ private fun CategoryCard(
 ) {
     Surface(
         modifier = modifier
-            .aspectRatio(1.05f)
+            .height(82.dp)
             .testTag(tag),
         shape = RoundedCornerShape(16.dp),
         color = bg,
-        shadowElevation = 3.dp,
+        shadowElevation = 2.dp,
         onClick = onClick
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(vertical = 12.dp, horizontal = 4.dp),
+                .padding(horizontal = 4.dp, vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -536,18 +553,27 @@ private fun CategoryCard(
                 imageVector = icon,
                 contentDescription = title,
                 tint = Color.White,
-                modifier = Modifier.size(34.dp)
+                modifier = Modifier.size(28.dp)
             )
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = title,
                 color = Color.White,
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 0.6.sp,
+                letterSpacing = 0.5.sp,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = count.toString(),
+                color = Color.White.copy(alpha = 0.92f),
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 1
             )
         }
     }
@@ -572,7 +598,7 @@ private fun StudioToolCard(
 ) {
     Surface(
         modifier = modifier
-            .height(102.dp)
+            .height(78.dp)
             .testTag(tag),
         shape = RoundedCornerShape(16.dp),
         color = cardBg,
@@ -583,7 +609,7 @@ private fun StudioToolCard(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(12.dp),
+                .padding(10.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
@@ -593,8 +619,8 @@ private fun StudioToolCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(8.dp))
                         .background(badgeBg),
                     contentAlignment = Alignment.Center
                 ) {
@@ -602,7 +628,7 @@ private fun StudioToolCard(
                         imageVector = icon,
                         contentDescription = null,
                         tint = iconTint,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(17.dp)
                     )
                 }
 
@@ -610,14 +636,14 @@ private fun StudioToolCard(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .background(badgeBg)
-                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                        .padding(horizontal = 6.dp, vertical = 2.5.dp)
                 ) {
                     Text(
                         text = badge,
                         color = badgeText,
-                        fontSize = 9.sp,
+                        fontSize = 8.5.sp,
                         fontWeight = FontWeight.Black,
-                        letterSpacing = 0.5.sp
+                        letterSpacing = 0.4.sp
                     )
                 }
             }
@@ -626,16 +652,16 @@ private fun StudioToolCard(
                 Text(
                     text = title,
                     color = textColor,
-                    fontSize = 13.sp,
+                    fontSize = 12.5.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(1.dp))
                 Text(
                     text = subtitle,
                     color = subtextColor,
-                    fontSize = 10.5.sp,
+                    fontSize = 9.5.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

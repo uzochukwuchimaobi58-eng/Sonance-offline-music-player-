@@ -222,12 +222,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Accurate single permission for this Android OS version
-            val audioPermissionToRequest = remember {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    Manifest.permission.READ_MEDIA_AUDIO
+            // Accurate permission for this Android OS version
+            fun checkNotificationPermission(): Boolean {
+                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
                 } else {
-                    Manifest.permission.READ_EXTERNAL_STORAGE
+                    true
+                }
+            }
+
+            val permissionsToRequest = remember {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    arrayOf(
+                        Manifest.permission.READ_MEDIA_AUDIO,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    )
+                } else {
+                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
                 }
             }
 
@@ -236,9 +247,9 @@ class MainActivity : ComponentActivity() {
             }
 
             val permissionLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.RequestPermission()
-            ) { isGranted ->
-                val granted = isGranted || checkAudioPermission()
+                ActivityResultContracts.RequestMultiplePermissions()
+            ) { perms ->
+                val granted = checkAudioPermission()
                 hasAudioPermission = granted
                 if (granted) {
                     // Immediately scan so newly permitted music is discovered and shown without delay
@@ -246,6 +257,7 @@ class MainActivity : ComponentActivity() {
                         repository.scanMediaStore()
                     }
                 }
+                playbackManager.updateNotificationImmediate()
             }
 
             LaunchedEffect(Unit) {
@@ -259,7 +271,10 @@ class MainActivity : ComponentActivity() {
                     }
                 } else {
                     // Prompt permission dialog immediately upon installation so user can allow access right away
-                    permissionLauncher.launch(audioPermissionToRequest)
+                    permissionLauncher.launch(permissionsToRequest)
+                }
+                if (!checkNotificationPermission()) {
+                    permissionLauncher.launch(permissionsToRequest)
                 }
 
                 // Preload production AdMob Interstitial ad for free tier on real devices
