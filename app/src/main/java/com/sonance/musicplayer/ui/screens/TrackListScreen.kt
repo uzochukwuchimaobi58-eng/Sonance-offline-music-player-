@@ -136,7 +136,18 @@ fun TrackListScreen(
             filtered
         }
 
-        if (view == ActiveView.RECENT_ADD) {
+        if (view == ActiveView.MOST_PLAY) {
+            when (sortBy) {
+                "title" -> base.sortedWith(TrackComparators.TitleComparator)
+                "artist" -> base.sortedWith(TrackComparators.ArtistComparator)
+                "duration" -> base.sortedByDescending { it.duration }
+                "date_added" -> base.sortedByDescending { it.dateAdded }
+                else -> base.sortedWith(
+                    compareByDescending<Track> { it.playCount }
+                        .thenByDescending { it.lastPlayed }
+                )
+            }
+        } else if (view == ActiveView.RECENT_ADD) {
             when (sortBy) {
                 "artist" -> base.sortedWith(TrackComparators.ArtistComparator)
                 "duration" -> base.sortedByDescending { it.duration }
@@ -408,7 +419,8 @@ fun TrackListScreen(
                         }
                     } else {
                         val listState = rememberLazyListState()
-                        val showAlphabetScroller = finalTracks.size >= 4 && !isSelectionMode
+                        val showAlphabetScroller = finalTracks.size >= 4 && !isSelectionMode && view != ActiveView.MOST_PLAY && view != ActiveView.RECENT_PLAY
+                        val goldHighlight = Color(0xFFFFD700)
 
                         Box(modifier = Modifier.fillMaxSize()) {
                             LazyColumn(
@@ -427,7 +439,7 @@ fun TrackListScreen(
                                             .clip(RoundedCornerShape(6.dp))
                                             .background(
                                                 if (isSelected) theme.accentColor.copy(alpha = 0.22f)
-                                                else if (isCurrent) theme.accentColor.copy(alpha = 0.12f)
+                                                else if (isCurrent) goldHighlight.copy(alpha = 0.18f)
                                                 else Color.Transparent
                                             )
                                             .combinedClickable(
@@ -489,7 +501,7 @@ fun TrackListScreen(
                                                     )
                                                 }
 
-                                                if (isCurrent && isPlaying) {
+                                                if (isCurrent) {
                                                     Box(
                                                         modifier = Modifier
                                                             .fillMaxSize()
@@ -499,7 +511,7 @@ fun TrackListScreen(
                                                         Icon(
                                                             imageVector = Icons.Default.Equalizer,
                                                             contentDescription = "Playing",
-                                                            tint = theme.accentColor,
+                                                            tint = goldHighlight,
                                                             modifier = Modifier.size(18.dp)
                                                         )
                                                     }
@@ -514,7 +526,7 @@ fun TrackListScreen(
                                             ) {
                                                 Text(
                                                     text = track.title,
-                                                    color = if (isCurrent) theme.accentColor else theme.textPrimary,
+                                                    color = if (isCurrent) goldHighlight else theme.textPrimary,
                                                     fontSize = 13.5.sp,
                                                     fontWeight = if (isCurrent || isSelected) FontWeight.Bold else FontWeight.Medium,
                                                     maxLines = 1,

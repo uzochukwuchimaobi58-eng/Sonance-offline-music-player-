@@ -26,6 +26,13 @@ class MusicApplication : Application() {
             Log.w("RevenueCat", "RevenueCat init status: ${t.message}")
         }
 
+        // Initialize and connect official Google Play Billing Library on app start
+        try {
+            com.sonance.musicplayer.billing.BillingManager.getInstance(this).startConnection()
+        } catch (t: Throwable) {
+            Log.w("BillingManager", "BillingManager startup connection error: ${t.message}")
+        }
+
         // Initialize Google Mobile Ads SDK for production ad serving on real devices
         Thread {
             try {

@@ -484,8 +484,10 @@ class PlaybackManager(
         val completedTrack = _currentTrack.value
         val trackId = completedTrack?.id ?: currentStatsTrackId
         if (trackId != null) {
+            // Count exactly +1 when song plays to the end.
+            // Duplicate events within 5s are ignored inside MusicStore.
             statsTracker.onTrackFinished(trackId)
-            repository?.incrementPlayCount(trackId, completedTrack?.title ?: "", completedTrack?.artist ?: "")
+            repository?.syncTrackPlayCount(trackId)
             if (completedTrack != null) {
                 onTrackCompletedCallback?.invoke(completedTrack)
             }
@@ -911,35 +913,43 @@ class PlaybackManager(
 
     fun applyEqualizerSettings(settings: EqualizerSettings) {
         currentEqSettings = settings
-        equalizer?.let { eq ->
-            eq.enabled = settings.enabled
-            if (settings.enabled) {
-                val numBands = eq.numberOfBands
-                val levelRange = eq.bandLevelRange
-                val minLevel = levelRange[0]
-                val maxLevel = levelRange[1]
-
-                for (i in 0 until numBands) {
-                    val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
-                    // Find closest band in settings
-                    val targetGain = settings.bands.minByOrNull { Math.abs(it.key - centerFreqHz) }?.value ?: 0
-                    // Scale -12..12 dB to minLevel..maxLevel (usually -1500..1500 millibels)
-                    val scaledLevel = ((targetGain / 12f) * maxLevel).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt())
-                    eq.setBandLevel(i.toShort(), scaledLevel.toShort())
+        try {
+            if (equalizer == null) {
+                val sid = mediaPlayer?.audioSessionId ?: 0
+                if (sid != 0) {
+                    attachAudioEffects(sid)
                 }
             }
-        }
+            equalizer?.let { eq ->
+                eq.enabled = settings.enabled
+                if (settings.enabled) {
+                    val numBands = eq.numberOfBands
+                    val levelRange = eq.bandLevelRange
+                    val minLevel = levelRange[0]
+                    val maxLevel = levelRange[1]
 
-        bassBoost?.let { bb ->
-            bb.enabled = settings.bassBoost > 0
-            val strength = ((settings.bassBoost / 100f) * 1000).toInt().coerceIn(0, 1000)
-            bb.setStrength(strength.toShort())
-        }
+                    for (i in 0 until numBands) {
+                        val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
+                        val targetGain = settings.bands.minByOrNull { Math.abs(it.key - centerFreqHz) }?.value ?: 0
+                        val scaledLevel = ((targetGain / 12f) * maxLevel).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt())
+                        eq.setBandLevel(i.toShort(), scaledLevel.toShort())
+                    }
+                }
+            }
 
-        virtualizer?.let { vz ->
-            vz.enabled = settings.spatialReverb > 0
-            val strength = ((settings.spatialReverb / 100f) * 1000).toInt().coerceIn(0, 1000)
-            vz.setStrength(strength.toShort())
+            bassBoost?.let { bb ->
+                bb.enabled = settings.enabled && settings.bassBoost > 0
+                val strength = ((settings.bassBoost / 100f) * 1000).toInt().coerceIn(0, 1000)
+                bb.setStrength(strength.toShort())
+            }
+
+            virtualizer?.let { vz ->
+                vz.enabled = settings.enabled && settings.spatialReverb > 0
+                val strength = ((settings.spatialReverb / 100f) * 1000).toInt().coerceIn(0, 1000)
+                vz.setStrength(strength.toShort())
+            }
+        } catch (e: Throwable) {
+            Log.w(tag, "applyEqualizerSettings error: ${e.message}")
         }
     }
 
@@ -1170,8 +1180,8 @@ class PlaybackManager(
             repository: com.sonance.musicplayer.data.MusicRepository? = null
         ): PlaybackManager {
             val inst = instance ?: synchronized(this) {
-                instance ?: PlaybackManager(context.applicationContext) { completedTrack ->
-                    instance?.repository?.incrementPlayCount(completedTrack.id, completedTrack.title, completedTrack.artist)
+                instance ?: PlaybackManager(context.applicationContext) { _ ->
+                    // Completion handling is managed strictly once by statsTracker inside handleTrackCompletion()
                 }.also { instance = it }
             }
             if (repository != null) {

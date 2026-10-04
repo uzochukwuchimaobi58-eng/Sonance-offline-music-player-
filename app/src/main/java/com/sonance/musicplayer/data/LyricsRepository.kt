@@ -22,12 +22,17 @@ sealed interface LyricsState {
     object None : LyricsState
     object Loading : LyricsState
     object NotFound : LyricsState
-    data class Found(val lines: List<LyricLine>, val synced: Boolean) : LyricsState
+    data class Found(
+        val lines: List<LyricLine>,
+        val synced: Boolean,
+        val source: String = "LRCLIB"
+    ) : LyricsState
 }
 
 /**
- * Gets lyrics for any music track from LRCLIB (https://lrclib.net)
- * with local offline caching, multi-tier search fallback, and instant LRC parsing.
+ * Gets lyrics using the official fallback chain:
+ * LRCLIB → Lyrics.ovh → Karalyr → "Lyrics not available"
+ * With local offline caching, LRC timestamp synchronization, and instant ID3 parsing.
  */
 class LyricsRepository(private val ctx: Context) {
 
@@ -35,6 +40,10 @@ class LyricsRepository(private val ctx: Context) {
         private const val TAG = "LyricsRepository"
         private const val USER_AGENT = "MusicStudio/1.0 (Sonance Music Player)"
     }
+
+    private val lrclibProvider by lazy { com.sonance.musicplayer.lyrics.LrclibProvider() }
+    private val lyricsOvhProvider by lazy { com.sonance.musicplayer.lyrics.LyricsOvhProvider() }
+    private val karalyrProvider by lazy { com.sonance.musicplayer.lyrics.KaralyrProvider() }
 
     suspend fun load(track: Track): LyricsState = withContext(Dispatchers.IO) {
         try {
@@ -59,47 +68,80 @@ class LyricsRepository(private val ctx: Context) {
             if (track.lyrics.isNotBlank() && track.lyrics.contains("[")) {
                 val lines = parseLrc(track.lyrics)
                 if (lines.isNotEmpty()) {
-                    return@withContext LyricsState.Found(lines, true)
+                    return@withContext LyricsState.Found(lines, true, "Embedded LRC")
                 }
             }
 
-            // 3. Fetch from LRCLIB online API (fetches lyrics for any song)
-            val fetchedJson = fetch(track)
-            if (fetchedJson != null) {
-                try {
-                    cache.writeText(fetchedJson.toString())
-                } catch (we: Exception) {
-                    Log.w(TAG, "Failed to write cache: ${we.message}")
-                }
-                val state = parse(fetchedJson)
-                if (state is LyricsState.Found) {
-                    return@withContext state
-                }
+            // 3. Fallback Step 1: LRCLIB (synced + plain)
+            val durationSec = if (track.duration > 0) track.duration else (track.durationMs / 1000)
+            val lrclibResult = lrclibProvider.fetchLyrics(track.title, track.artist, durationSec)
+            if (lrclibResult != null && lrclibResult.lines.isNotEmpty()) {
+                saveCache(cache, lrclibResult)
+                return@withContext LyricsState.Found(lrclibResult.lines, lrclibResult.isSynced, lrclibResult.source)
             }
 
-            // 4. Try scanning local .lrc or .txt file in the same directory on device storage
+            // 4. Fallback Step 2: Lyrics.ovh
+            val ovhResult = lyricsOvhProvider.fetchLyrics(track.title, track.artist)
+            if (ovhResult != null && ovhResult.lines.isNotEmpty()) {
+                saveCache(cache, ovhResult)
+                return@withContext LyricsState.Found(ovhResult.lines, ovhResult.isSynced, ovhResult.source)
+            }
+
+            // 5. Fallback Step 3: Karalyr (Karaoke lyrics)
+            val karalyrResult = karalyrProvider.fetchLyrics(track.title, track.artist)
+            if (karalyrResult != null && karalyrResult.lines.isNotEmpty()) {
+                saveCache(cache, karalyrResult)
+                return@withContext LyricsState.Found(karalyrResult.lines, karalyrResult.isSynced, karalyrResult.source)
+            }
+
+            // 6. Try scanning local .lrc or .txt file in the same directory on device storage
             val localLrc = findLocalLrcFile(track)
             if (!localLrc.isNullOrBlank()) {
                 val lines = parseLrc(localLrc)
                 if (lines.isNotEmpty()) {
-                    return@withContext LyricsState.Found(lines, true)
+                    return@withContext LyricsState.Found(lines, true, "Local File")
                 }
             }
 
-            // 5. Try extracting embedded ID3 lyrics via MediaMetadataRetriever
+            // 7. Try extracting embedded ID3 lyrics via MediaMetadataRetriever
             val embedded = extractEmbeddedLyrics(track)
             if (!embedded.isNullOrBlank()) {
                 val isSynced = embedded.contains("[")
                 val lines = if (isSynced) parseLrc(embedded) else embedded.lines().filter { it.isNotBlank() }.map { LyricLine(-1L, it) }
                 if (lines.isNotEmpty()) {
-                    return@withContext LyricsState.Found(lines, isSynced)
+                    return@withContext LyricsState.Found(lines, isSynced, "ID3 Tag")
                 }
             }
 
+            // 8. Fallback Step 4: "Lyrics not available"
             LyricsState.NotFound
         } catch (e: Exception) {
             Log.e(TAG, "Failed loading lyrics for ${track.title}", e)
             LyricsState.NotFound
+        }
+    }
+
+    private fun saveCache(cacheFile: File, result: com.sonance.musicplayer.lyrics.LyricsProviderResult) {
+        try {
+            val json = JSONObject().apply {
+                put("source", result.source)
+                put("isSynced", result.isSynced)
+                if (result.isSynced) {
+                    val lrcStr = result.lines.joinToString("\n") { line ->
+                        val min = (line.timeMs / 1000) / 60
+                        val sec = (line.timeMs / 1000) % 60
+                        val frac = (line.timeMs % 1000) / 10
+                        String.format(java.util.Locale.ROOT, "[%02d:%02d.%02d]%s", min, sec, frac, line.text)
+                    }
+                    put("syncedLyrics", lrcStr)
+                } else {
+                    val plainStr = result.lines.joinToString("\n") { it.text }
+                    put("plainLyrics", plainStr)
+                }
+            }
+            cacheFile.writeText(json.toString())
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed caching lyrics: ${e.message}")
         }
     }
 

@@ -750,7 +750,9 @@ class MainActivity : ComponentActivity() {
                         isLyricsModeOpen = true
                     },
                     onOpenQueue = { isQueueOpen = true },
-                    onOpenMusicTrim = { tr -> trimmingTrack = tr }
+                    onOpenMusicTrim = { tr -> trimmingTrack = tr },
+                    isPro = isProEffective,
+                    onOpenProUpgrade = { isProUpgradeOpen = true }
                 )
 
                 // Queue Sheet

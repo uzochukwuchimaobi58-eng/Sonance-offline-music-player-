@@ -215,7 +215,7 @@ fun HomeScreen(
                     count = libraryCount,
                     icon = Icons.Default.MusicNote,
                     bg = theme.libraryCard.bg,
-                    modifier = Modifier.weight(1f),height(100.dp),
+                    modifier = Modifier.weight(1f),
                     tag = "card_library",
                     onClick = { onSelectView(ActiveView.LIBRARY) }
                 )
@@ -224,7 +224,7 @@ fun HomeScreen(
                     count = folderCount,
                     icon = Icons.Default.Folder,
                     bg = theme.folderCard.bg,
-                    modifier = Modifier.weight(1f),height(100.dp),
+                    modifier = Modifier.weight(1f),
                     tag = "card_folder",
                     onClick = { onSelectView(ActiveView.FOLDER) }
                 )
@@ -233,7 +233,7 @@ fun HomeScreen(
                     count = favoriteCount,
                     icon = Icons.Default.Favorite,
                     bg = theme.favoriteCard.bg,
-                    modifier = Modifier.weight(1f),height(100.dp),
+                    modifier = Modifier.weight(1f),
                     tag = "card_favorite",
                     onClick = { onSelectView(ActiveView.FAVORITE) }
                 )
@@ -535,7 +535,7 @@ private fun CategoryCard(
 ) {
     Surface(
         modifier = modifier
-            .height(82.dp)
+            .height(98.dp)
             .testTag(tag),
         shape = RoundedCornerShape(16.dp),
         color = bg,

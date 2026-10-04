@@ -16,6 +16,20 @@ class MusicStore(private val ctx: Context) {
     private val repoPlayCountPrefs: SharedPreferences = ctx.getSharedPreferences("sonance_play_counts", Context.MODE_PRIVATE)
     private val repoLastPlayedPrefs: SharedPreferences = ctx.getSharedPreferences("sonance_last_played", Context.MODE_PRIVATE)
 
+    init {
+        // One-time reset: earlier versions counted each finished song multiple times.
+        // Reset saved counts once with a version flag, because the old counts are inflated.
+        if (sp.getInt("ver", 0) < 2) {
+            sp.edit()
+                .remove("counts")
+                .remove("lastId")
+                .remove("lastAt")
+                .putInt("ver", 2)
+                .apply()
+            repoPlayCountPrefs.edit().clear().apply()
+        }
+    }
+
     fun playCounts(): Map<String, Int> {
         val map = mutableMapOf<String, Int>()
 
@@ -45,13 +59,30 @@ class MusicStore(private val ctx: Context) {
     fun getCount(id: String): Int = playCounts()[id] ?: 0
     fun getCount(id: Long): Int = getCount(id.toString())
 
+    /**
+     * +1 for one finished play. If the SAME song is reported again within 5 seconds it is a
+     * duplicate event (two listeners, a repeat of the same callback...) and is ignored, so one
+     * finished song can never be counted 2 or 3 times.
+     */
+    @Synchronized
     fun incrementPlay(id: String): Map<String, Int> {
+        val now = System.currentTimeMillis()
         val m = playCounts().toMutableMap()
+        val lastId = sp.getString("lastId", "") ?: ""
+        val lastAt = sp.getLong("lastAt", 0L)
+        if (lastId == id && (now - lastAt) < 5000L) {
+            return m
+        }
         val current = m[id] ?: 0
         val newCount = current + 1
         m[id] = newCount
-        sp.edit().putString("counts", m.entries.joinToString(",") { "${it.key}:${it.value}" }).apply()
+        sp.edit()
+            .putString("counts", m.entries.joinToString(",") { "${it.key}:${it.value}" })
+            .putString("lastId", id)
+            .putLong("lastAt", now)
+            .apply()
         repoPlayCountPrefs.edit().putInt(id, newCount).apply()
+        repoLastPlayedPrefs.edit().putLong(id, now).apply()
         return m
     }
 

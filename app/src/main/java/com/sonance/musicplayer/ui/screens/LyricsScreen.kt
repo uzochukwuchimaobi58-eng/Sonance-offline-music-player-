@@ -93,7 +93,7 @@ fun LyricsScreen(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = "No lyrics found for this song.\nCheck your internet connection or try another song.",
+                            text = "Lyrics not available\nChecked LRCLIB, Lyrics.ovh, and Karalyr.",
                             textAlign = TextAlign.Center,
                             fontSize = 15.sp,
                             lineHeight = 22.sp,

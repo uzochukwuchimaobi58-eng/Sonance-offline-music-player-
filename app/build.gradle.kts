@@ -99,6 +99,8 @@ dependencies {
     implementation(libs.play.services.ads)
     implementation(libs.revenuecat.purchases)
     implementation(libs.revenuecat.purchases.ui)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.scalars)
     testImplementation(libs.junit)
 
     debugImplementation(libs.androidx.ui.tooling)

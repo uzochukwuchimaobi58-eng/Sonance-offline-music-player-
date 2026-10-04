@@ -30,13 +30,13 @@ class GooglePlayBillingManager private constructor(private val context: Context)
         private const val TAG = "GooglePlayBilling"
 
         // Google Play Console Product IDs
-        const val PRODUCT_LIFETIME = "sonance_pro_lifetime"
-        const val PRODUCT_YEARLY = "sonance_pro_yearly"
-        const val PRODUCT_MONTHLY = "sonance_pro_monthly"
+        const val PRODUCT_LIFETIME = "gee_music_lifetime"
+        const val PRODUCT_YEARLY = "gee_music_yearly"
+        const val PRODUCT_MONTHLY = "gee_music_monthly"
 
         // Candidate IDs to match whatever the developer named their products in Google Play Console
-        val INAPP_CANDIDATE_IDS = listOf(PRODUCT_LIFETIME, "pro_lifetime", "sonance_lifetime", "lifetime", "sonance_pro", "pro")
-        val SUBS_CANDIDATE_IDS = listOf(PRODUCT_YEARLY, "pro_yearly", "sonance_yearly", "yearly", PRODUCT_MONTHLY, "pro_monthly", "sonance_monthly", "monthly")
+        val INAPP_CANDIDATE_IDS = listOf(PRODUCT_LIFETIME, "sonance_pro_lifetime", "pro_lifetime", "sonance_lifetime", "lifetime", "sonance_pro", "pro")
+        val SUBS_CANDIDATE_IDS = listOf(PRODUCT_YEARLY, "sonance_pro_yearly", "pro_yearly", "sonance_yearly", "yearly", PRODUCT_MONTHLY, "sonance_pro_monthly", "pro_monthly", "sonance_monthly", "monthly")
 
         @Volatile
         private var instance: GooglePlayBillingManager? = null

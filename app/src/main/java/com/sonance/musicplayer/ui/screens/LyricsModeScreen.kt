@@ -304,7 +304,7 @@ fun LyricsModeScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Searching LRCLIB online database",
+                            text = "Searching LRCLIB → Lyrics.ovh → Karalyr",
                             color = theme.textSecondary,
                             fontSize = 12.sp
                         )
@@ -329,7 +329,7 @@ fun LyricsModeScreen(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "No lyrics found for this song",
+                            text = "Lyrics not available",
                             color = theme.textPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -337,7 +337,7 @@ fun LyricsModeScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Check your internet connection or try refreshing",
+                            text = "Checked LRCLIB, Lyrics.ovh, and Karalyr",
                             color = theme.textSecondary,
                             fontSize = 13.sp,
                             textAlign = TextAlign.Center

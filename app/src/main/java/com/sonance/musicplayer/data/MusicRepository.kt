@@ -370,6 +370,22 @@ class MusicRepository(private val context: Context) {
             )
         }
 
+        // Also connect the official BillingManager instance
+        val officialBilling = com.sonance.musicplayer.billing.BillingManager.getInstance(context)
+        officialBilling.onPurchaseCompleted = { plan, price, orderId, purchaseToken ->
+            val email = userProfile.value.email.ifBlank {
+                userSubscription.value.userEmail.ifBlank { "subscriber@sonance.app" }
+            }
+            subscribePro(
+                plan = plan,
+                price = price,
+                email = email,
+                provider = "google_play",
+                orderId = orderId,
+                purchaseToken = purchaseToken
+            )
+        }
+
         billingManager.onNoPurchasesFound = {
             // No real active purchases in Google Play - reset to free tier
             val current = userSubscription.value
@@ -552,15 +568,25 @@ class MusicRepository(private val context: Context) {
     }
 
     fun restorePurchases(onResult: (Boolean, String) -> Unit) {
-        revenueCatBilling.restorePurchases { rcSuccess, rcMsg ->
-            if (rcSuccess) {
-                onResult(true, rcMsg)
+        val playBilling = com.sonance.musicplayer.billing.BillingManager.getInstance(context)
+        playBilling.restorePurchases { success, message ->
+            if (success) {
+                val email = userProfile.value.email.ifBlank {
+                    userSubscription.value.userEmail.ifBlank { "subscriber@sonance.app" }
+                }
+                subscribePro(
+                    plan = playBilling.activePlan.value ?: "yearly",
+                    price = "",
+                    email = email,
+                    provider = "google_play"
+                )
+                onResult(true, message)
             } else {
-                billingManager.queryExistingPurchases { success, message ->
-                    if (success) {
-                        onResult(true, message)
+                revenueCatBilling.restorePurchases { rcSuccess, rcMsg ->
+                    if (rcSuccess) {
+                        onResult(true, rcMsg)
                     } else {
-                        onResult(false, rcMsg.ifBlank { message })
+                        onResult(false, message.ifBlank { rcMsg })
                     }
                 }
             }
@@ -828,8 +854,8 @@ class MusicRepository(private val context: Context) {
 
                                 val durationMs = if (durationCol >= 0) it.getLong(durationCol) else 0L
 
-                                // Filter out sub-5-second audio clicks/chimes
-                                if (durationMs in 1..4999L) {
+                                // Skip audio files shorter than 30 seconds in the library
+                                if (durationMs in 1..29999L) {
                                     continue
                                 }
 
@@ -1074,6 +1100,32 @@ class MusicRepository(private val context: Context) {
         _tracks.value = updated
         persistTracks(updated)
         Log.i("MusicRepository", "Play recorded for '$effectiveTitle' (id=$trackId), new count=$newCount")
+    }
+
+    fun syncTrackPlayCount(trackId: String) {
+        val targetTrack = _tracks.value.find { it.id == trackId }
+        val normKey = if (targetTrack != null) getNormTrackKey(targetTrack.title, targetTrack.artist) else ""
+        val count = maxOf(
+            playCountPrefs.getInt(trackId, 0),
+            if (normKey.isNotBlank()) playCountPrefs.getInt(normKey, 0) else 0,
+            targetTrack?.playCount ?: 0
+        )
+        val now = maxOf(
+            lastPlayedPrefs.getLong(trackId, 0L),
+            if (normKey.isNotBlank()) lastPlayedPrefs.getLong(normKey, 0L) else 0L,
+            targetTrack?.lastPlayed ?: 0L
+        )
+        val updated = _tracks.value.map {
+            val matches = it.id == trackId || (normKey.isNotBlank() && getNormTrackKey(it.title, it.artist) == normKey)
+            if (matches) {
+                it.copy(
+                    playCount = count,
+                    lastPlayed = if (now > 0L) now else it.lastPlayed
+                )
+            } else it
+        }
+        _tracks.value = updated
+        persistTracks(updated)
     }
 
     fun incrementPlayCount(trackId: String, title: String = "", artist: String = "") {

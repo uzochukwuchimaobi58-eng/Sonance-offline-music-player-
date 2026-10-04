@@ -149,6 +149,11 @@ object MusicFilter {
         val nameNorm = (displayName ?: File(dataPath ?: "").name).lowercase(Locale.ROOT)
         val titleNorm = (title ?: "").lowercase(Locale.ROOT)
 
+        // Skip audio files shorter than 30 seconds in the library.
+        if (durationMs in 1..29999L) {
+            return false
+        }
+
         // 1. Folder checks: Exclude Voice Recorder, Call recordings, WhatsApp Voice Notes etc.
         // If track is 30s or longer, it is a legitimate music piece and should not be discarded
         if (durationMs < 30000L) {
@@ -246,6 +251,11 @@ object MusicFilter {
         val folderNorm = track.folder.lowercase(Locale.ROOT)
         val titleNorm = track.title.lowercase(Locale.ROOT)
         val urlNorm = track.url.lowercase(Locale.ROOT)
+
+        // Skip audio files shorter than 30 seconds in the library.
+        if (track.duration in 1..29) {
+            return false
+        }
 
         // Folder check: Only filter out voice/system sound folders if the audio duration is under 30s
         if (track.duration in 0..29) {

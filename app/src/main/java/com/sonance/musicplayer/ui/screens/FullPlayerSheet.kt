@@ -33,6 +33,7 @@ import coil.compose.AsyncImage
 import com.sonance.musicplayer.data.LyricsRepository
 import com.sonance.musicplayer.data.LyricsState
 import com.sonance.musicplayer.model.RepeatMode
+import kotlinx.coroutines.launch
 import com.sonance.musicplayer.model.ThemeConfig
 import com.sonance.musicplayer.model.Track
 import com.sonance.musicplayer.model.TrendingAudioEffect
@@ -69,19 +70,30 @@ fun FullPlayerSheet(
     onOpenSleepTimer: () -> Unit,
     onOpenLyrics: () -> Unit,
     onOpenQueue: () -> Unit,
-    onOpenMusicTrim: (Track) -> Unit
+    onOpenMusicTrim: (Track) -> Unit,
+    isPro: Boolean = false,
+    onOpenProUpgrade: (() -> Unit)? = null
 ) {
     if (!isOpen || track == null) return
 
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val lyricsRepo = remember { LyricsRepository(context) }
     var lyricsState by remember { mutableStateOf<LyricsState>(LyricsState.None) }
     val lyricsListState = rememberLazyListState()
     var centerMode by remember { mutableIntStateOf(0) } // 0: ARTWORK, 1: LYRICS, 2: WAVE
 
+    fun fetchLyricsForCurrentTrack() {
+        if (track != null) {
+            coroutineScope.launch {
+                lyricsState = LyricsState.Loading
+                lyricsState = lyricsRepo.load(track)
+            }
+        }
+    }
+
     LaunchedEffect(track.id) {
-        lyricsState = LyricsState.Loading
-        lyricsState = lyricsRepo.load(track)
+        fetchLyricsForCurrentTrack()
     }
 
     val activeLineIndex = remember(currentPosMs, lyricsState) {
@@ -195,6 +207,54 @@ fun FullPlayerSheet(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val context = androidx.compose.ui.platform.LocalContext.current
+
+                    // Premium / Buy Button
+                    if (onOpenProUpgrade != null) {
+                        Surface(
+                            onClick = onOpenProUpgrade,
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isPro) Color(0xFFF3C78B).copy(alpha = 0.20f) else Color(0xFFF3C78B),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF3C78B)),
+                            modifier = Modifier
+                                .padding(end = 4.dp)
+                                .testTag("btn_now_playing_premium")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Diamond,
+                                    contentDescription = "Premium",
+                                    tint = if (isPro) Color(0xFFF3C78B) else Color(0xFF201607),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = if (isPro) "PRO" else "BUY",
+                                    color = if (isPro) Color(0xFFF3C78B) else Color(0xFF201607),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
+                    }
+
+                    // Dedicated Lyrics Button in Now Playing header
+                    IconButton(
+                        onClick = {
+                            centerMode = if (centerMode == 1) 0 else 1
+                        },
+                        modifier = Modifier.testTag("btn_now_playing_lyrics_header")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Subtitles,
+                            contentDescription = "Lyrics",
+                            tint = if (centerMode == 1) theme.accentColor else theme.textPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
                     IconButton(
                         onClick = {
                             com.sonance.musicplayer.util.RingtoneHelper.setAsRingtoneImmediately(context, track)
@@ -261,8 +321,23 @@ fun FullPlayerSheet(
                         // SYNCHRONIZED LYRICS
                         when (val state = lyricsState) {
                             is LyricsState.Loading, is LyricsState.None -> {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalArrangement = Arrangement.Center,
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
                                     CircularProgressIndicator(color = theme.accentColor, modifier = Modifier.size(36.dp))
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        text = "Fetching lyrics...",
+                                        color = theme.textSecondary,
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        text = "LRCLIB → Lyrics.ovh → Karalyr",
+                                        color = theme.textSecondary.copy(alpha = 0.6f),
+                                        fontSize = 10.sp
+                                    )
                                 }
                             }
                             is LyricsState.NotFound -> {
@@ -273,49 +348,100 @@ fun FullPlayerSheet(
                                     verticalArrangement = Arrangement.Center,
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MusicOff,
+                                        contentDescription = null,
+                                        tint = theme.textSecondary,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
                                     Text(
-                                        text = "No lyrics found for this song",
+                                        text = "Lyrics not available",
                                         color = theme.textPrimary,
-                                        fontSize = 14.sp,
+                                        fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                         textAlign = TextAlign.Center
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "Check network or tap Full View",
+                                        text = "Checked LRCLIB, Lyrics.ovh & Karalyr",
                                         color = theme.textSecondary,
                                         fontSize = 11.sp,
                                         textAlign = TextAlign.Center
                                     )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    TextButton(onClick = onOpenLyrics) {
-                                        Text("Full Lyrics Mode", color = theme.accentColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { fetchLyricsForCurrentTrack() },
+                                            shape = RoundedCornerShape(16.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                            modifier = Modifier.height(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Refresh,
+                                                contentDescription = "Retry",
+                                                modifier = Modifier.size(14.dp),
+                                                tint = theme.accentColor
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Retry", fontSize = 11.sp, color = theme.accentColor)
+                                        }
+
+                                        Button(
+                                            onClick = onOpenLyrics,
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                            modifier = Modifier.height(32.dp)
+                                        ) {
+                                            Text("Full Mode", fontSize = 11.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                                        }
                                     }
                                 }
                             }
                             is LyricsState.Found -> {
-                                LazyColumn(
-                                    state = lyricsListState,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(vertical = 24.dp, horizontal = 16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    itemsIndexed(state.lines) { idx, line ->
-                                        val isActive = idx == activeLineIndex
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    // Source indicator bar
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 8.dp, end = 12.dp),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
                                         Text(
-                                            text = line.text.ifBlank { "♪" },
-                                            fontSize = if (isActive) 18.sp else 14.sp,
-                                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isActive) theme.accentColor else theme.textSecondary.copy(alpha = if (state.synced) 0.5f else 0.85f),
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable {
-                                                    if (state.synced && line.timeMs >= 0) {
-                                                        onSeek(line.timeMs)
-                                                    }
-                                                }
+                                            text = "${state.source} • ${if (state.synced) "Synced" else "Plain"}",
+                                            color = theme.accentColor.copy(alpha = 0.8f),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.SemiBold
                                         )
+                                    }
+
+                                    LazyColumn(
+                                        state = lyricsListState,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentPadding = PaddingValues(vertical = 16.dp, horizontal = 16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        itemsIndexed(state.lines) { idx, line ->
+                                            val isActive = idx == activeLineIndex
+                                            Text(
+                                                text = line.text.ifBlank { "♪" },
+                                                fontSize = if (isActive) 18.sp else 14.sp,
+                                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isActive) theme.accentColor else theme.textSecondary.copy(alpha = if (state.synced) 0.5f else 0.85f),
+                                                textAlign = TextAlign.Center,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        if (state.synced && line.timeMs >= 0) {
+                                                            onSeek(line.timeMs)
+                                                        }
+                                                    }
+                                            )
+                                        }
                                     }
                                 }
                             }
