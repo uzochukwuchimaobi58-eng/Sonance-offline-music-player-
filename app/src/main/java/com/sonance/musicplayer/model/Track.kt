@@ -124,7 +124,7 @@ data class Playlist(
 
 @Serializable
 data class EqualizerSettings(
-    val enabled: Boolean = true,
+    val enabled: Boolean = false,
     val preset: EqPreset = EqPreset.FLAT,
     val bands: Map<Int, Int> = mapOf(
         60 to 0,

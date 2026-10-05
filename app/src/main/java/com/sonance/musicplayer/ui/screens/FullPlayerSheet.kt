@@ -331,12 +331,8 @@ fun FullPlayerSheet(
                                     Text(
                                         text = "Fetching lyrics...",
                                         color = theme.textSecondary,
-                                        fontSize = 12.sp
-                                    )
-                                    Text(
-                                        text = "LRCLIB → Lyrics.ovh → Karalyr",
-                                        color = theme.textSecondary.copy(alpha = 0.6f),
-                                        fontSize = 10.sp
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
                                     )
                                 }
                             }
@@ -360,13 +356,6 @@ fun FullPlayerSheet(
                                         color = theme.textPrimary,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
-                                        textAlign = TextAlign.Center
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "Checked LRCLIB, Lyrics.ovh & Karalyr",
-                                        color = theme.textSecondary,
-                                        fontSize = 11.sp,
                                         textAlign = TextAlign.Center
                                     )
                                     Spacer(modifier = Modifier.height(10.dp))
@@ -404,7 +393,7 @@ fun FullPlayerSheet(
                             }
                             is LyricsState.Found -> {
                                 Column(modifier = Modifier.fillMaxSize()) {
-                                    // Source indicator bar
+                                    // Status indicator bar
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -412,7 +401,7 @@ fun FullPlayerSheet(
                                         horizontalArrangement = Arrangement.End
                                     ) {
                                         Text(
-                                            text = "${state.source} • ${if (state.synced) "Synced" else "Plain"}",
+                                            text = if (state.synced) "Synchronized" else "Plain Lyrics",
                                             color = theme.accentColor.copy(alpha = 0.8f),
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.SemiBold

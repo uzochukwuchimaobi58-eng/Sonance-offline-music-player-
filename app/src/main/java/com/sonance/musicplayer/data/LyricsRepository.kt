@@ -25,7 +25,7 @@ sealed interface LyricsState {
     data class Found(
         val lines: List<LyricLine>,
         val synced: Boolean,
-        val source: String = "LRCLIB"
+        val source: String = "Online"
     ) : LyricsState
 }
 

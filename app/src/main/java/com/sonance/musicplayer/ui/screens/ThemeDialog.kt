@@ -1,5 +1,7 @@
 package com.sonance.musicplayer.ui.screens
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -62,6 +64,7 @@ fun ThemeDialog(
     val context = LocalContext.current
     var unlockPromptTheme by remember { mutableStateOf<AppTheme?>(null) }
     var adThemeToUnlock by remember { mutableStateOf<AppTheme?>(null) }
+    var showAccentColorDialog by remember { mutableStateOf(false) }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -93,7 +96,11 @@ fun ThemeDialog(
     }
 
     fun isThemeUnlocked(item: AppTheme): Boolean {
-        return true // All colors and themes unlocked as requested
+        // 3 free wallpapers: NATURE_FLOWER, ANIMAL_PETS, DARK_AMOLED are free for any user
+        if (!item.isProOnly) return true
+        if (isPro) return true
+        if (unlockedThemeIds.contains(item.idStr)) return true
+        return false
     }
 
     Dialog(
@@ -160,32 +167,24 @@ fun ThemeDialog(
                         )
                     }
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    // Top color icon on theme wallpaper section: interacts with settings color section
+                    IconButton(
+                        onClick = { showAccentColorDialog = true },
+                        modifier = Modifier.testTag("btn_theme_color_picker")
                     ) {
-                        // Current Theme Accent Indicator Circle
                         Box(
                             modifier = Modifier
-                                .size(24.dp)
+                                .size(32.dp)
                                 .clip(CircleShape)
                                 .background(theme.accentColor)
-                                .border(2.dp, Color.White, CircleShape)
-                        )
-
-                        // Album upload icon button
-                        IconButton(
-                            onClick = {
-                                photoPickerLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
-                            }
+                                .border(2.dp, Color.White, CircleShape),
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Custom Album Photo",
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
+                                imageVector = Icons.Default.Palette,
+                                contentDescription = "Accent Colors",
+                                tint = Color.Black,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
@@ -281,6 +280,87 @@ fun ThemeDialog(
                 onSelectTheme(targetTheme)
                 Toast.makeText(context, "🎉 ${targetTheme.displayName} unlocked & applied to app body!", Toast.LENGTH_LONG).show()
                 adThemeToUnlock = null
+            }
+        )
+    }
+
+    // Accent Color Picker Dialog from Settings
+    if (showAccentColorDialog) {
+        val accentOptions = listOf(
+            Triple("Emerald Forest", Color(0xFF18AD75), AppTheme.EMERALD_FOREST),
+            Triple("Golden Luxury", Color(0xFFF9BE39), AppTheme.GOLDEN_LUXURY),
+            Triple("Dark Slate", Color(0xFF06B6D4), AppTheme.DARK_SLATE),
+            Triple("Cyberpunk", Color(0xFFA855F7), AppTheme.CYBERPUNK),
+            Triple("Sunset Warm", Color(0xFFF97316), AppTheme.SUNSET_WARM),
+            Triple("Crimson Ruby", Color(0xFFEF4444), AppTheme.CRIMSON_RUBY),
+            Triple("Dark AMOLED", Color(0xFFF9BE39), AppTheme.DARK_AMOLED),
+            Triple("Light Minimal", Color(0xFF2563EB), AppTheme.LIGHT_MINIMAL),
+            // Pro VIP Accents
+            Triple("Royal Amethyst", Color(0xFFD946EF), AppTheme.ROYAL_AMETHYST),
+            Triple("Aurora Cyan", Color(0xFF00F5D4), AppTheme.AURORA_BOREALIS),
+            Triple("Titanium Gold", Color(0xFFF59E0B), AppTheme.CARBON_TITANIUM),
+            Triple("Rose Gold Luxe", Color(0xFFFB7185), AppTheme.ROSE_GOLD_LUXE),
+            Triple("Neon Matrix", Color(0xFF22C55E), AppTheme.NEON_MATRIX)
+        )
+
+        AlertDialog(
+            onDismissRequest = { showAccentColorDialog = false },
+            containerColor = theme.sidebarBg,
+            title = {
+                Text("Select Accent Color", color = theme.textPrimary, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    accentOptions.forEach { (name, color, appTheme) ->
+                        val isSelected = currentTheme == appTheme
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) theme.accentColor.copy(alpha = 0.15f) else Color.Transparent)
+                                .clickable {
+                                    onSelectTheme(appTheme)
+                                    showAccentColorDialog = false
+                                    Toast.makeText(context, "$name accent color applied!", Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                                    .border(2.dp, if (isSelected) Color.White else Color.Transparent, CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = name,
+                                color = if (isSelected) theme.accentColor else theme.textPrimary,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 15.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = theme.accentColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAccentColorDialog = false }) {
+                    Text("Done", color = theme.accentColor)
+                }
             }
         )
     }

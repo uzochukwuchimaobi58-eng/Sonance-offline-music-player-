@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
@@ -98,197 +99,215 @@ fun EqualizerDialog(
                     )
                 }
 
-                Switch(
-                    checked = currentSettings.enabled,
-                    onCheckedChange = {
-                        val updated = currentSettings.copy(enabled = it)
-                        currentSettings = updated
-                        onApplySettings(updated)
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = theme.accentColor,
-                        checkedTrackColor = theme.accentColor.copy(alpha = 0.5f)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (currentSettings.enabled) "ON" else "OFF",
+                        color = if (currentSettings.enabled) theme.accentColor else theme.textSecondary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
                     )
-                )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Switch(
+                        checked = currentSettings.enabled,
+                        onCheckedChange = { isChecked ->
+                            val updated = currentSettings.copy(enabled = isChecked)
+                            currentSettings = updated
+                            onApplySettings(updated)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = theme.accentColor,
+                            checkedTrackColor = theme.accentColor.copy(alpha = 0.5f),
+                            uncheckedThumbColor = Color(0xFF71717A),
+                            uncheckedTrackColor = Color(0xFF27272A)
+                        )
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Presets Horizontal Scroller
-            Text(
-                text = "PRESETS",
-                color = theme.textSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .alpha(if (currentSettings.enabled) 1f else 0.45f)
             ) {
-                EqPreset.entries.forEach { preset ->
-                    val isSelected = currentSettings.preset == preset
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (isSelected) theme.accentColor else theme.headerBg)
-                            .border(
-                                1.dp,
-                                if (isSelected) theme.accentColor else theme.headerBorder,
-                                RoundedCornerShape(16.dp)
-                            )
-                            .clickable {
-                                val gains = presetGains[preset]
-                                val newBands = if (gains != null) {
-                                    freqLabels.mapIndexed { idx, (freq, _) -> freq to gains[idx] }.toMap()
-                                } else {
-                                    currentSettings.bands
-                                }
-                                val updated = currentSettings.copy(preset = preset, bands = newBands)
-                                currentSettings = updated
-                                onApplySettings(updated)
-                            }
-                            .padding(horizontal = 14.dp, vertical = 7.dp)
-                    ) {
-                        Text(
-                            text = preset.displayName,
-                            color = if (isSelected) Color.Black else theme.textPrimary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
+                // Presets Horizontal Scroller
+                Text(
+                    text = "PRESETS",
+                    color = theme.textSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
 
-            Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-            // 10 EQ Frequency Bands Sliders
-            Text(
-                text = "FREQUENCY RESPONSE (-12dB to +12dB)",
-                color = theme.textSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                freqLabels.forEach { (freq, label) ->
-                    val gain = currentSettings.bands[freq] ?: 0
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.width(36.dp)
-                    ) {
-                        Text(
-                            text = if (gain > 0) "+$gain" else "$gain",
-                            color = if (gain != 0) theme.accentColor else theme.textSecondary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // Custom vertical slider represented via custom bar or Slider
-                        Slider(
-                            value = gain.toFloat(),
-                            onValueChange = { newVal ->
-                                val intVal = newVal.toInt()
-                                val updatedBands = currentSettings.bands.toMutableMap().apply {
-                                    put(freq, intVal)
-                                }
-                                val updated = currentSettings.copy(
-                                    preset = EqPreset.CUSTOM,
-                                    bands = updatedBands
-                                )
-                                currentSettings = updated
-                                onApplySettings(updated)
-                            },
-                            valueRange = -12f..12f,
-                            steps = 23,
-                            colors = SliderDefaults.colors(
-                                thumbColor = theme.accentColor,
-                                activeTrackColor = theme.accentColor,
-                                inactiveTrackColor = theme.headerBorder
-                            ),
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    EqPreset.entries.forEach { preset ->
+                        val isSelected = currentSettings.preset == preset
+                        Box(
                             modifier = Modifier
-                                .height(130.dp)
-                                .width(130.dp)
-                                .offset(y = 48.dp)
-                                .rotate(-90f)
-                        )
-
-                        Spacer(modifier = Modifier.height(68.dp))
-
-                        Text(
-                            text = label,
-                            color = theme.textSecondary,
-                            fontSize = 10.sp,
-                            textAlign = TextAlign.Center
-                        )
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(if (isSelected) theme.accentColor else theme.headerBg)
+                                .border(
+                                    1.dp,
+                                    if (isSelected) theme.accentColor else theme.headerBorder,
+                                    RoundedCornerShape(16.dp)
+                                )
+                                .clickable {
+                                    val gains = presetGains[preset]
+                                    val newBands = if (gains != null) {
+                                        freqLabels.mapIndexed { idx, (freq, _) -> freq to gains[idx] }.toMap()
+                                    } else {
+                                        currentSettings.bands
+                                    }
+                                    val updated = currentSettings.copy(enabled = true, preset = preset, bands = newBands)
+                                    currentSettings = updated
+                                    onApplySettings(updated)
+                                }
+                                .padding(horizontal = 14.dp, vertical = 7.dp)
+                        ) {
+                            Text(
+                                text = preset.displayName,
+                                color = if (isSelected) Color.Black else theme.textPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // 10 EQ Frequency Bands Sliders
+                Text(
+                    text = "FREQUENCY RESPONSE (-12dB to +12dB)",
+                    color = theme.textSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    freqLabels.forEach { (freq, label) ->
+                        val gain = currentSettings.bands[freq] ?: 0
+
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.width(36.dp)
+                        ) {
+                            Text(
+                                text = if (gain > 0) "+$gain" else "$gain",
+                                color = if (gain != 0) theme.accentColor else theme.textSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Custom vertical slider represented via custom bar or Slider
+                            Slider(
+                                value = gain.toFloat(),
+                                onValueChange = { newVal ->
+                                    val intVal = newVal.toInt()
+                                    val updatedBands = currentSettings.bands.toMutableMap().apply {
+                                        put(freq, intVal)
+                                    }
+                                    val updated = currentSettings.copy(
+                                        enabled = true,
+                                        preset = EqPreset.CUSTOM,
+                                        bands = updatedBands
+                                    )
+                                    currentSettings = updated
+                                    onApplySettings(updated)
+                                },
+                                valueRange = -12f..12f,
+                                steps = 23,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = theme.accentColor,
+                                    activeTrackColor = theme.accentColor,
+                                    inactiveTrackColor = theme.headerBorder
+                                ),
+                                modifier = Modifier
+                                    .height(130.dp)
+                                    .width(130.dp)
+                                    .offset(y = 48.dp)
+                                    .rotate(-90f)
+                            )
+
+                            Spacer(modifier = Modifier.height(68.dp))
+
+                            Text(
+                                text = label,
+                                color = theme.textSecondary,
+                                fontSize = 10.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Sound FX Knobs / Sliders: Bass Boost, 3D Reverb, Treble
+                Text(
+                    text = "AUDIO ENHANCEMENTS",
+                    color = theme.textSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Bass Boost Slider
+                AudioFxSlider(
+                    title = "Bass Boost",
+                    value = currentSettings.bassBoost,
+                    onValueChange = {
+                        val updated = currentSettings.copy(enabled = true, bassBoost = it)
+                        currentSettings = updated
+                        onApplySettings(updated)
+                    },
+                    theme = theme
+                )
+
+                // 3D Spatial Reverb Slider
+                AudioFxSlider(
+                    title = "3D Spatial Reverb",
+                    value = currentSettings.spatialReverb,
+                    onValueChange = {
+                        val updated = currentSettings.copy(enabled = true, spatialReverb = it)
+                        currentSettings = updated
+                        onApplySettings(updated)
+                    },
+                    theme = theme
+                )
+
+                // Treble Boost Slider
+                AudioFxSlider(
+                    title = "Treble Clarity",
+                    value = currentSettings.trebleBoost,
+                    onValueChange = {
+                        val updated = currentSettings.copy(enabled = true, trebleBoost = it)
+                        currentSettings = updated
+                        onApplySettings(updated)
+                    },
+                    theme = theme
+                )
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Sound FX Knobs / Sliders: Bass Boost, 3D Reverb, Treble
-            Text(
-                text = "AUDIO ENHANCEMENTS",
-                color = theme.textSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Bass Boost Slider
-            AudioFxSlider(
-                title = "Bass Boost",
-                value = currentSettings.bassBoost,
-                onValueChange = {
-                    val updated = currentSettings.copy(bassBoost = it)
-                    currentSettings = updated
-                    onApplySettings(updated)
-                },
-                theme = theme
-            )
-
-            // 3D Spatial Reverb Slider
-            AudioFxSlider(
-                title = "3D Spatial Reverb",
-                value = currentSettings.spatialReverb,
-                onValueChange = {
-                    val updated = currentSettings.copy(spatialReverb = it)
-                    currentSettings = updated
-                    onApplySettings(updated)
-                },
-                theme = theme
-            )
-
-            // Treble Boost Slider
-            AudioFxSlider(
-                title = "Treble Clarity",
-                value = currentSettings.trebleBoost,
-                onValueChange = {
-                    val updated = currentSettings.copy(trebleBoost = it)
-                    currentSettings = updated
-                    onApplySettings(updated)
-                },
-                theme = theme
-            )
 
             Spacer(modifier = Modifier.height(20.dp))
 

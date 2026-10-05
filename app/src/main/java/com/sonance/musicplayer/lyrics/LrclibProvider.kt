@@ -4,29 +4,12 @@ import android.util.Log
 import com.sonance.musicplayer.data.LyricLine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
-import retrofit2.Retrofit
-import retrofit2.converter.scalars.ScalarsConverterFactory
-import retrofit2.http.GET
-import retrofit2.http.Query
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
-import okhttp3.OkHttpClient
-
-interface LrclibApi {
-    @GET("api/get")
-    suspend fun getLyrics(
-        @Query("track_name") trackName: String,
-        @Query("artist_name") artistName: String,
-        @Query("album_name") albumName: String? = null,
-        @Query("duration") duration: Long? = null
-    ): String
-
-    @GET("api/search")
-    suspend fun searchLyrics(
-        @Query("q") query: String
-    ): String
-}
 
 class LrclibProvider {
 
@@ -35,18 +18,20 @@ class LrclibProvider {
         private const val BASE_URL = "https://lrclib.net/"
     }
 
-    private val api: LrclibApi by lazy {
-        val okHttpClient = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
+    private val client: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .header("User-Agent", "SonanceMusicPlayer/2.1 (Android; Background Lyrics Fetcher)")
+                    .header("Accept", "application/json")
+                    .build()
+                chain.proceed(request)
+            }
             .build()
-
-        Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(okHttpClient)
-            .addConverterFactory(ScalarsConverterFactory.create())
-            .build()
-            .create(LrclibApi::class.java)
     }
 
     suspend fun fetchLyrics(
@@ -54,50 +39,69 @@ class LrclibProvider {
         artist: String,
         durationSec: Long? = null
     ): LyricsProviderResult? = withContext(Dispatchers.IO) {
-        val cleanTitle = cleanForSearch(title)
-        val cleanArtist = cleanArtistForSearch(artist)
+        val (cleanTitle, cleanArtist) = parseArtistAndTitle(title, artist)
+        val rawTitle = cleanForSearch(title)
 
-        // Tier 1: Exact lookup with track name and artist
-        try {
-            if (cleanArtist.isNotBlank() && !cleanArtist.equals("Unknown artist", ignoreCase = true)) {
-                val rawJson = api.getLyrics(
-                    trackName = cleanTitle,
-                    artistName = cleanArtist,
-                    duration = if (durationSec != null && durationSec > 0) durationSec else null
-                )
-                val parsed = parseLyricsJson(rawJson)
-                if (parsed != null) return@withContext parsed
+        // Tier 1: Exact lookup without duration (much more lenient and reliable)
+        if (cleanArtist.isNotBlank() && !cleanArtist.equals("Unknown artist", ignoreCase = true)) {
+            val urlNoDur = "${BASE_URL}api/get?track_name=${enc(cleanTitle)}&artist_name=${enc(cleanArtist)}"
+            fetchAndParseJson(urlNoDur)?.let { return@withContext it }
+
+            // Tier 1b: Exact lookup with duration if duration was available
+            if (durationSec != null && durationSec > 0) {
+                val urlWithDur = "${BASE_URL}api/get?track_name=${enc(cleanTitle)}&artist_name=${enc(cleanArtist)}&duration=$durationSec"
+                fetchAndParseJson(urlWithDur)?.let { return@withContext it }
             }
-        } catch (e: Exception) {
-            Log.d(TAG, "Tier 1 lookup failed: ${e.message}")
         }
 
-        // Tier 2: Search with combined query "title artist"
-        try {
-            val query = if (cleanArtist.isNotBlank() && !cleanArtist.equals("Unknown artist", ignoreCase = true)) {
-                "$cleanTitle $cleanArtist"
-            } else {
-                cleanTitle
-            }
-            val searchJson = api.searchLyrics(query)
-            val parsedSearch = parseSearchArray(searchJson)
-            if (parsedSearch != null) return@withContext parsedSearch
-        } catch (e: Exception) {
-            Log.d(TAG, "Tier 2 search failed: ${e.message}")
+        // Tier 2: Search with combined query "Artist Title" or "Title Artist"
+        if (cleanArtist.isNotBlank() && !cleanArtist.equals("Unknown artist", ignoreCase = true)) {
+            val query = "$cleanArtist $cleanTitle"
+            val searchUrl = "${BASE_URL}api/search?q=${enc(query)}"
+            fetchAndParseSearch(searchUrl)?.let { return@withContext it }
         }
 
         // Tier 3: Search with clean title only
-        try {
-            if (cleanTitle.isNotBlank()) {
-                val searchJson = api.searchLyrics(cleanTitle)
-                val parsedSearch = parseSearchArray(searchJson)
-                if (parsedSearch != null) return@withContext parsedSearch
-            }
-        } catch (e: Exception) {
-            Log.d(TAG, "Tier 3 search failed: ${e.message}")
+        if (cleanTitle.isNotBlank()) {
+            val searchUrl = "${BASE_URL}api/search?q=${enc(cleanTitle)}"
+            fetchAndParseSearch(searchUrl)?.let { return@withContext it }
+        }
+
+        // Tier 4: Search with raw title without extension
+        if (rawTitle.isNotBlank() && !rawTitle.equals(cleanTitle, ignoreCase = true)) {
+            val searchUrl = "${BASE_URL}api/search?q=${enc(rawTitle)}"
+            fetchAndParseSearch(searchUrl)?.let { return@withContext it }
         }
 
         null
+    }
+
+    private fun fetchAndParseJson(url: String): LyricsProviderResult? {
+        return try {
+            val request = Request.Builder().url(url).build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                val body = response.body?.string() ?: return null
+                parseLyricsJson(body)
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "Request to $url failed: ${e.message}")
+            null
+        }
+    }
+
+    private fun fetchAndParseSearch(url: String): LyricsProviderResult? {
+        return try {
+            val request = Request.Builder().url(url).build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                val body = response.body?.string() ?: return null
+                parseSearchArray(body)
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "Search request to $url failed: ${e.message}")
+            null
+        }
     }
 
     private fun parseLyricsJson(jsonStr: String): LyricsProviderResult? {
@@ -107,7 +111,7 @@ class LrclibProvider {
             if (synced.isNotBlank()) {
                 val lines = parseLrc(synced)
                 if (lines.isNotEmpty()) {
-                    return LyricsProviderResult(lines = lines, isSynced = true, source = "LRCLIB")
+                    return LyricsProviderResult(lines = lines, isSynced = true, source = "Online")
                 }
             }
 
@@ -118,12 +122,12 @@ class LrclibProvider {
                     .filter { it.isNotBlank() }
                     .map { LyricLine(-1L, it) }
                 if (lines.isNotEmpty()) {
-                    return LyricsProviderResult(lines = lines, isSynced = false, source = "LRCLIB")
+                    return LyricsProviderResult(lines = lines, isSynced = false, source = "Online")
                 }
             }
             null
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing LRCLIB response", e)
+            Log.e(TAG, "Error parsing lyrics JSON", e)
             null
         }
     }
@@ -139,7 +143,7 @@ class LrclibProvider {
                 if (synced.isNotBlank()) {
                     val lines = parseLrc(synced)
                     if (lines.isNotEmpty()) {
-                        return LyricsProviderResult(lines = lines, isSynced = true, source = "LRCLIB")
+                        return LyricsProviderResult(lines = lines, isSynced = true, source = "Online")
                     }
                 }
 
@@ -151,55 +155,82 @@ class LrclibProvider {
                             .filter { it.isNotBlank() }
                             .map { LyricLine(-1L, it) }
                         if (lines.isNotEmpty()) {
-                            plainFallback = LyricsProviderResult(lines = lines, isSynced = false, source = "LRCLIB")
+                            plainFallback = LyricsProviderResult(lines = lines, isSynced = false, source = "Online")
                         }
                     }
                 }
             }
             plainFallback
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing LRCLIB search array", e)
+            Log.e(TAG, "Error parsing search array", e)
             null
         }
     }
 
-    private fun parseLrc(lrcContent: String): List<LyricLine> {
+    fun parseLrc(lrcContent: String): List<LyricLine> {
         val lines = mutableListOf<LyricLine>()
-        val regex = Regex("""\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?](.*)""")
+        val stampRegex = Regex("""\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?]""")
 
         for (rawLine in lrcContent.lines()) {
             val trimmed = rawLine.trim()
-            val match = regex.find(trimmed)
-            if (match != null) {
-                val (minStr, secStr, fracStr, text) = match.destructured
+            if (trimmed.isBlank()) continue
+            val matches = stampRegex.findAll(trimmed).toList()
+            if (matches.isEmpty()) continue
+
+            val text = trimmed.substring(matches.last().range.last + 1).trim()
+            for (m in matches) {
+                val (minStr, secStr, fracStr) = m.destructured
                 val min = minStr.toLongOrNull() ?: 0L
                 val sec = secStr.toLongOrNull() ?: 0L
-                val frac = if (fracStr.isNotEmpty()) {
-                    val padded = fracStr.padEnd(3, '0').take(3)
-                    padded.toLongOrNull() ?: 0L
-                } else 0L
-
-                val timeMs = min * 60_000L + sec * 1_000L + frac
-                val cleanText = text.trim()
-                if (cleanText.isNotBlank()) {
-                    lines.add(LyricLine(timeMs, cleanText))
+                val frac = when (fracStr.length) {
+                    1 -> (fracStr.toLongOrNull() ?: 0L) * 100
+                    2 -> (fracStr.toLongOrNull() ?: 0L) * 10
+                    3 -> fracStr.toLongOrNull() ?: 0L
+                    else -> 0L
                 }
+                val timeMs = min * 60_000L + sec * 1_000L + frac
+                lines.add(LyricLine(timeMs, text))
             }
         }
         return lines.sortedBy { it.timeMs }
     }
 
+    private fun parseArtistAndTitle(rawTitle: String, rawArtist: String): Pair<String, String> {
+        var cleanArtist = cleanArtistForSearch(rawArtist)
+        var cleanTitle = cleanForSearch(rawTitle)
+
+        if ((cleanArtist.isBlank() || cleanArtist.equals("Unknown artist", ignoreCase = true) || cleanArtist.equals("<unknown>", ignoreCase = true)) && cleanTitle.contains(" - ")) {
+            val parts = cleanTitle.split(" - ", limit = 2)
+            if (parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) {
+                cleanArtist = cleanArtistForSearch(parts[0])
+                cleanTitle = cleanForSearch(parts[1])
+            }
+        }
+        return Pair(cleanTitle, cleanArtist)
+    }
+
     private fun cleanForSearch(raw: String): String {
         return raw.replace(Regex("""\.(mp3|m4a|flac|wav|aac|ogg|opus)$""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""^\d{1,3}[\s._-]+"""), "") // strip track numbers "01. "
             .replace(Regex("""\[.*?\]|\(.*?\)"""), "")
             .replace(Regex("""(official\s+video|official\s+audio|lyrics|lyric\s+video|remastered|remaster|hd|4k)""", RegexOption.IGNORE_CASE), "")
+            .replace('_', ' ')
             .replace(Regex("""\s+"""), " ")
             .trim()
     }
 
     private fun cleanArtistForSearch(raw: String): String {
         return raw.replace(Regex("""(feat\.|ft\.|featuring).*""", RegexOption.IGNORE_CASE), "")
+            .replace('_', ' ')
             .replace(Regex("""\s+"""), " ")
             .trim()
+    }
+
+    private fun enc(s: String): String {
+        return try {
+            URLEncoder.encode(s, "UTF-8")
+        } catch (_: Exception) {
+            s.replace(" ", "%20")
+        }
     }
 }

@@ -714,7 +714,10 @@ class MusicRepository(private val context: Context) {
                     _equalizerSettings.value = json.decodeFromString(eqJson)
                 } catch (e: Exception) {
                     Log.e("MusicRepository", "Failed to parse eq", e)
+                    _equalizerSettings.value = EqualizerSettings(enabled = false)
                 }
+            } else {
+                _equalizerSettings.value = EqualizerSettings(enabled = false)
             }
 
             // Load Playlists

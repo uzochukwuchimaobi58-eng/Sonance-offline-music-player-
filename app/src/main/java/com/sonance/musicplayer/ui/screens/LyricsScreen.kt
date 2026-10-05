@@ -93,7 +93,7 @@ fun LyricsScreen(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = "Lyrics not available\nChecked LRCLIB, Lyrics.ovh, and Karalyr.",
+                            text = "Lyrics not available",
                             textAlign = TextAlign.Center,
                             fontSize = 15.sp,
                             lineHeight = 22.sp,

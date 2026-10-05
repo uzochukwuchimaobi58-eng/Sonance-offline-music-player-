@@ -155,12 +155,12 @@ fun LyricsModeScreen(
                     )
                     Text(
                         text = when (lyricsState) {
-                            is LyricsState.Loading -> "Fetching synchronized lyrics online..."
+                            is LyricsState.Loading -> "Fetching lyrics..."
                             is LyricsState.Found -> {
                                 val s = lyricsState as LyricsState.Found
-                                if (s.synced) "Synchronized Lyrics (LRCLIB)" else "Plain Lyrics"
+                                if (s.synced) "Synchronized Lyrics" else "Lyrics"
                             }
-                            is LyricsState.NotFound -> "No lyrics matched"
+                            is LyricsState.NotFound -> "Lyrics not available"
                             else -> track?.artist ?: "Music Lyrics"
                         },
                         color = if (lyricsState is LyricsState.Loading) theme.accentColor else theme.textSecondary,
@@ -297,16 +297,10 @@ fun LyricsModeScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Loading synchronized lyrics...",
+                            text = "Fetching lyrics...",
                             color = theme.textPrimary,
-                            fontSize = 14.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Searching LRCLIB → Lyrics.ovh → Karalyr",
-                            color = theme.textSecondary,
-                            fontSize = 12.sp
                         )
                     }
                 }
@@ -335,19 +329,12 @@ fun LyricsModeScreen(
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Checked LRCLIB, Lyrics.ovh, and Karalyr",
-                            color = theme.textSecondary,
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(18.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
                         Button(
                             onClick = { loadLyricsForTrack(track) },
                             colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor)
                         ) {
-                            Text("Retry Search", color = Color.Black, fontWeight = FontWeight.Bold)
+                            Text("Retry", color = Color.Black, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
