@@ -583,9 +583,7 @@ class MainActivity : ComponentActivity() {
                                     theme = theme,
                                     onBack = { handleBack() },
                                     onPauseMusic = {
-                                        if (playbackManager.isPlaying.value) {
-                                            playbackManager.togglePlayPause()
-                                        }
+                                        playbackManager.pause()
                                     }
                                 )
                             } else {
@@ -725,7 +723,10 @@ class MainActivity : ComponentActivity() {
                     onOpenPro = { isProUpgradeOpen = true },
                     customWallpaperUri = customWallpaperUri,
                     theme = theme,
-                    onOpenVideos = { navigateTo(ActiveView.VIDEOS) }
+                    onOpenVideos = {
+                        playbackManager.pause()
+                        navigateTo(ActiveView.VIDEOS)
+                    }
                 )
 
                 // Full Screen Player Sheet

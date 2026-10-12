@@ -890,10 +890,21 @@ fun TrackListScreen(
 
                         TrackActionRow(
                             icon = Icons.Default.ContentCut,
-                            title = "Music Trim (Ringtone)",
+                            title = "Music Cutter & Trimmer",
                             onClick = {
                                 activeTrackForMenu = null
                                 onOpenMusicTrim(tr)
+                            },
+                            theme = theme
+                        )
+
+                        TrackActionRow(
+                            icon = Icons.Default.RepeatOne,
+                            title = "Loop This Song",
+                            onClick = {
+                                activeTrackForMenu = null
+                                Toast.makeText(context, "Looping: ${tr.title}", Toast.LENGTH_SHORT).show()
+                                onPlayTrack(tr, listOf(tr))
                             },
                             theme = theme
                         )

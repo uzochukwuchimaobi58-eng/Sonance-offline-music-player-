@@ -161,6 +161,28 @@ class VideoRepository(private val context: Context) {
                 width = 1280,
                 height = 720,
                 dateAdded = (System.currentTimeMillis() - 172800000) / 1000
+            ),
+            VideoItem(
+                id = 1004L,
+                title = "Tears of Steel - Cinematic Visuals",
+                path = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+                uri = Uri.parse("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"),
+                durationMs = 120000L,
+                sizeBytes = 48_500_000L,
+                width = 3840,
+                height = 2160,
+                dateAdded = (System.currentTimeMillis() - 259200000) / 1000
+            ),
+            VideoItem(
+                id = 1005L,
+                title = "Chill Hop & Ambient City Walk",
+                path = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4",
+                uri = Uri.parse("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4"),
+                durationMs = 30000L,
+                sizeBytes = 18_900_000L,
+                width = 1920,
+                height = 1080,
+                dateAdded = (System.currentTimeMillis() - 345600000) / 1000
             )
         )
     }
