@@ -29,14 +29,33 @@ class GooglePlayBillingManager private constructor(private val context: Context)
     companion object {
         private const val TAG = "GooglePlayBilling"
 
-        // Google Play Console Product IDs
-        const val PRODUCT_LIFETIME = "gee_music_lifetime"
-        const val PRODUCT_YEARLY = "gee_music_yearly"
-        const val PRODUCT_MONTHLY = "gee_music_monthly"
+        // Google Play Console Product IDs (Renamed to sonance prefix)
+        const val PRODUCT_LIFETIME = "sonance_lifetime"
+        const val PRODUCT_YEARLY = "sonance_yearly"
+        const val PRODUCT_MONTHLY = "sonance_monthly"
 
-        // Candidate IDs to match whatever the developer named their products in Google Play Console
-        val INAPP_CANDIDATE_IDS = listOf(PRODUCT_LIFETIME, "sonance_pro_lifetime", "pro_lifetime", "sonance_lifetime", "lifetime", "sonance_pro", "pro")
-        val SUBS_CANDIDATE_IDS = listOf(PRODUCT_YEARLY, "sonance_pro_yearly", "pro_yearly", "sonance_yearly", "yearly", PRODUCT_MONTHLY, "sonance_pro_monthly", "pro_monthly", "sonance_monthly", "monthly")
+        // Candidate IDs to match whatever the developer named their products in Google Play Console (sonance, sonance_pro, gee_music, etc.)
+        val INAPP_CANDIDATE_IDS = listOf(
+            PRODUCT_LIFETIME,
+            "sonance_pro_lifetime",
+            "sonance_lifetime_pro",
+            "sonance_pro",
+            "gee_music_lifetime",
+            "pro_lifetime",
+            "lifetime"
+        )
+        val SUBS_CANDIDATE_IDS = listOf(
+            PRODUCT_YEARLY,
+            "sonance_pro_yearly",
+            "sonance_yearly_pro",
+            "sonance_pro",
+            "gee_music_yearly",
+            "pro_yearly",
+            "yearly",
+            PRODUCT_MONTHLY,
+            "sonance_pro_monthly",
+            "gee_music_monthly"
+        )
 
         @Volatile
         private var instance: GooglePlayBillingManager? = null
@@ -241,7 +260,7 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                         onFallbackSimulation()
                     } else {
                         coroutineScope.launch(Dispatchers.Main) {
-                            val defaultPrice = if (isSubscription) "$1.00/yr" else "$5.00"
+                            val defaultPrice = if (isSubscription) "$5.00/yr" else "$10.00"
                             val orderId = "GPA.TEST.${System.currentTimeMillis()}"
                             val token = "token_sim_${System.currentTimeMillis()}"
                             onPurchaseCompleted?.invoke(plan, defaultPrice, orderId, token)
@@ -254,10 +273,46 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                     onFallbackSimulation()
                 } else {
                     coroutineScope.launch(Dispatchers.Main) {
-                        val defaultPrice = if (isSubscription) "$1.00/yr" else "$5.00"
+                        val defaultPrice = if (isSubscription) "$5.00/yr" else "$10.00"
                         val orderId = "GPA.TEST.${System.currentTimeMillis()}"
                         val token = "token_sim_${System.currentTimeMillis()}"
                         onPurchaseCompleted?.invoke(plan, defaultPrice, orderId, token)
+                    }
+                }
+            }
+        } else if (client != null && client.isReady) {
+            // Client is ready but product was not in cache - perform immediate on-demand query to Google Play
+            coroutineScope.launch {
+                val candidateIds = if (isSubscription) SUBS_CANDIDATE_IDS else INAPP_CANDIDATE_IDS
+                val prodType = if (isSubscription) BillingClient.ProductType.SUBS else BillingClient.ProductType.INAPP
+                val queryList = candidateIds.map { id ->
+                    QueryProductDetailsParams.Product.newBuilder()
+                        .setProductId(id)
+                        .setProductType(prodType)
+                        .build()
+                }
+                val queryParams = QueryProductDetailsParams.newBuilder().setProductList(queryList).build()
+                client.queryProductDetailsAsync(queryParams) { res, resultList ->
+                    val prod = resultList.productDetailsList?.firstOrNull()
+                    if (res.responseCode == BillingClient.BillingResponseCode.OK && prod != null) {
+                        val current = _products.value.toMutableMap()
+                        resultList.productDetailsList?.forEach { current[it.productId] = it }
+                        _products.value = current
+                        activity.runOnUiThread {
+                            launchPurchaseFlow(activity, plan, onFallbackSimulation)
+                        }
+                    } else {
+                        Log.w(TAG, "Google Play product not found in console on-demand (${res.debugMessage}), falling back")
+                        if (onFallbackSimulation != null) {
+                            activity.runOnUiThread { onFallbackSimulation() }
+                        } else {
+                            coroutineScope.launch(Dispatchers.Main) {
+                                val defaultPrice = if (isSubscription) "$5.00/yr" else "$10.00"
+                                val orderId = "GPA.TEST.${System.currentTimeMillis()}"
+                                val token = "token_sim_${System.currentTimeMillis()}"
+                                onPurchaseCompleted?.invoke(plan, defaultPrice, orderId, token)
+                            }
+                        }
                     }
                 }
             }
@@ -272,7 +327,7 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                 onFallbackSimulation()
             } else {
                 coroutineScope.launch(Dispatchers.Main) {
-                    val defaultPrice = if (isSubscription) "$1.00/yr" else "$5.00"
+                    val defaultPrice = if (isSubscription) "$5.00/yr" else "$10.00"
                     val orderId = "GPA.TEST.${System.currentTimeMillis()}"
                     val token = "token_sim_${System.currentTimeMillis()}"
                     onPurchaseCompleted?.invoke(plan, defaultPrice, orderId, token)
@@ -331,7 +386,7 @@ class GooglePlayBillingManager private constructor(private val context: Context)
             val isYearly = purchase.products.any { it.contains("year", ignoreCase = true) }
             val isMonthly = purchase.products.any { it.contains("month", ignoreCase = true) }
             val plan = if (isYearly) "yearly" else if (isMonthly) "monthly" else "lifetime"
-            val price = if (isYearly) "$1.00/yr" else if (isMonthly) "$0.99/mo" else "$5.00"
+            val price = if (isYearly) "$5.00/yr" else if (isMonthly) "$0.99/mo" else "$10.00"
             val orderId = purchase.orderId ?: "GPA.${System.currentTimeMillis()}"
             val token = purchase.purchaseToken
 

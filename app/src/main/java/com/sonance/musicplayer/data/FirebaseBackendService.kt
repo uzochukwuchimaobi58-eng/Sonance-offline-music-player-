@@ -884,8 +884,8 @@ class FirebaseBackendService(private val context: Context) {
                 showShuffleButtonDefault = getBoolean("show_shuffle_button_default", true),
                 admobEnabled = getBoolean("admob_enabled", false), // Paused for Play Store release
                 forceProOverride = getString("force_pro_override", "none"),
-                proYearlyPrice = getString("pro_yearly_price", "$1.00"),
-                proLifetimePrice = getString("pro_lifetime_price", "$2.00"),
+                proYearlyPrice = getString("pro_yearly_price", "$5.00"),
+                proLifetimePrice = getString("pro_lifetime_price", "$10.00"),
                 admobAppId = getString("admob_app_id", "ca-app-pub-6322953088287505~5972613999"),
                 admobBannerUnitId = getString("admob_banner_unit_id", "ca-app-pub-6322953088287505/5517813262"),
                 admobInterstitialUnitId = getString("admob_interstitial_unit_id", "ca-app-pub-6322953088287505/2734992395"),

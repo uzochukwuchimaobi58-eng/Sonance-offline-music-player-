@@ -317,8 +317,6 @@ class MusicRepository(private val context: Context) {
 
     val firebaseService = FirebaseBackendService(context)
     val billingManager = com.sonance.musicplayer.billing.GooglePlayBillingManager.getInstance(context)
-    val revenueCatBilling: com.sonance.musicplayer.billing.RevenueCatBillingManager =
-        com.sonance.musicplayer.billing.RevenueCatBillingManager.getInstance(context)
 
     val remoteSettings: StateFlow<com.sonance.musicplayer.model.RemoteBackendSettings> =
         firebaseService.remoteSettings
@@ -327,28 +325,6 @@ class MusicRepository(private val context: Context) {
     val userProfile: StateFlow<UserProfile> = firebaseService.userProfile
 
     init {
-        // Listen to RevenueCat Pro entitlement changes
-        revenueCatBilling.onProStatusChanged = { isPro ->
-            if (isPro) {
-                val customerInfo = revenueCatBilling.customerInfo.value
-                val ent = customerInfo?.entitlements?.get(com.sonance.musicplayer.billing.RevenueCatBillingManager.ENTITLEMENT_ID_PRO)
-                val isYearly = ent?.productIdentifier?.contains("yearly", ignoreCase = true) == true
-                val isMonthly = ent?.productIdentifier?.contains("monthly", ignoreCase = true) == true
-                val plan = when {
-                    isYearly -> "yearly"
-                    isMonthly -> "monthly"
-                    else -> "lifetime"
-                }
-                subscribePro(
-                    plan = plan,
-                    price = "",
-                    email = userProfile.value.email.ifBlank { "subscriber@sonance.app" },
-                    provider = "revenuecat",
-                    orderId = ent?.originalPurchaseDate?.toString() ?: "",
-                    purchaseToken = ent?.identifier ?: "rc_verified"
-                )
-            }
-        }
 
         // Purge any unverified PRO state on app update/start
         val curSub = userSubscription.value
@@ -582,13 +558,7 @@ class MusicRepository(private val context: Context) {
                 )
                 onResult(true, message)
             } else {
-                revenueCatBilling.restorePurchases { rcSuccess, rcMsg ->
-                    if (rcSuccess) {
-                        onResult(true, rcMsg)
-                    } else {
-                        onResult(false, message.ifBlank { rcMsg })
-                    }
-                }
+                onResult(false, message.ifBlank { "No active Google Play subscription or lifetime purchase found." })
             }
         }
     }

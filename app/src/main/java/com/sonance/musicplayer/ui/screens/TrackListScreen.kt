@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -86,8 +87,19 @@ fun TrackListScreen(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var selectedFolder by remember { mutableStateOf<String?>(null) }
-    var sortBy by remember(activeSortBy) {
-        mutableStateOf(if (activeSortBy == "default" || activeSortBy.isBlank()) "title" else activeSortBy)
+    var sortBy by remember(activeSortBy, view) {
+        mutableStateOf(
+            if (activeSortBy.isNotBlank() && activeSortBy != "default") {
+                activeSortBy
+            } else {
+                when (view) {
+                    ActiveView.MOST_PLAY -> "plays"
+                    ActiveView.RECENT_PLAY -> "recent"
+                    ActiveView.RECENT_ADD -> "date_added"
+                    else -> "title"
+                }
+            }
+        )
     } // title, artist, duration, plays
     var activeTrackForMenu by remember { mutableStateOf<Track?>(null) }
     var showPlaylistPickerForTrack by remember { mutableStateOf<Track?>(null) }
@@ -137,16 +149,19 @@ fun TrackListScreen(
         }
 
         if (view == ActiveView.MOST_PLAY) {
-            when (sortBy) {
-                "title" -> base.sortedWith(TrackComparators.TitleComparator)
-                "artist" -> base.sortedWith(TrackComparators.ArtistComparator)
-                "duration" -> base.sortedByDescending { it.duration }
-                "date_added" -> base.sortedByDescending { it.dateAdded }
-                else -> base.sortedWith(
-                    compareByDescending<Track> { it.playCount }
-                        .thenByDescending { it.lastPlayed }
-                )
-            }
+            // Unconditionally rank by top playing numbers music descending
+            base.sortedWith(
+                compareByDescending<Track> { it.playCount }
+                    .thenByDescending { it.lastPlayed }
+                    .thenBy { it.title.lowercase() }
+            )
+        } else if (view == ActiveView.RECENT_PLAY) {
+            // Unconditionally rank according to new play music descending
+            base.sortedWith(
+                compareByDescending<Track> { it.lastPlayed }
+                    .thenByDescending { it.playCount }
+                    .thenBy { it.title.lowercase() }
+            )
         } else if (view == ActiveView.RECENT_ADD) {
             when (sortBy) {
                 "artist" -> base.sortedWith(TrackComparators.ArtistComparator)
@@ -477,6 +492,31 @@ fun TrackListScreen(
                                             verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier.weight(1f)
                                         ) {
+                                            // Prominent Rank Index for Most Played (top playing numbers) and Recent Play (new play music)
+                                            if (view == ActiveView.MOST_PLAY || view == ActiveView.RECENT_PLAY) {
+                                                val rankNum = index + 1
+                                                val rankColor = when {
+                                                    view == ActiveView.MOST_PLAY && rankNum == 1 -> Color(0xFFF59E0B) // Shiny Gold #1
+                                                    view == ActiveView.MOST_PLAY && rankNum == 2 -> Color(0xFFE2E8F0) // Silver #2
+                                                    view == ActiveView.MOST_PLAY && rankNum == 3 -> Color(0xFFCD7F32) // Bronze #3
+                                                    view == ActiveView.RECENT_PLAY && rankNum == 1 -> Color(0xFF22C55E) // Emerald Green for #1 New Play
+                                                    else -> theme.textSecondary.copy(alpha = 0.85f)
+                                                }
+                                                Box(
+                                                    modifier = Modifier
+                                                        .width(34.dp)
+                                                        .padding(end = 4.dp),
+                                                    contentAlignment = Alignment.CenterStart
+                                                ) {
+                                                    Text(
+                                                        text = "#$rankNum",
+                                                        color = rankColor,
+                                                        fontSize = if (rankNum <= 3) 13.sp else 12.sp,
+                                                        fontWeight = if (rankNum <= 3) FontWeight.ExtraBold else FontWeight.SemiBold
+                                                    )
+                                                }
+                                            }
+
                                             // Artwork (Compact 38dp thumbnail)
                                             Box(
                                                 modifier = Modifier
@@ -584,15 +624,40 @@ fun TrackListScreen(
                                         } else {
                                             // Actions (Play Count, Favorite & 3-dot More options)
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                // Headphone icon + number of times played
+                                                // Headphone icon + number of times played / Recent relative timestamp
                                                 if (view == ActiveView.MOST_PLAY || track.playCount > 0) {
-                                                    Text(
-                                                        text = "\uD83C\uDFA7 ${track.playCount}",
-                                                        color = if (view == ActiveView.MOST_PLAY) theme.accentColor else theme.textSecondary,
-                                                        fontWeight = FontWeight.SemiBold,
-                                                        fontSize = 12.sp,
-                                                        modifier = Modifier.padding(end = 4.dp)
-                                                    )
+                                                    Surface(
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        color = if (view == ActiveView.MOST_PLAY) theme.accentColor.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.08f),
+                                                        border = BorderStroke(
+                                                            1.dp,
+                                                            if (view == ActiveView.MOST_PLAY) theme.accentColor.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.12f)
+                                                        ),
+                                                        modifier = Modifier.padding(end = 6.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = "\uD83C\uDFA7 ${track.playCount}${if (view == ActiveView.MOST_PLAY) " plays" else ""}",
+                                                            color = if (view == ActiveView.MOST_PLAY) theme.accentColor else theme.textSecondary,
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 11.5.sp,
+                                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
+                                                        )
+                                                    }
+                                                } else if (view == ActiveView.RECENT_PLAY && track.lastPlayed > 0L) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        color = Color(0xFF22C55E).copy(alpha = 0.14f),
+                                                        border = BorderStroke(1.dp, Color(0xFF22C55E).copy(alpha = 0.35f)),
+                                                        modifier = Modifier.padding(end = 6.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = formatRelativeTime(track.lastPlayed),
+                                                            color = Color(0xFF22C55E),
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 11.sp,
+                                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
+                                                        )
+                                                    }
                                                 }
 
                                                 IconButton(
@@ -1271,5 +1336,21 @@ private fun TrackActionRow(
             color = tint ?: theme.textPrimary,
             fontSize = 14.sp
         )
+    }
+}
+
+private fun formatRelativeTime(timestamp: Long): String {
+    if (timestamp <= 0L) return "Recent"
+    val diff = (System.currentTimeMillis() - timestamp).coerceAtLeast(0L)
+    val seconds = diff / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    val days = hours / 24
+    return when {
+        seconds < 60 -> "Just now"
+        minutes < 60 -> "${minutes}m ago"
+        hours < 24 -> "${hours}h ago"
+        days < 7 -> "${days}d ago"
+        else -> "Recent"
     }
 }

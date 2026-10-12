@@ -97,8 +97,6 @@ dependencies {
     implementation(libs.androidx.media)
     implementation(libs.play.billing.ktx)
     implementation(libs.play.services.ads)
-    implementation(libs.revenuecat.purchases)
-    implementation(libs.revenuecat.purchases.ui)
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.scalars)
     testImplementation(libs.junit)

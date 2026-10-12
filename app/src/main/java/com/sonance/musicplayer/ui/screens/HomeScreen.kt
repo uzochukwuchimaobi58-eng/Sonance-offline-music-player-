@@ -68,7 +68,8 @@ fun HomeScreen(
     onPlayTrack: ((Track, List<Track>) -> Unit)? = null,
     onToggleFavorite: ((String) -> Unit)? = null,
     recentPlayCount: Int? = null,
-    mostPlayCount: Int? = null
+    mostPlayCount: Int? = null,
+    recentTracks: List<Track> = emptyList()
 ) {
     val context = LocalContext.current
     var isAnnouncementDismissed by remember { mutableStateOf(false) }
@@ -310,31 +311,17 @@ fun HomeScreen(
                                 strokeWidth = 1.5.dp.toPx()
                             )
                         }
-
-                        // Subtle Divider Lines between 4 modules
-                        drawLine(
-                            color = Color(0xFF2D323E),
-                            start = Offset(size.width / 2f, 0f),
-                            end = Offset(size.width / 2f, size.height),
-                            strokeWidth = 1.dp.toPx()
-                        )
-                        drawLine(
-                            color = Color(0xFF2D323E),
-                            start = Offset(0f, size.height / 2f),
-                            end = Offset(size.width, size.height / 2f),
-                            strokeWidth = 1.dp.toPx()
-                        )
                     }
 
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                            .padding(horizontal = 10.dp, vertical = 10.dp)
                     ) {
-                        // Top Row: Music Trim & Karaoke Mode
+                        // Top Row: Music Trim & Karaoke Mode with comfortable spacing
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             // Module 1: Music Trim
                             Box(modifier = Modifier.weight(1f)) {
@@ -347,12 +334,12 @@ fun HomeScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                        // Bottom Row: Music Bass & Sound Equalizer
+                        // Bottom Row: Music Bass & Sound Equalizer with comfortable spacing
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             // Module 3: Music Bass
                             Box(modifier = Modifier.weight(1f)) {
@@ -371,127 +358,300 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             // ==========================================
-            // PLAYLISTS SECTION (MATCHING THE PICTURE)
+            // RECENT PLAY SECTION (Replaces Create Playlist at bottom)
             // ==========================================
+            val displayRecentTracks = remember(recentTracks, tracks) {
+                if (recentTracks.isNotEmpty()) recentTracks
+                else tracks.filter { it.lastPlayed > 0L || it.playCount > 0 }.sortedByDescending { it.lastPlayed }
+            }
+
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(start = 2.dp)
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onSelectView(ActiveView.RECENT_PLAY) }
+                        .padding(start = 2.dp, top = 4.dp, bottom = 4.dp, end = 6.dp)
+                        .testTag("btn_home_recent_play_header")
                 ) {
                     Box(
                         modifier = Modifier
                             .size(4.dp, 16.dp)
                             .clip(RoundedCornerShape(2.dp))
-                        .background(Color(0xFF22C55E))
+                            .background(Color(0xFF22C55E))
                     )
                     Text(
-                        text = "PLAYLISTS",
+                        text = "RECENT PLAY",
                         color = Color.White,
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = 1.2.sp
                     )
+                    if (displayRecentTracks.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF22C55E).copy(alpha = 0.2f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "${displayRecentTracks.size}",
+                                color = Color(0xFF22C55E),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
 
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable { onOpenCreatePlaylist() }
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                        .clickable { onSelectView(ActiveView.RECENT_PLAY) }
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                        .testTag("btn_home_see_all_recent"),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "New Playlist",
-                        tint = Color(0xFF22C55E),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "NEW PLAYLIST",
+                        text = "SEE ALL",
                         color = Color(0xFF22C55E),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = "See all recent plays",
+                        tint = Color(0xFF22C55E),
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Playlist Items
-            val displayPlaylists = if (playlists.isNotEmpty()) {
-                playlists.take(2)
-            } else {
-                listOf(
-                    Playlist(id = "default_list", name = "Default list", trackIds = emptyList()),
-                    Playlist(id = "gym_energy", name = "Gym & High Energy", trackIds = emptyList())
-                )
-            }
-
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                displayPlaylists.forEach { pl ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF14171E).copy(alpha = 0.85f))
-                            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
-                            .clickable { onSelectPlaylist(pl.id) }
-                            .padding(horizontal = 14.dp)
-                            .testTag("home_playlist_${pl.id}"),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+            // Recent Play Items List
+            if (displayRecentTracks.isNotEmpty()) {
+                val showcaseRecent = displayRecentTracks.take(4)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    showcaseRecent.forEachIndexed { index, tr ->
+                        val isCurrent = (currentTrack?.id == tr.id)
                         Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (isCurrent) Color(0xFF1B2C22) else Color(0xFF14171E).copy(alpha = 0.88f))
+                                .border(
+                                    width = if (isCurrent) 1.5.dp else 1.dp,
+                                    color = if (isCurrent) Color(0xFF22C55E) else Color.White.copy(alpha = 0.08f),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                .clickable {
+                                    onPlayTrack?.invoke(tr, displayRecentTracks)
+                                }
+                                .padding(horizontal = 12.dp)
+                                .testTag("home_recent_track_${tr.id}"),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xFF22C55E).copy(alpha = 0.18f)),
-                                contentAlignment = Alignment.Center
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Rank index indicator (#1, #2, etc. based on new play music order)
+                                Text(
+                                    text = "#${index + 1}",
+                                    color = if (index == 0) Color(0xFF22C55E) else Color(0xFF8E8E93),
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.width(26.dp)
+                                )
+
+                                // Compact Artwork Box
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF22C55E).copy(alpha = 0.18f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (tr.coverArt.isNotBlank()) {
+                                        coil.compose.AsyncImage(
+                                            model = tr.coverArt,
+                                            contentDescription = tr.title,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.MusicNote,
+                                            contentDescription = null,
+                                            tint = if (isCurrent) Color(0xFF22C55E) else Color.White.copy(alpha = 0.8f),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    if (isCurrent && isPlaying) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Color.Black.copy(alpha = 0.45f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Equalizer,
+                                                contentDescription = "Playing",
+                                                tint = Color(0xFF22C55E),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(10.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = tr.title,
+                                        color = if (isCurrent) Color(0xFF22C55E) else Color.White,
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = if (tr.artist == "<unknown>") "Unknown Artist" else tr.artist,
+                                            color = Color(0xFF8E8E93),
+                                            fontSize = 11.5.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        val m = tr.duration / 60
+                                        val s = tr.duration % 60
+                                        Text(
+                                            text = "• ${String.format("%d:%02d", m, s)}",
+                                            color = Color(0xFF8E8E93).copy(alpha = 0.7f),
+                                            fontSize = 10.5.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Quick Play / Equalizer Button
+                            IconButton(
+                                onClick = {
+                                    onPlayTrack?.invoke(tr, displayRecentTracks)
+                                },
+                                modifier = Modifier.size(34.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.QueueMusic,
-                                    contentDescription = null,
-                                    tint = Color(0xFF22C55E),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = pl.name,
-                                    color = Color.White,
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "${pl.trackIds.size} songs",
-                                    color = Color(0xFF8E8E93),
-                                    fontSize = 11.sp
+                                    imageVector = if (isCurrent && isPlaying) Icons.Default.Equalizer else Icons.Default.PlayArrow,
+                                    contentDescription = "Play",
+                                    tint = if (isCurrent) Color(0xFF22C55E) else Color.White,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
+                    }
 
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = null,
-                            tint = Color(0xFF22C55E),
-                            modifier = Modifier.size(18.dp)
+                    // Bottom "View All X Recent Plays" Button
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onSelectView(ActiveView.RECENT_PLAY) }
+                            .border(1.dp, Color(0xFF22C55E).copy(alpha = 0.25f), RoundedCornerShape(12.dp)),
+                        color = Color(0xFF14171E).copy(alpha = 0.6f)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = null,
+                                tint = Color(0xFF22C55E),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "View All Recent Plays (${displayRecentTracks.size})",
+                                color = Color(0xFF22C55E),
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = Color(0xFF22C55E),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Empty state for Recent Play
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { onSelectView(ActiveView.RECENT_PLAY) }
+                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp)),
+                    color = Color(0xFF14171E).copy(alpha = 0.85f)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF22C55E).copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = null,
+                                tint = Color(0xFF22C55E),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "No Recent Plays Yet",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Play songs from your library to see your history ranked here",
+                            color = Color(0xFF8E8E93),
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
                         )
                     }
                 }

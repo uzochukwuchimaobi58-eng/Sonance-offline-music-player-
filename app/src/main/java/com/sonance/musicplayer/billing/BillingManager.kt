@@ -19,17 +19,17 @@ import kotlinx.coroutines.withContext
  * Uses Google Play Billing Library SDK (v7/8) with coroutines.
  *
  * Supported Product IDs:
- * - Lifetime in-app purchase: "gee_music_lifetime"
- * - Yearly subscription: "gee_music_yearly"
+ * - Lifetime in-app purchase: "sonance_lifetime"
+ * - Yearly subscription: "sonance_yearly"
  */
 class BillingManager private constructor(private val context: Context) : PurchasesUpdatedListener {
 
     companion object {
         private const val TAG = "BillingManager"
 
-        // Official requested Product IDs
-        const val PRODUCT_LIFETIME = "gee_music_lifetime"
-        const val PRODUCT_YEARLY = "gee_music_yearly"
+        // Official requested Product IDs (Sonance)
+        const val PRODUCT_LIFETIME = "sonance_lifetime"
+        const val PRODUCT_YEARLY = "sonance_yearly"
 
         // Legacy / fallback product IDs for backwards compatibility
         const val LEGACY_PRODUCT_LIFETIME = "sonance_pro_lifetime"
@@ -37,14 +37,16 @@ class BillingManager private constructor(private val context: Context) : Purchas
 
         val INAPP_PRODUCT_IDS = listOf(
             PRODUCT_LIFETIME,
-            LEGACY_PRODUCT_LIFETIME,
+            "sonance_pro_lifetime",
+            "gee_music_lifetime",
             "pro_lifetime",
             "lifetime"
         )
 
         val SUBS_PRODUCT_IDS = listOf(
             PRODUCT_YEARLY,
-            LEGACY_PRODUCT_YEARLY,
+            "sonance_pro_yearly",
+            "gee_music_yearly",
             "pro_yearly",
             "yearly"
         )
@@ -369,7 +371,7 @@ class BillingManager private constructor(private val context: Context) : Purchas
             _isPremium.value = true
             _activePlan.value = plan
 
-            val priceStr = if (isYearly) "$1.00/yr" else "$2.00"
+            val priceStr = if (isYearly) "$5.00/yr" else "$10.00"
 
             withContext(Dispatchers.Main) {
                 onPurchaseCompleted?.invoke(plan, priceStr, purchase.orderId ?: "", purchase.purchaseToken)

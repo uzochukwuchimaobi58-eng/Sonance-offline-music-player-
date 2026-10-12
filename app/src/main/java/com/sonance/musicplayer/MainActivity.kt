@@ -103,17 +103,23 @@ class MainActivity : ComponentActivity() {
             val viewBackStack = remember { mutableStateListOf<ActiveView>() }
             val playlistIdBackStack = remember { mutableStateListOf<String?>() }
 
+            var searchQuery by remember { mutableStateOf("") }
+            var currentSortBy by remember { mutableStateOf("title") }
+
             fun navigateTo(newView: ActiveView, newPlaylistId: String? = null) {
                 if (activeView != newView || activePlaylistId != newPlaylistId) {
                     viewBackStack.add(activeView)
                     playlistIdBackStack.add(activePlaylistId)
                     activeView = newView
                     activePlaylistId = newPlaylistId
+                    currentSortBy = when (newView) {
+                        ActiveView.MOST_PLAY -> "plays"
+                        ActiveView.RECENT_PLAY -> "recent"
+                        ActiveView.RECENT_ADD -> "date_added"
+                        else -> "title"
+                    }
                 }
             }
-
-            var searchQuery by remember { mutableStateOf("") }
-            var currentSortBy by remember { mutableStateOf("title") }
 
             // Modals and dialogs
             var isSidebarOpen by remember { mutableStateOf(false) }
@@ -164,10 +170,17 @@ class MainActivity : ComponentActivity() {
                         val prevPlId = playlistIdBackStack.removeAt(playlistIdBackStack.size - 1)
                         activeView = prevView
                         activePlaylistId = prevPlId
+                        currentSortBy = when (prevView) {
+                            ActiveView.MOST_PLAY -> "plays"
+                            ActiveView.RECENT_PLAY -> "recent"
+                            ActiveView.RECENT_ADD -> "date_added"
+                            else -> "title"
+                        }
                     }
                     activeView != ActiveView.HOME -> {
                         activeView = ActiveView.HOME
                         activePlaylistId = null
+                        currentSortBy = "title"
                     }
                     else -> {
                         val now = System.currentTimeMillis()
@@ -316,8 +329,23 @@ class MainActivity : ComponentActivity() {
                     if (filtered.isEmpty() && tracks.isNotEmpty()) tracks else filtered
                 }
 
+                // Compute recent play tracks ordered strictly by newest play music (most recent first)
+                val recentPlayTracks: List<Track> = remember(musicOnlyTracks, playbackManager.store.recent()) {
+                    val recentIds = playbackManager.store.recent()
+                    val trackMap = musicOnlyTracks.associateBy { it.id }
+                    val withLastPlayed = musicOnlyTracks
+                        .filter { it.lastPlayed > 0L }
+                        .sortedByDescending { it.lastPlayed }
+                    val fromRecentStore = recentIds
+                        .mapNotNull { trackMap[it] }
+                        .filter { it.lastPlayed == 0L }
+                    val combined = (withLastPlayed + fromRecentStore).distinctBy { it.id }
+                    if (combined.isNotEmpty()) combined
+                    else musicOnlyTracks.filter { it.playCount > 0 }.sortedByDescending { it.playCount }
+                }
+
                 // Filtered tracks for current view & search query
-                val viewTracks: List<Track> = remember(musicOnlyTracks, activeView, activePlaylistId, playlists, searchQuery, playerSettings.smartPlaylistTrackLimit) {
+                val viewTracks: List<Track> = remember(musicOnlyTracks, recentPlayTracks, activeView, activePlaylistId, playlists, searchQuery, playerSettings.smartPlaylistTrackLimit) {
                     val cutoffTime = when (playerSettings.smartPlaylistTrackLimit) {
                         "Past month" -> System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
                         "Past 3 months" -> System.currentTimeMillis() - 90L * 24 * 60 * 60 * 1000
@@ -334,24 +362,18 @@ class MainActivity : ComponentActivity() {
                         ActiveView.LYRICS_MODE -> musicOnlyTracks
                         ActiveView.VIDEOS -> emptyList()
                         ActiveView.FAVORITE -> musicOnlyTracks.filter { it.isFavorite }
-                        ActiveView.RECENT_PLAY -> {
-                            val recentIds = playbackManager.store.recent()
-                            val trackMap = musicOnlyTracks.associateBy { it.id }
-                            val orderedFromRecent = recentIds.mapNotNull { trackMap[it] }
-                            val remainingWithLastPlayed = musicOnlyTracks
-                                .filter { (it.lastPlayed > 0L || it.playCount > 0) && it.id !in recentIds }
-                                .sortedByDescending { it.lastPlayed }
-                            (orderedFromRecent + remainingWithLastPlayed).distinctBy { it.id }
-                        }
+                        ActiveView.RECENT_PLAY -> recentPlayTracks
                         ActiveView.RECENT_ADD -> {
                             // Show tracks ordered by MediaStore DATE_ADDED (or DATE_MODIFIED fallback), newest first
                             musicOnlyTracks.sortedByDescending { it.dateAdded }
                         }
                         ActiveView.MOST_PLAY -> {
-                            // Show tracks that have been played, ordered by play count descending
-                            musicOnlyTracks.filter { it.playCount > 0 }
-                                .sortedByDescending { it.playCount }
-                                .take(100)
+                            // Order strictly by play count descending (top played numbers first), then last played
+                            musicOnlyTracks.sortedWith(
+                                compareByDescending<Track> { it.playCount }
+                                    .thenByDescending { it.lastPlayed }
+                                    .thenBy { it.title.lowercase() }
+                            )
                         }
                         ActiveView.PLAYLIST_DETAIL -> {
                             val pl = playlists.find { it.id == activePlaylistId }
@@ -569,10 +591,14 @@ class MainActivity : ComponentActivity() {
                                     onOpenEqualizer = {
                                         executeWithInterstitialAd { isEqualizerOpen = true }
                                     },
+                                    recentTracks = recentPlayTracks,
                                     onPlayTrack = { tr, list ->
                                         repository.recordRecentPlay(tr.id, tr.title, tr.artist)
+                                        playbackManager.store.addRecent(tr.id)
                                         playbackManager.statsTracker.onTrackStarted(tr.id)
-                                        playbackManager.setQueue(list, list.indexOf(tr))
+                                        val idx = list.indexOfFirst { it.id == tr.id }.coerceAtLeast(0)
+                                        playbackManager.setQueue(list, idx)
+                                        isFullPlayerOpen = true
                                     },
                                     onToggleFavorite = { trId ->
                                         repository.toggleFavorite(trId)
@@ -605,6 +631,7 @@ class MainActivity : ComponentActivity() {
                                     onOpenProUpgrade = { isProUpgradeOpen = true },
                                     onPlayTrack = { track, list ->
                                         repository.recordRecentPlay(track.id, track.title, track.artist)
+                                        playbackManager.store.addRecent(track.id)
                                         playbackManager.statsTracker.onTrackStarted(track.id)
                                         if (currentTrack?.id == track.id) {
                                             // Tapping currently playing music brings up the full player interface directly
