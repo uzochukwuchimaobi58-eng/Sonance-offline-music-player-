@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,21 +21,31 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.sonance.musicplayer.model.ActiveView
 import com.sonance.musicplayer.model.Playlist
 import com.sonance.musicplayer.model.RemoteBackendSettings
 import com.sonance.musicplayer.model.ThemeConfig
 import com.sonance.musicplayer.model.Track
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 fun HomeScreen(
@@ -62,18 +73,8 @@ fun HomeScreen(
     val context = LocalContext.current
     var isAnnouncementDismissed by remember { mutableStateOf(false) }
 
-    val libraryCount = tracks.size
-    val validFolders = tracks.map { it.folder }.filter { it.isNotBlank() && it != "<unknown>" }.distinct()
-    val folderCount = if (validFolders.isNotEmpty()) validFolders.size else if (tracks.isNotEmpty()) 1 else 0
-    val favoriteCount = tracks.count { it.isFavorite }
-    val computedRecentCount = tracks.count { it.playCount > 0 || it.lastPlayed > 0 }
-    val recentAddCount = tracks.size
-    val effectiveMostPlayCount = mostPlayCount ?: tracks.count { it.playCount > 0 }
-    val effectiveRecentPlayCount = recentPlayCount ?: computedRecentCount
-
     Box(
-        modifier = Modifier
-            .fillMaxSize()
+        modifier = Modifier.fillMaxSize()
     ) {
         val scrollState = rememberScrollState()
         Column(
@@ -82,33 +83,18 @@ fun HomeScreen(
                 .verticalScroll(scrollState)
                 .padding(horizontal = 14.dp, vertical = 6.dp)
         ) {
-            // Cloud Broadcast Announcement from Firebase Backend
+            // Cloud Broadcast Announcement (if active)
             if (remoteSettings != null && remoteSettings.announcementEnabled && !isAnnouncementDismissed) {
-                val bannerIcon = when (remoteSettings.announcementType.lowercase()) {
-                    "promo" -> Icons.Default.LocalOffer
-                    "alert", "warning" -> Icons.Default.Warning
-                    "update" -> Icons.Default.SystemUpdate
-                    else -> Icons.Default.Campaign
-                }
-                val bannerColor = when (remoteSettings.announcementType.lowercase()) {
-                    "promo" -> Color(0xFFFF9800)
-                    "alert", "warning" -> Color(0xFFEF5350)
-                    "update" -> Color(0xFF4CAF50)
-                    else -> theme.accentColor
-                }
-
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 12.dp)
-                        .border(1.dp, bannerColor.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                        .border(1.dp, Color(0xFF22C55E).copy(alpha = 0.5f), RoundedCornerShape(14.dp))
                         .testTag("backend_announcement_banner"),
                     shape = RoundedCornerShape(14.dp),
-                    color = theme.sidebarBg
+                    color = Color(0xFF14161C)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp)
-                    ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -117,39 +103,28 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .size(32.dp)
                                     .clip(CircleShape)
-                                    .background(bannerColor.copy(alpha = 0.2f)),
+                                    .background(Color(0xFF22C55E).copy(alpha = 0.2f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = bannerIcon,
+                                    imageVector = Icons.Default.Campaign,
                                     contentDescription = "Announcement",
-                                    tint = bannerColor,
+                                    tint = Color(0xFF22C55E),
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(
-                                        text = "CLOUD BROADCAST",
-                                        color = bannerColor,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 1.sp
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .size(5.dp)
-                                            .clip(CircleShape)
-                                            .background(bannerColor)
-                                    )
-                                }
+                                Text(
+                                    text = "SONANCE BROADCAST",
+                                    color = Color(0xFF22C55E),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
                                 Text(
                                     text = remoteSettings.announcementTitle,
-                                    color = theme.textPrimary,
+                                    color = Color.White,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -161,43 +136,8 @@ fun HomeScreen(
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "Dismiss",
-                                    tint = theme.textSecondary,
+                                    tint = Color(0xFF8E8E93),
                                     modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-
-                        if (remoteSettings.announcementMessage.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = remoteSettings.announcementMessage,
-                                color = theme.textSecondary,
-                                fontSize = 12.sp,
-                                lineHeight = 16.sp
-                            )
-                        }
-
-                        if (remoteSettings.announcementActionUrl.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(
-                                onClick = {
-                                    try {
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(remoteSettings.announcementActionUrl))
-                                        context.startActivity(intent)
-                                    } catch (_: Exception) {}
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = bannerColor),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                modifier = Modifier.height(30.dp)
-                            ) {
-                                Text("Open Link", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(
-                                    imageVector = Icons.Default.OpenInNew,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(12.dp),
-                                    tint = Color.White
                                 )
                             }
                         }
@@ -205,80 +145,104 @@ fun HomeScreen(
                 }
             }
 
-            // 6 Category Tiles Grid (3 columns, 2 rows with count numbers)
+            // ==========================================
+            // 6 FACETED GEM BUTTONS (MATCHING THE PICTURE)
+            // EXCLUDING RAW NUMBERS AS REQUESTED
+            // ROW 1: [LIBRARY] [VIDEO PLAYER] [FAVORITE]
+            // ROW 2: [FOLDER] [RECENT ADD] [MOST PLAY]
+            // ==========================================
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                CategoryCard(
+                // 1. LIBRARY (Royal Sapphire Gem)
+                BeveledGemCard(
                     title = "LIBRARY",
-                    count = libraryCount,
                     icon = Icons.Default.MusicNote,
-                    bg = theme.libraryCard.bg,
+                    primaryColor = Color(0xFF2555B4),
+                    highlightColor = Color(0xFF4C82F7),
+                    deepColor = Color(0xFF153375),
                     modifier = Modifier.weight(1f),
                     tag = "card_library",
                     onClick = { onSelectView(ActiveView.LIBRARY) }
                 )
-                CategoryCard(
-                    title = "FOLDER",
-                    count = folderCount,
-                    icon = Icons.Default.Folder,
-                    bg = theme.folderCard.bg,
+
+                // 2. VIDEO (Terracotta / Warm Amber Gem - Replaces Folder)
+                BeveledGemCard(
+                    title = "VIDEO",
+                    icon = Icons.Default.VideoLibrary,
+                    primaryColor = Color(0xFFBF5B3A),
+                    highlightColor = Color(0xFFDE7C5B),
+                    deepColor = Color(0xFF8C381E),
                     modifier = Modifier.weight(1f),
-                    tag = "card_folder",
-                    onClick = { onSelectView(ActiveView.FOLDER) }
+                    tag = "card_video_player",
+                    onClick = { onSelectView(ActiveView.VIDEOS) }
                 )
-                CategoryCard(
+
+                // 3. FAVORITE (Rose Ruby Gem)
+                BeveledGemCard(
                     title = "FAVORITE",
-                    count = favoriteCount,
                     icon = Icons.Default.Favorite,
-                    bg = theme.favoriteCard.bg,
+                    primaryColor = Color(0xFFBE2A56),
+                    highlightColor = Color(0xFFE84D7B),
+                    deepColor = Color(0xFF831838),
                     modifier = Modifier.weight(1f),
                     tag = "card_favorite",
                     onClick = { onSelectView(ActiveView.FAVORITE) }
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                CategoryCard(
-                    title = "RECENT PLAY",
-                    count = effectiveRecentPlayCount,
-                    icon = Icons.Default.History,
-                    bg = theme.recentPlayCard.bg,
+                // 4. FOLDER (Jade Emerald Gem - Replaces Recent Play)
+                BeveledGemCard(
+                    title = "FOLDER",
+                    icon = Icons.Default.Folder,
+                    primaryColor = Color(0xFF2E7D5B),
+                    highlightColor = Color(0xFF4FA87F),
+                    deepColor = Color(0xFF1B4E38),
                     modifier = Modifier.weight(1f),
-                    tag = "card_recent_play",
-                    onClick = { onSelectView(ActiveView.RECENT_PLAY) }
+                    tag = "card_folder",
+                    onClick = { onSelectView(ActiveView.FOLDER) }
                 )
-                CategoryCard(
+
+                // 5. RECENT ADD (Deep Cyan / Teal Gem)
+                BeveledGemCard(
                     title = "RECENT ADD",
-                    count = recentAddCount,
                     icon = Icons.Default.PlaylistAddCheck,
-                    bg = theme.recentAddCard.bg,
+                    primaryColor = Color(0xFF1A6B73),
+                    highlightColor = Color(0xFF33959F),
+                    deepColor = Color(0xFF104348),
                     modifier = Modifier.weight(1f),
                     tag = "card_recent_add",
                     onClick = { onSelectView(ActiveView.RECENT_ADD) }
                 )
-                CategoryCard(
+
+                // 6. MOST PLAY (Amethyst Purple Gem)
+                BeveledGemCard(
                     title = "MOST PLAY",
-                    count = effectiveMostPlayCount,
                     icon = Icons.Default.Equalizer,
-                    bg = theme.mostPlayCard.bg,
+                    primaryColor = Color(0xFF6B3A82),
+                    highlightColor = Color(0xFF9857B8),
+                    deepColor = Color(0xFF421C55),
                     modifier = Modifier.weight(1f),
                     tag = "card_most_play",
                     onClick = { onSelectView(ActiveView.MOST_PLAY) }
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // Decorative Analog Audio Patch Cables connecting Cards to Studio Tools
+            AnalogPatchCables(modifier = Modifier.fillMaxWidth().height(22.dp))
 
-            // STUDIO TOOLS SECTION (Matching Image 1)
+            // ==========================================
+            // STUDIO TOOLS RACK SECTION (EXACT PICTURE MATCH)
+            // ==========================================
             Row(
-                modifier = Modifier.padding(start = 2.dp, bottom = 6.dp),
+                modifier = Modifier.padding(start = 2.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -286,100 +250,129 @@ fun HomeScreen(
                     modifier = Modifier
                         .size(4.dp, 16.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(theme.accentColor)
+                        .background(Color(0xFF22C55E))
                 )
                 Text(
                     text = "STUDIO TOOLS",
                     color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.2.sp
                 )
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            // Integrated Hardware Audio Rack Console (Brushed Metal Enclosure)
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .border(1.5.dp, Color(0xFF3A3F4D), RoundedCornerShape(16.dp))
+                    .shadow(8.dp, RoundedCornerShape(16.dp)),
+                color = Color(0xFF181B22),
+                shape = RoundedCornerShape(16.dp)
             ) {
-                StudioToolCard(
-                    title = "Music Trim",
-                    subtitle = "Ringtone, Alarm & Cutter",
-                    badge = "TRIM",
-                    icon = Icons.Default.ContentCut,
-                    iconTint = theme.accentColor,
-                    badgeBg = theme.accentColor.copy(alpha = 0.20f),
-                    badgeText = theme.accentColor,
-                    cardBg = theme.sidebarBg.copy(alpha = 0.70f),
-                    cardBorder = Color.White.copy(alpha = 0.10f),
-                    textColor = Color.White,
-                    subtextColor = Color(0xFF8E8E93),
-                    modifier = Modifier.weight(1f),
-                    tag = "card_music_trim",
-                    onClick = onOpenMusicTrim
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color(0xFF20242D),
+                                    Color(0xFF16181E),
+                                    Color(0xFF121419)
+                                )
+                            )
+                        )
+                ) {
+                    // Corner Mounting Screws on Rack Console
+                    Canvas(modifier = Modifier.matchParentSize()) {
+                        val screwColor = Color(0xFF4B5563)
+                        val slotColor = Color(0xFF1E242C)
+                        val radius = 4.dp.toPx()
 
-                StudioToolCard(
-                    title = "Karaoke Mode",
-                    subtitle = "Vocal Remover & Synced Lyrics",
-                    badge = "AI VOCAL",
-                    icon = Icons.Default.Mic,
-                    iconTint = Color(0xFFFB7185),
-                    badgeBg = Color(0xFFF43F5E).copy(alpha = 0.20f),
-                    badgeText = Color(0xFFFDA4AF),
-                    cardBg = theme.sidebarBg.copy(alpha = 0.70f),
-                    cardBorder = Color.White.copy(alpha = 0.10f),
-                    textColor = Color.White,
-                    subtextColor = Color(0xFF8E8E93),
-                    modifier = Modifier.weight(1f),
-                    tag = "card_karaoke_studio",
-                    onClick = onOpenKaraoke
-                )
+                        // 4 Corner screws
+                        val points = listOf(
+                            Offset(12.dp.toPx(), 12.dp.toPx()),
+                            Offset(size.width - 12.dp.toPx(), 12.dp.toPx()),
+                            Offset(12.dp.toPx(), size.height - 12.dp.toPx()),
+                            Offset(size.width - 12.dp.toPx(), size.height - 12.dp.toPx()),
+                            // Center divider screws
+                            Offset(size.width / 2f, 8.dp.toPx()),
+                            Offset(size.width / 2f, size.height - 8.dp.toPx())
+                        )
+
+                        points.forEach { p ->
+                            drawCircle(color = screwColor, radius = radius, center = p)
+                            drawLine(
+                                color = slotColor,
+                                start = Offset(p.x - radius * 0.7f, p.y),
+                                end = Offset(p.x + radius * 0.7f, p.y),
+                                strokeWidth = 1.5.dp.toPx()
+                            )
+                        }
+
+                        // Subtle Divider Lines between 4 modules
+                        drawLine(
+                            color = Color(0xFF2D323E),
+                            start = Offset(size.width / 2f, 0f),
+                            end = Offset(size.width / 2f, size.height),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                        drawLine(
+                            color = Color(0xFF2D323E),
+                            start = Offset(0f, size.height / 2f),
+                            end = Offset(size.width, size.height / 2f),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                    ) {
+                        // Top Row: Music Trim & Karaoke Mode
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Module 1: Music Trim
+                            Box(modifier = Modifier.weight(1f)) {
+                                StudioMusicTrimModule(onClick = onOpenMusicTrim)
+                            }
+
+                            // Module 2: Karaoke Mode
+                            Box(modifier = Modifier.weight(1f)) {
+                                StudioKaraokeModule(onClick = onOpenKaraoke)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Bottom Row: Music Bass & Sound Equalizer
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Module 3: Music Bass
+                            Box(modifier = Modifier.weight(1f)) {
+                                StudioMusicBassModule(onClick = onOpenMusicBass)
+                            }
+
+                            // Module 4: Sound Equalizer
+                            Box(modifier = Modifier.weight(1f)) {
+                                StudioSoundEqualizerModule(onClick = onOpenEqualizer)
+                            }
+                        }
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                StudioToolCard(
-                    title = "Music Bass",
-                    subtitle = "Deep Bass Boost & Subwoofer",
-                    badge = "BASS BOOST",
-                    icon = Icons.Default.GraphicEq,
-                    iconTint = Color(0xFFFBBF24),
-                    badgeBg = Color(0xFFF59E0B).copy(alpha = 0.20f),
-                    badgeText = Color(0xFFFDE68A),
-                    cardBg = theme.sidebarBg.copy(alpha = 0.70f),
-                    cardBorder = Color.White.copy(alpha = 0.10f),
-                    textColor = Color.White,
-                    subtextColor = Color(0xFF8E8E93),
-                    modifier = Modifier.weight(1f),
-                    tag = "card_music_bass",
-                    onClick = onOpenMusicBass
-                )
-
-                StudioToolCard(
-                    title = "Sound Equalizer",
-                    subtitle = "Bass Boost, 3D Sound & Presets",
-                    badge = "10-BAND EQ",
-                    icon = Icons.Default.Tune,
-                    iconTint = Color(0xFFC084FC),
-                    badgeBg = Color(0xFFA855F7).copy(alpha = 0.20f),
-                    badgeText = Color(0xFFE9D5FF),
-                    cardBg = theme.sidebarBg.copy(alpha = 0.70f),
-                    cardBorder = Color.White.copy(alpha = 0.10f),
-                    textColor = Color.White,
-                    subtextColor = Color(0xFF8E8E93),
-                    modifier = Modifier.weight(1f),
-                    tag = "card_sound_equalizer",
-                    onClick = onOpenEqualizer
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // PLAYLISTS SECTION (Matching Image 1)
+            // ==========================================
+            // PLAYLISTS SECTION (MATCHING THE PICTURE)
+            // ==========================================
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -394,14 +387,14 @@ fun HomeScreen(
                         modifier = Modifier
                             .size(4.dp, 16.dp)
                             .clip(RoundedCornerShape(2.dp))
-                            .background(theme.accentColor)
+                        .background(Color(0xFF22C55E))
                     )
                     Text(
                         text = "PLAYLISTS",
                         color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 1.2.sp
                     )
                 }
 
@@ -415,201 +408,442 @@ fun HomeScreen(
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "New Playlist",
-                        tint = theme.accentColor,
+                        tint = Color(0xFF22C55E),
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "NEW PLAYLIST",
-                        color = theme.accentColor,
+                        color = Color(0xFF22C55E),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
 
-            val homePlaylists = playlists.take(2)
-            if (homePlaylists.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    homePlaylists.forEach { pl ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(theme.sidebarBg.copy(alpha = 0.70f))
-                                .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(14.dp))
-                                .clickable { onSelectPlaylist(pl.id) }
-                                .padding(horizontal = 12.dp)
-                                .testTag("home_playlist_${pl.id}"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                modifier = Modifier.weight(1f),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(theme.accentColor.copy(alpha = 0.20f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.QueueMusic,
-                                        contentDescription = null,
-                                        tint = theme.accentColor,
-                                        modifier = Modifier.size(17.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = pl.name,
-                                        color = Color.White,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "${pl.trackIds.size} songs",
-                                        color = theme.textSecondary,
-                                        fontSize = 10.5.sp
-                                    )
-                                }
-                            }
+            Spacer(modifier = Modifier.height(8.dp))
 
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = theme.textSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
+            // Playlist Items
+            val displayPlaylists = if (playlists.isNotEmpty()) {
+                playlists.take(2)
+            } else {
+                listOf(
+                    Playlist(id = "default_list", name = "Default list", trackIds = emptyList()),
+                    Playlist(id = "gym_energy", name = "Gym & High Energy", trackIds = emptyList())
+                )
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                displayPlaylists.forEach { pl ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF14171E).copy(alpha = 0.85f))
+                            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                            .clickable { onSelectPlaylist(pl.id) }
+                            .padding(horizontal = 14.dp)
+                            .testTag("home_playlist_${pl.id}"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF22C55E).copy(alpha = 0.18f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.QueueMusic,
+                                    contentDescription = null,
+                                    tint = Color(0xFF22C55E),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = pl.name,
+                                    color = Color.White,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "${pl.trackIds.size} songs",
+                                    color = Color(0xFF8E8E93),
+                                    fontSize = 11.sp
+                                )
+                            }
                         }
+
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = Color(0xFF22C55E),
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
             }
 
-            // Bottom breathing spacer for scroll clearance over FAB and MiniPlayer
-            Spacer(modifier = Modifier.height(76.dp))
+            // Bottom breathing clearance for FAB
+            Spacer(modifier = Modifier.height(90.dp))
         }
 
-        // Floating Action Button (Shuffle All)
+        // Vibrant Green Shuffle All Floating Action Button (Matching the picture)
         if (showShuffleButton) {
             FloatingActionButton(
                 onClick = onShuffleAll,
-                containerColor = theme.accentColor,
-                contentColor = Color.White,
+                containerColor = Color(0xFF22C55E),
+                contentColor = Color.Black,
                 shape = CircleShape,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(bottom = 16.dp, end = 16.dp)
-                    .size(54.dp)
+                    .padding(bottom = 20.dp, end = 20.dp)
+                    .size(56.dp)
                     .testTag("btn_fab_shuffle_all")
             ) {
                 Icon(
                     imageVector = Icons.Default.Shuffle,
                     contentDescription = "Shuffle playback",
-                    modifier = Modifier.size(24.dp)
+                    tint = Color.White,
+                    modifier = Modifier.size(26.dp)
                 )
             }
         }
     }
 }
 
+/**
+ * 3D Faceted Crystal Gemstone Button (matching the picture exactly)
+ * Features faceted bevels, vibrant jewel tone gradients, crystal highlights, and NO counter numbers.
+ */
 @Composable
-private fun CategoryCard(
+private fun BeveledGemCard(
     title: String,
-    count: Int,
     icon: ImageVector,
-    bg: Color,
+    primaryColor: Color,
+    highlightColor: Color,
+    deepColor: Color,
     modifier: Modifier = Modifier,
     tag: String,
     onClick: () -> Unit
 ) {
     Surface(
         modifier = modifier
-            .height(98.dp)
+            .height(84.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .shadow(6.dp, RoundedCornerShape(16.dp))
             .testTag(tag),
         shape = RoundedCornerShape(16.dp),
-        color = bg,
-        shadowElevation = 2.dp,
-        onClick = onClick
+        color = Color.Transparent
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 4.dp, vertical = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        Box(
+            modifier = Modifier.fillMaxSize()
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = Color.White,
-                modifier = Modifier.size(28.dp)
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = title,
-                color = Color.White,
-                fontSize = 10.5.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 0.5.sp,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = count.toString(),
-                color = Color.White.copy(alpha = 0.92f),
-                fontSize = 11.5.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                maxLines = 1
-            )
+            // Faceted Jewel Canvas
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val w = size.width
+                val h = size.height
+                val bevel = 8.dp.toPx()
+
+                // 1. Base Dark Shadow Facet
+                drawRoundRect(
+                    color = deepColor,
+                    size = size,
+                    cornerRadius = CornerRadius(16.dp.toPx())
+                )
+
+                // 2. Beveled Faceted Top-Left Highlight
+                val highlightPath = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(w, 0f)
+                    lineTo(w - bevel, bevel)
+                    lineTo(bevel, bevel)
+                    lineTo(bevel, h - bevel)
+                    lineTo(0f, h)
+                    close()
+                }
+                drawPath(
+                    path = highlightPath,
+                    brush = Brush.linearGradient(
+                        colors = listOf(highlightColor.copy(alpha = 0.85f), highlightColor.copy(alpha = 0.3f)),
+                        start = Offset(0f, 0f),
+                        end = Offset(w, h)
+                    )
+                )
+
+                // 3. Center Raised Gem Facet
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(primaryColor, deepColor),
+                        startY = bevel,
+                        endY = h - bevel
+                    ),
+                    topLeft = Offset(bevel, bevel),
+                    size = Size(w - bevel * 2, h - bevel * 2),
+                    cornerRadius = CornerRadius(10.dp.toPx())
+                )
+
+                // 4. Crystal Sheen Diagonal Reflection
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color.White.copy(alpha = 0.35f), Color.Transparent),
+                        center = Offset(w * 0.35f, h * 0.25f),
+                        radius = w * 0.45f
+                    ),
+                    radius = w * 0.45f,
+                    center = Offset(w * 0.35f, h * 0.25f)
+                )
+            }
+
+            // Center Content: Iconic Symbol + Capitalized Label (NO numbers)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = Color.White,
+                    modifier = Modifier.size(26.dp)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = title,
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 0.8.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
 
+/**
+ * Decorative Audio Patch Cables connecting the gems down to the Studio Tools rack
+ */
 @Composable
-private fun StudioToolCard(
-    title: String,
-    subtitle: String,
-    badge: String,
-    icon: ImageVector,
-    iconTint: Color,
-    badgeBg: Color,
-    badgeText: Color,
-    cardBg: Color,
-    cardBorder: Color,
-    textColor: Color,
-    subtextColor: Color,
-    modifier: Modifier = Modifier,
-    tag: String,
-    onClick: () -> Unit
-) {
+private fun AnalogPatchCables(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+
+        val wireColor1 = Color(0xFF2D3748)
+        val wireColor2 = Color(0xFF1F2937)
+        val jackColor = Color(0xFF4A5568)
+
+        // Draw 3 subtle curved hanging cables
+        val path1 = Path().apply {
+            moveTo(w * 0.22f, 0f)
+            cubicTo(w * 0.25f, h * 0.9f, w * 0.45f, h * 0.9f, w * 0.48f, h)
+        }
+        drawPath(path1, color = wireColor1, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
+
+        val path2 = Path().apply {
+            moveTo(w * 0.5f, 0f)
+            cubicTo(w * 0.52f, h * 0.8f, w * 0.50f, h * 0.8f, w * 0.52f, h)
+        }
+        drawPath(path2, color = wireColor2, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
+
+        val path3 = Path().apply {
+            moveTo(w * 0.78f, 0f)
+            cubicTo(w * 0.75f, h * 0.9f, w * 0.55f, h * 0.9f, w * 0.52f, h)
+        }
+        drawPath(path3, color = wireColor1, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
+
+        // Small jack terminals at bottom
+        drawCircle(color = jackColor, radius = 3.dp.toPx(), center = Offset(w * 0.48f, h - 2.dp.toPx()))
+        drawCircle(color = jackColor, radius = 3.dp.toPx(), center = Offset(w * 0.52f, h - 2.dp.toPx()))
+    }
+}
+
+/**
+ * Studio Tool 1: "Music Trim" (Matching Picture Top-Left)
+ */
+@Composable
+private fun StudioMusicTrimModule(onClick: () -> Unit) {
     Surface(
-        modifier = modifier
-            .height(78.dp)
-            .testTag(tag),
-        shape = RoundedCornerShape(16.dp),
-        color = cardBg,
-        border = androidx.compose.foundation.BorderStroke(1.dp, cardBorder),
-        shadowElevation = 2.dp,
-        onClick = onClick
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(94.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .border(1.dp, Color(0xFF2D323E), RoundedCornerShape(12.dp))
+            .testTag("card_music_trim"),
+        color = Color(0xFF14161C),
+        shape = RoundedCornerShape(12.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(10.dp),
+                .padding(8.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Scissor Icon Badge in Green
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF22C55E).copy(alpha = 0.22f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCut,
+                        contentDescription = null,
+                        tint = Color(0xFF22C55E),
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Recessed Audio Waveform LCD Display with Trimmer Handles & Time
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF0C0E14))
+                        .border(1.dp, Color(0xFF1E2330), RoundedCornerShape(6.dp))
+                ) {
+                    // Audio waveform & trim sliders
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val w = size.width
+                        val h = size.height
+                        val centerY = h / 2f
+
+                        // Green audio waveform peaks
+                        val barCount = 28
+                        val barWidth = (w - 20.dp.toPx()) / barCount
+                        val heights = listOf(
+                            0.2f, 0.4f, 0.7f, 0.5f, 0.9f, 0.6f, 0.8f, 0.95f, 0.75f, 0.85f,
+                            0.6f, 0.9f, 0.4f, 0.7f, 0.85f, 0.6f, 0.5f, 0.75f, 0.9f, 0.4f,
+                            0.6f, 0.8f, 0.5f, 0.3f, 0.7f, 0.5f, 0.4f, 0.2f
+                        )
+
+                        for (i in 0 until barCount) {
+                            val factor = heights[i % heights.size]
+                            val barH = (h * 0.75f) * factor
+                            val x = 10.dp.toPx() + i * barWidth
+                            drawLine(
+                                color = Color(0xFF22C55E).copy(alpha = 0.85f),
+                                start = Offset(x, centerY - barH / 2),
+                                end = Offset(x, centerY + barH / 2),
+                                strokeWidth = 1.8.dp.toPx()
+                            )
+                        }
+
+                        // Left trimmer bracket/handle
+                        val leftX = 14.dp.toPx()
+                        drawLine(
+                            color = Color.White,
+                            start = Offset(leftX, 3.dp.toPx()),
+                            end = Offset(leftX, h - 3.dp.toPx()),
+                            strokeWidth = 2.dp.toPx()
+                        )
+                        drawRoundRect(
+                            color = Color(0xFFE2E8F0),
+                            topLeft = Offset(leftX - 3.dp.toPx(), h / 2f - 4.dp.toPx()),
+                            size = Size(6.dp.toPx(), 8.dp.toPx()),
+                            cornerRadius = CornerRadius(2.dp.toPx())
+                        )
+
+                        // Right trimmer bracket/handle
+                        val rightX = w - 14.dp.toPx()
+                        drawLine(
+                            color = Color.White,
+                            start = Offset(rightX, 3.dp.toPx()),
+                            end = Offset(rightX, h - 3.dp.toPx()),
+                            strokeWidth = 2.dp.toPx()
+                        )
+                        drawRoundRect(
+                            color = Color(0xFFE2E8F0),
+                            topLeft = Offset(rightX - 3.dp.toPx(), h / 2f - 4.dp.toPx()),
+                            size = Size(6.dp.toPx(), 8.dp.toPx()),
+                            cornerRadius = CornerRadius(2.dp.toPx())
+                        )
+                    }
+
+                    // Digital time badge in bottom right of waveform LCD
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(bottom = 2.dp, end = 4.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(Color.Black.copy(alpha = 0.65f))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = "00:02:05",
+                            color = Color(0xFFA7F3D0),
+                            fontSize = 8.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            // Title below
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Music Trim",
+                    color = Color.White,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Studio Tool 2: "Karaoke Mode" (Matching Picture Top-Right)
+ */
+@Composable
+private fun StudioKaraokeModule(onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(94.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .border(1.dp, Color(0xFF2D323E), RoundedCornerShape(12.dp))
+            .testTag("card_karaoke_studio"),
+        color = Color(0xFF14161C),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
@@ -617,53 +851,394 @@ private fun StudioToolCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Microphone Icon Badge in Coral/Red
                 Box(
                     modifier = Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(badgeBg),
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFFE11D48).copy(alpha = 0.22f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = icon,
+                        imageVector = Icons.Default.Mic,
                         contentDescription = null,
-                        tint = iconTint,
-                        modifier = Modifier.size(17.dp)
+                        tint = Color(0xFFFB7185),
+                        modifier = Modifier.size(15.dp)
                     )
                 }
 
+                // "AI VOCAL" Pill Badge
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(badgeBg)
-                        .padding(horizontal = 6.dp, vertical = 2.5.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFFE11D48).copy(alpha = 0.22f))
+                        .border(1.dp, Color(0xFFE11D48).copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 8.dp, vertical = 2.5.dp)
                 ) {
                     Text(
-                        text = badge,
-                        color = badgeText,
+                        text = "AI VOCAL",
+                        color = Color(0xFFFDA4AF),
                         fontSize = 8.5.sp,
                         fontWeight = FontWeight.Black,
-                        letterSpacing = 0.4.sp
+                        letterSpacing = 0.5.sp
                     )
                 }
             }
 
             Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Karaoke Mode",
+                        color = Color.White,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Removal Level",
+                        color = Color(0xFF8E8E93),
+                        fontSize = 9.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Hardware VU-Meter / Gradient LED Level Bar with Brushed Slider Knob
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(14.dp)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(Color(0xFF0C0E14))
+                        .border(1.dp, Color(0xFF1E2330), RoundedCornerShape(7.dp))
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val w = size.width
+                        val h = size.height
+
+                        // Smooth gradient LED bar (Green -> Yellow -> Orange -> Red)
+                        val levelFrac = 0.72f
+                        drawRoundRect(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color(0xFF22C55E),
+                                    Color(0xFFFACC15),
+                                    Color(0xFFFB923C),
+                                    Color(0xFFEF4444)
+                                )
+                            ),
+                            size = Size(w * levelFrac, h),
+                            cornerRadius = CornerRadius(7.dp.toPx())
+                        )
+
+                        // Brushed Silver Fader Knob
+                        val knobX = w * levelFrac
+                        drawRoundRect(
+                            color = Color(0xFFE2E8F0),
+                            topLeft = Offset(knobX - 4.dp.toPx(), 1.dp.toPx()),
+                            size = Size(8.dp.toPx(), h - 2.dp.toPx()),
+                            cornerRadius = CornerRadius(3.dp.toPx())
+                        )
+                        drawLine(
+                            color = Color(0xFF475569),
+                            start = Offset(knobX, 3.dp.toPx()),
+                            end = Offset(knobX, h - 3.dp.toPx()),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Studio Tool 3: "Music Bass" (Matching Picture Bottom-Left)
+ */
+@Composable
+private fun StudioMusicBassModule(onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(94.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .border(1.dp, Color(0xFF2D323E), RoundedCornerShape(12.dp))
+            .testTag("card_music_bass"),
+        color = Color(0xFF14161C),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Amber Sound Waves Icon Badge
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFFF59E0B).copy(alpha = 0.22f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = null,
+                        tint = Color(0xFFFBBF24),
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+
                 Text(
-                    text = title,
-                    color = textColor,
+                    text = "Music Bass",
+                    color = Color.White,
                     fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(1.dp))
+            }
+
+            // Realistic Rotary Audio Potentiometer Dial Knob
+            Box(
+                modifier = Modifier
+                    .size(68.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val center = Offset(size.width / 2f, size.height / 2f)
+                    val outerRadius = size.width / 2f - 2.dp.toPx()
+                    val knobRadius = outerRadius * 0.68f
+
+                    // Outer Scale Tick Marks
+                    val totalTicks = 24
+                    val startAngle = 135f
+                    val sweepAngle = 270f
+                    for (i in 0..totalTicks) {
+                        val angleDeg = startAngle + (i.toFloat() / totalTicks) * sweepAngle
+                        val angleRad = Math.toRadians(angleDeg.toDouble())
+                        val r1 = outerRadius - 3.dp.toPx()
+                        val r2 = outerRadius
+                        val p1 = Offset(
+                            (center.x + r1 * cos(angleRad)).toFloat(),
+                            (center.y + r1 * sin(angleRad)).toFloat()
+                        )
+                        val p2 = Offset(
+                            (center.x + r2 * cos(angleRad)).toFloat(),
+                            (center.y + r2 * sin(angleRad)).toFloat()
+                        )
+                        drawLine(
+                            color = if (i > 14) Color(0xFFF59E0B) else Color(0xFF64748B),
+                            start = p1,
+                            end = p2,
+                            strokeWidth = 1.2.dp.toPx()
+                        )
+                    }
+
+                    // Rotary Knob Body (Brushed Dark Metallic with Drop Shadow)
+                    drawCircle(
+                        color = Color(0xFF0F1116),
+                        radius = knobRadius + 2.dp.toPx(),
+                        center = center
+                    )
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(Color(0xFF2C3240), Color(0xFF161922)),
+                            center = center,
+                            radius = knobRadius
+                        ),
+                        radius = knobRadius,
+                        center = center
+                    )
+                    drawCircle(
+                        color = Color(0xFF3E4554),
+                        radius = knobRadius,
+                        center = center,
+                        style = Stroke(width = 1.dp.toPx())
+                    )
+
+                    // Indicator Notch Line (pointing to +6dB ~ 60 degrees from start)
+                    val indicatorAngleDeg = 240f
+                    val indicatorRad = Math.toRadians(indicatorAngleDeg.toDouble())
+                    val notchInner = Offset(
+                        (center.x + (knobRadius * 0.45f) * cos(indicatorRad)).toFloat(),
+                        (center.y + (knobRadius * 0.45f) * sin(indicatorRad)).toFloat()
+                    )
+                    val notchOuter = Offset(
+                        (center.x + (knobRadius * 0.9f) * cos(indicatorRad)).toFloat(),
+                        (center.y + (knobRadius * 0.9f) * sin(indicatorRad)).toFloat()
+                    )
+                    drawLine(
+                        color = Color(0xFFF59E0B),
+                        start = notchInner,
+                        end = notchOuter,
+                        strokeWidth = 2.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+                }
+
+                // Digital center readout: "+6 dB Boost"
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "+6 dB",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Text(
+                        text = "Boost",
+                        color = Color(0xFF8E8E93),
+                        fontSize = 6.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Studio Tool 4: "Sound Equalizer" (Matching Picture Bottom-Right)
+ */
+@Composable
+private fun StudioSoundEqualizerModule(onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(94.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .border(1.dp, Color(0xFF2D323E), RoundedCornerShape(12.dp))
+            .testTag("card_sound_equalizer"),
+        color = Color(0xFF14161C),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Purple Tune Icon Badge
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFFA855F7).copy(alpha = 0.22f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = null,
+                        tint = Color(0xFFC084FC),
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+
+                // Mini Spectrum Visualizer + "10-BAND EQ" Pill
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF0F1116))
+                        .border(1.dp, Color(0xFF2D323E), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    // 5-bar glowing spectrum
+                    Canvas(modifier = Modifier.size(18.dp, 10.dp)) {
+                        val heights = listOf(0.4f, 0.7f, 1.0f, 0.6f, 0.8f)
+                        val barW = size.width / heights.size
+                        heights.forEachIndexed { idx, h ->
+                            drawLine(
+                                color = Color(0xFFC084FC),
+                                start = Offset(idx * barW + 1.dp.toPx(), size.height),
+                                end = Offset(idx * barW + 1.dp.toPx(), size.height * (1f - h)),
+                                strokeWidth = 1.5.dp.toPx()
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "10-BAND EQ",
+                        color = Color(0xFFE9D5FF),
+                        fontSize = 7.5.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                }
+            }
+
+            // Hardware Graphic Equalizer Faders Display
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF0C0E14))
+                    .border(1.dp, Color(0xFF1E2330), RoundedCornerShape(6.dp))
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    val sliderCount = 7
+                    val spacing = w / (sliderCount + 1)
+                    val faderPositions = listOf(0.35f, 0.6f, 0.45f, 0.8f, 0.55f, 0.7f, 0.4f)
+
+                    for (i in 0 until sliderCount) {
+                        val x = spacing * (i + 1)
+                        // Vertical Groove Track
+                        drawLine(
+                            color = Color(0xFF232834),
+                            start = Offset(x, 4.dp.toPx()),
+                            end = Offset(x, h - 4.dp.toPx()),
+                            strokeWidth = 2.dp.toPx(),
+                            cap = StrokeCap.Round
+                        )
+
+                        // Brushed Silver Fader Cap
+                        val pos = faderPositions[i]
+                        val knobY = 4.dp.toPx() + (h - 8.dp.toPx()) * (1f - pos)
+                        drawRoundRect(
+                            color = Color(0xFFCBD5E1),
+                            topLeft = Offset(x - 4.5.dp.toPx(), knobY - 2.5.dp.toPx()),
+                            size = Size(9.dp.toPx(), 5.dp.toPx()),
+                            cornerRadius = CornerRadius(1.5.dp.toPx())
+                        )
+                        drawLine(
+                            color = Color(0xFF334155),
+                            start = Offset(x - 3.dp.toPx(), knobY),
+                            end = Offset(x + 3.dp.toPx(), knobY),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                    }
+                }
+            }
+
+            // Title below
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = subtitle,
-                    color = subtextColor,
-                    fontSize = 9.5.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    text = "Sound Equalizer",
+                    color = Color.White,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }

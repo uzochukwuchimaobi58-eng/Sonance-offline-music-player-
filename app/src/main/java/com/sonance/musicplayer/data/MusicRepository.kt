@@ -296,7 +296,7 @@ class MusicRepository(private val context: Context) {
     private val _settings = MutableStateFlow(PlayerSettings())
     val settings: StateFlow<PlayerSettings> = _settings.asStateFlow()
 
-    private val _currentTheme = MutableStateFlow(AppTheme.NATURE_FLOWER)
+    private val _currentTheme = MutableStateFlow(AppTheme.DARK_AMOLED)
     val currentTheme: StateFlow<AppTheme> = _currentTheme.asStateFlow()
 
     private val _unlockedThemeIds = MutableStateFlow<Set<String>>(emptySet())
@@ -696,11 +696,11 @@ class MusicRepository(private val context: Context) {
             }
 
             // Load Theme & Unlocked Themes
-            val themeStr = prefs.getString("app_theme", AppTheme.NATURE_FLOWER.idStr)
-            val matchingTheme = if (themeStr == AppTheme.DARK_AMOLED.idStr || themeStr == null) {
-                AppTheme.NATURE_FLOWER
+            val themeStr = prefs.getString("app_theme", AppTheme.DARK_AMOLED.idStr)
+            val matchingTheme = if (themeStr == null || themeStr == "nature-flower") {
+                AppTheme.DARK_AMOLED
             } else {
-                AppTheme.entries.find { it.idStr == themeStr } ?: AppTheme.NATURE_FLOWER
+                AppTheme.entries.find { it.idStr == themeStr } ?: AppTheme.DARK_AMOLED
             }
             _currentTheme.value = matchingTheme
             val savedUnlocked = prefs.getStringSet("unlocked_themes", emptySet()) ?: emptySet()

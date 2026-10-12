@@ -74,7 +74,8 @@ enum class ActiveView {
     MOST_PLAY,
     PLAYLIST_DETAIL,
     DRIVE_MODE,
-    LYRICS_MODE
+    LYRICS_MODE,
+    VIDEOS
 }
 
 @Serializable

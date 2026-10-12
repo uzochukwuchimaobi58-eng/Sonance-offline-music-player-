@@ -302,6 +302,7 @@ class MainActivity : ComponentActivity() {
                         ActiveView.MOST_PLAY -> "Most Played"
                         ActiveView.DRIVE_MODE -> "Drive Mode"
                         ActiveView.LYRICS_MODE -> "Lyrics"
+                        ActiveView.VIDEOS -> "Video"
                         ActiveView.PLAYLIST_DETAIL -> {
                             val pl = playlists.find { it.id == activePlaylistId }
                             pl?.name ?: "Playlist"
@@ -331,6 +332,7 @@ class MainActivity : ComponentActivity() {
                         ActiveView.FOLDER -> musicOnlyTracks
                         ActiveView.DRIVE_MODE -> musicOnlyTracks
                         ActiveView.LYRICS_MODE -> musicOnlyTracks
+                        ActiveView.VIDEOS -> emptyList()
                         ActiveView.FAVORITE -> musicOnlyTracks.filter { it.isFavorite }
                         ActiveView.RECENT_PLAY -> {
                             val recentIds = playbackManager.store.recent()
@@ -473,38 +475,41 @@ class MainActivity : ComponentActivity() {
                                 )
                             },
                             bottomBar = {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(theme.miniPlayerBg.copy(alpha = 0.92f))
-                                        .navigationBarsPadding()
-                                ) {
-                                    // Mini Player (Lifted on top of AdMobBanner)
-                                    AnimatedVisibility(
-                                        visible = currentTrack != null,
-                                        enter = slideInVertically(initialOffsetY = { it }),
-                                        exit = slideOutVertically(targetOffsetY = { it })
+                                // Exclude current music playing that was displaying down when on Home or Videos as requested
+                                if (activeView != ActiveView.HOME && activeView != ActiveView.VIDEOS) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(theme.miniPlayerBg.copy(alpha = 0.92f))
+                                            .navigationBarsPadding()
                                     ) {
-                                        MiniPlayerBar(
-                                            track = currentTrack,
-                                            isPlaying = isPlaying,
-                                            currentPosMs = currentPosMs,
-                                            durationMs = durationMs,
-                                            onTogglePlay = { playbackManager.togglePlayPause() },
-                                            onNext = { playbackManager.skipToNext() },
-                                            onOpenQueue = { isQueueOpen = true },
-                                            onOpenFullPlayer = { isFullPlayerOpen = true },
+                                        // Mini Player (Lifted on top of AdMobBanner)
+                                        AnimatedVisibility(
+                                            visible = currentTrack != null,
+                                            enter = slideInVertically(initialOffsetY = { it }),
+                                            exit = slideOutVertically(targetOffsetY = { it })
+                                        ) {
+                                            MiniPlayerBar(
+                                                track = currentTrack,
+                                                isPlaying = isPlaying,
+                                                currentPosMs = currentPosMs,
+                                                durationMs = durationMs,
+                                                onTogglePlay = { playbackManager.togglePlayPause() },
+                                                onNext = { playbackManager.skipToNext() },
+                                                onOpenQueue = { isQueueOpen = true },
+                                                onOpenFullPlayer = { isFullPlayerOpen = true },
+                                                theme = theme
+                                            )
+                                        }
+
+                                        // AdMob Banner (positioned under the playing music bar at area 2)
+                                        AdMobBanner(
+                                            isPro = isProEffective,
+                                            admobEnabled = remoteSettings.admobEnabled,
+                                            onOpenProUpgrade = { isProUpgradeOpen = true },
                                             theme = theme
                                         )
                                     }
-
-                                    // AdMob Banner (positioned under the playing music bar at area 2)
-                                    AdMobBanner(
-                                        isPro = isProEffective,
-                                        admobEnabled = remoteSettings.admobEnabled,
-                                        onOpenProUpgrade = { isProUpgradeOpen = true },
-                                        theme = theme
-                                    )
                                 }
                             },
                             containerColor = Color.Transparent
@@ -528,6 +533,9 @@ class MainActivity : ComponentActivity() {
                                     mostPlayCount = musicOnlyTracks.count { it.playCount > 0 },
                                     onSelectView = { selected ->
                                         when (selected) {
+                                            ActiveView.VIDEOS -> {
+                                                navigateTo(ActiveView.VIDEOS)
+                                            }
                                             ActiveView.RECENT_ADD,
                                             ActiveView.MOST_PLAY,
                                             ActiveView.RECENT_PLAY,
@@ -568,6 +576,16 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onToggleFavorite = { trId ->
                                         repository.toggleFavorite(trId)
+                                    }
+                                )
+                            } else if (activeView == ActiveView.VIDEOS) {
+                                VideoPlayerScreen(
+                                    theme = theme,
+                                    onBack = { handleBack() },
+                                    onPauseMusic = {
+                                        if (playbackManager.isPlaying.value) {
+                                            playbackManager.togglePlayPause()
+                                        }
                                     }
                                 )
                             } else {
@@ -706,7 +724,8 @@ class MainActivity : ComponentActivity() {
                     isPro = isProEffective,
                     onOpenPro = { isProUpgradeOpen = true },
                     customWallpaperUri = customWallpaperUri,
-                    theme = theme
+                    theme = theme,
+                    onOpenVideos = { navigateTo(ActiveView.VIDEOS) }
                 )
 
                 // Full Screen Player Sheet

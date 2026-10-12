@@ -52,7 +52,8 @@ fun SidebarDrawer(
     isPro: Boolean = false,
     onOpenPro: () -> Unit = {},
     customWallpaperUri: String? = null,
-    theme: ThemeConfig
+    theme: ThemeConfig,
+    onOpenVideos: () -> Unit = {}
 ) {
     if (!isOpen) return
 
@@ -202,6 +203,16 @@ fun SidebarDrawer(
                             }
                         }
                     }
+
+                    // Video
+                    SidebarItem(
+                        icon = Icons.Default.VideoLibrary,
+                        title = "Video",
+                        iconColor = Color(0xFF22C55E),
+                        onClick = { onClose(); onOpenVideos() },
+                        tag = "menu_video_player",
+                        theme = theme
+                    )
 
                     // Web Browser
                     SidebarItem(
