@@ -90,7 +90,6 @@ fun VideoPlayerScreen(
     val videos by videoRepo.videos.collectAsState()
     val isScanning by videoRepo.isScanning.collectAsState()
 
-    var searchQuery by remember { mutableStateOf("") }
     var activeVideoIndex by remember { mutableIntStateOf(0) }
     var trimmingVideo by remember { mutableStateOf<VideoItem?>(null) }
     var detailsVideo by remember { mutableStateOf<VideoItem?>(null) }
@@ -125,10 +124,12 @@ fun VideoPlayerScreen(
         }
     }
 
+    var hasSelectedVideo by remember { mutableStateOf(false) }
+
     // Single persistent ExoPlayer instance with proper audio attributes and focus handling
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
-            playWhenReady = true
+            playWhenReady = false
             setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -139,11 +140,11 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Keep active video synchronized with playlist
-    val activeVideo = remember(videos, activeVideoIndex) {
-        if (videos.isNotEmpty() && activeVideoIndex in videos.indices) {
+    // Keep active video synchronized with playlist only when user has selected a video
+    val activeVideo = remember(videos, activeVideoIndex, hasSelectedVideo) {
+        if (hasSelectedVideo && videos.isNotEmpty() && activeVideoIndex in videos.indices) {
             videos[activeVideoIndex]
-        } else videos.firstOrNull()
+        } else null
     }
 
     // Load full video playlist into ExoPlayer to ensure instant, seamless next/previous transitions
@@ -161,7 +162,7 @@ fun VideoPlayerScreen(
             }
             exoPlayer.setMediaItems(mediaItems, validIndex, currentPos)
             exoPlayer.prepare()
-            if (wasPlaying) exoPlayer.play()
+            if (hasSelectedVideo && wasPlaying) exoPlayer.play()
         }
     }
 
@@ -170,6 +171,7 @@ fun VideoPlayerScreen(
         if (videos.isEmpty()) return
         val targetIdx = index.coerceIn(0, videos.size - 1)
         activeVideoIndex = targetIdx
+        hasSelectedVideo = true
         onPauseMusic()
         exoPlayer.seekTo(targetIdx, 0L)
         exoPlayer.play()
@@ -303,7 +305,6 @@ fun VideoPlayerScreen(
             permissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
         }
         videoRepo.scanDeviceVideos()
-        onPauseMusic()
     }
 
     // Hardware back press handler
@@ -313,14 +314,14 @@ fun VideoPlayerScreen(
             trimmingVideo != null -> trimmingVideo = null
             detailsVideo != null -> detailsVideo = null
             isFullscreen -> isFullscreen = false
+            hasSelectedVideo -> {
+                exoPlayer.pause()
+                hasSelectedVideo = false
+            }
             else -> onBack()
         }
     }
 
-    val filteredVideos = remember(videos, searchQuery) {
-        if (searchQuery.isBlank()) videos
-        else videos.filter { it.title.contains(searchQuery, ignoreCase = true) }
-    }
 
     val formatTime: (Long) -> String = { ms ->
         val totalSec = (ms / 1000).coerceAtLeast(0)
@@ -967,8 +968,9 @@ fun VideoPlayerScreen(
                     }
                 }
 
-                // Embedded Responsive Video Player (16:9 frame)
-                Box(
+                // Embedded Responsive Video Player (16:9 frame) - Only displays when user selects a video
+                if (hasSelectedVideo && activeVideo != null) {
+                    Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(230.dp)
@@ -1102,6 +1104,20 @@ fun VideoPlayerScreen(
                                     ) {
                                         Icon(Icons.Default.Fullscreen, contentDescription = "Fullscreen", tint = Color.White, modifier = Modifier.size(18.dp))
                                     }
+
+                                    // Close Player Button
+                                    IconButton(
+                                        onClick = {
+                                            exoPlayer.pause()
+                                            hasSelectedVideo = false
+                                        },
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.Black.copy(alpha = 0.6f))
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Close player", tint = Color.White, modifier = Modifier.size(18.dp))
+                                    }
                                 }
                             }
 
@@ -1184,35 +1200,37 @@ fun VideoPlayerScreen(
                     }
                 }
 
-                // Currently Playing Video Info Card & Quick Tools
+                // Currently Playing Video Info Bar (Only displays when a video is selected and playing)
                 activeVideo?.let { curVideo ->
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         color = Color(0xFF10131B)
                     ) {
-                        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = curVideo.title,
-                                        color = Color.White,
-                                        fontSize = 14.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "${curVideo.resolution} • ${curVideo.formattedDuration} • ${curVideo.formattedSize} • Offline",
-                                        color = Color(0xFF22C55E),
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = curVideo.title,
+                                    color = Color.White,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "${curVideo.resolution} • ${curVideo.formattedDuration} • Offline",
+                                    color = Color(0xFF22C55E),
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
 
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 IconButton(
                                     onClick = { isFullscreen = true },
                                     modifier = Modifier
@@ -1222,157 +1240,26 @@ fun VideoPlayerScreen(
                                 ) {
                                     Icon(Icons.Default.Fullscreen, contentDescription = "Fullscreen", tint = Color(0xFF22C55E), modifier = Modifier.size(20.dp))
                                 }
-                            }
 
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            // Horizontal Tool Action Chips
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                item {
-                                    VideoToolChip(
-                                        icon = Icons.Default.AspectRatio,
-                                        label = screenSizeLabel,
-                                        isActive = true,
-                                        onClick = {
-                                            when (resizeMode) {
-                                                AspectRatioFrameLayout.RESIZE_MODE_FIT -> {
-                                                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                                    screenSizeLabel = "Zoom (Full)"
-                                                    showToastBadge("Screen Size: Zoom (Full)")
-                                                }
-                                                AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> {
-                                                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
-                                                    screenSizeLabel = "Stretch (Fill)"
-                                                    showToastBadge("Screen Size: Stretch (Fill)")
-                                                }
-                                                else -> {
-                                                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                                                    screenSizeLabel = "Fit (16:9)"
-                                                    showToastBadge("Screen Size: Fit (16:9)")
-                                                }
-                                            }
-                                        }
-                                    )
-                                }
-                                item {
-                                    VideoToolChip(
-                                        icon = Icons.Default.ScreenRotation,
-                                        label = if (autoRotateMode == 0) "Auto-Rotate" else "Landscape",
-                                        isActive = autoRotateMode == 0,
-                                        onClick = {
-                                            autoRotateMode = (autoRotateMode + 1) % 3
-                                            isFullscreen = true
-                                            showToastBadge(if (autoRotateMode == 0) "Auto-Rotate: ON" else "Landscape Mode")
-                                        }
-                                    )
-                                }
-                                item {
-                                    VideoToolChip(
-                                        icon = Icons.Default.ContentCut,
-                                        label = "Video Cutter",
-                                        isActive = false,
-                                        onClick = { trimmingVideo = curVideo }
-                                    )
-                                }
-                                item {
-                                    VideoToolChip(
-                                        icon = if (isLooping) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                                        label = if (isLooping) "Loop: ON" else "Loop: OFF",
-                                        isActive = isLooping,
-                                        onClick = {
-                                            isLooping = !isLooping
-                                            exoPlayer.repeatMode = if (isLooping) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
-                                            showToastBadge(if (isLooping) "Video Loop: ON" else "Video Loop: OFF")
-                                        }
-                                    )
-                                }
-                                item {
-                                    VideoToolChip(
-                                        icon = Icons.Default.Speed,
-                                        label = "${playbackSpeed}x Speed",
-                                        isActive = playbackSpeed != 1.0f,
-                                        onClick = {
-                                            playbackSpeed = when (playbackSpeed) {
-                                                1.0f -> 1.25f
-                                                1.25f -> 1.5f
-                                                1.5f -> 2.0f
-                                                2.0f -> 0.5f
-                                                0.5f -> 0.75f
-                                                else -> 1.0f
-                                            }
-                                            exoPlayer.setPlaybackSpeed(playbackSpeed)
-                                            showToastBadge("Speed: ${playbackSpeed}x")
-                                        }
-                                    )
-                                }
-                                item {
-                                    VideoToolChip(
-                                        icon = Icons.Default.Info,
-                                        label = "Details",
-                                        isActive = false,
-                                        onClick = { detailsVideo = curVideo }
-                                    )
+                                IconButton(
+                                    onClick = {
+                                        exoPlayer.pause()
+                                        hasSelectedVideo = false
+                                    },
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.08f))
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close player", tint = Color.White, modifier = Modifier.size(18.dp))
                                 }
                             }
                         }
                     }
                 }
+            }
 
-                // Section Header: "All Videos (${videos.size})" with Search Bar
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "All Videos (${filteredVideos.size})",
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Tap any video to watch",
-                        color = Color(0xFF8E8E93),
-                        fontSize = 11.5.sp
-                    )
-                }
-
-                // Search Bar
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search offline videos...", color = Color(0xFF8E8E93), fontSize = 13.sp) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF8E8E93), modifier = Modifier.size(18.dp)) },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color(0xFF8E8E93))
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF22C55E),
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
-                        focusedContainerColor = Color(0xFF141720),
-                        unfocusedContainerColor = Color(0xFF141720),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 4.dp)
-                        .height(50.dp)
-                        .testTag("input_search_videos")
-                )
-
-                if (isScanning) {
+            if (isScanning) {
                     LinearProgressIndicator(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1382,8 +1269,8 @@ fun VideoPlayerScreen(
                     )
                 }
 
-                // ALL VIDEOS LIST - Showing every video so user sees exactly what they can watch!
-                if (filteredVideos.isEmpty()) {
+                // ALL VIDEOS LIST - Showing vertical list till user plays any video
+                if (videos.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1404,8 +1291,8 @@ fun VideoPlayerScreen(
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        itemsIndexed(filteredVideos, key = { _, v -> v.id }) { index, itemVideo ->
-                            val isCurrentlyPlaying = (itemVideo.id == activeVideo?.id)
+                        itemsIndexed(videos, key = { _, v -> v.id }) { index, itemVideo ->
+                            val isCurrentlyPlaying = (hasSelectedVideo && itemVideo.id == activeVideo?.id)
                             VideoRowItem(
                                 video = itemVideo,
                                 isPlaying = isCurrentlyPlaying,
@@ -1447,45 +1334,6 @@ fun VideoPlayerScreen(
     }
 }
 
-/**
- * Quick Tool Action Chip with icon & label
- */
-@Composable
-private fun VideoToolChip(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    isActive: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = if (isActive) Color(0xFF22C55E).copy(alpha = 0.18f) else Color(0xFF181C26),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (isActive) Color(0xFF22C55E) else Color.White.copy(alpha = 0.12f)
-        ),
-        modifier = Modifier.clickable(onClick = onClick)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = if (isActive) Color(0xFF22C55E) else Color.White,
-                modifier = Modifier.size(15.dp)
-            )
-            Spacer(modifier = Modifier.width(5.dp))
-            Text(
-                text = label,
-                color = if (isActive) Color(0xFF22C55E) else Color.White,
-                fontSize = 11.5.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
 
 /**
  * Video Row Item with actual thumbnail, duration, resolution, "NOW PLAYING" indicator,

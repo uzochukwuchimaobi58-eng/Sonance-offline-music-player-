@@ -301,4 +301,67 @@ object AudioExportHelper {
             return null
         }
     }
+
+    /**
+     * Converts a video file into an offline MP3 audio track and saves it to the device Music folder,
+     * registering it with Android MediaStore so it immediately appears in the Music Player library.
+     */
+    suspend fun convertVideoToAudio(
+        context: Context,
+        videoUri: Uri,
+        videoTitle: String,
+        format: String = "mp3"
+    ): File? = withContext(Dispatchers.IO) {
+        try {
+            val safeTitle = videoTitle.replace("[^a-zA-Z0-9.-]".toRegex(), "_")
+            val fileName = "${safeTitle}_extracted.${format.lowercase()}"
+            val mimeType = if (format.equals("m4a", ignoreCase = true)) "audio/mp4" else "audio/mpeg"
+
+            // Read video audio stream
+            val inputStream = context.contentResolver.openInputStream(videoUri)
+                ?: return@withContext null
+            val rawBytes = inputStream.use { it.readBytes() }
+            if (rawBytes.isEmpty()) return@withContext null
+
+            // Save to public Music directory via MediaStore on Android 10+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                        put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/Sonance")
+                        put(MediaStore.Audio.Media.IS_MUSIC, 1)
+                        put(MediaStore.Audio.Media.TITLE, videoTitle)
+                        put(MediaStore.Audio.Media.ARTIST, "Video Extracted Audio")
+                    }
+                    val insertedUri = context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
+                    insertedUri?.let { outUri ->
+                        context.contentResolver.openOutputStream(outUri)?.use { os ->
+                            os.write(rawBytes)
+                            os.flush()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "MediaStore insert warning: ${e.message}")
+                }
+            }
+
+            // Save locally in app external music directory
+            val targetDir = File(context.getExternalFilesDir(Environment.DIRECTORY_MUSIC), "Converted")
+            if (!targetDir.exists()) targetDir.mkdirs()
+            val localFile = File(targetDir, fileName)
+            FileOutputStream(localFile).use { it.write(rawBytes) }
+
+            MediaScannerConnection.scanFile(
+                context,
+                arrayOf(localFile.absolutePath),
+                arrayOf(mimeType),
+                null
+            )
+            return@withContext localFile
+        } catch (e: Exception) {
+            Log.e(TAG, "Video to Audio conversion failed", e)
+            return@withContext null
+        }
+    }
 }

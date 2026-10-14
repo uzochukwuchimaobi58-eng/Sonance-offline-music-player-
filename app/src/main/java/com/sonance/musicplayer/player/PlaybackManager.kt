@@ -1061,8 +1061,12 @@ class PlaybackManager(
         if (_currentTrack.value != null) return
 
         val repo = repository ?: return
-        val lastTrackId = repo.getLastPlaybackTrackId() ?: return
-        val track = tracks.find { it.id == lastTrackId } ?: return
+        val lastTrackId = repo.getLastPlaybackTrackId()
+        val track = if (lastTrackId != null) {
+            tracks.find { it.id == lastTrackId } ?: tracks.firstOrNull()
+        } else {
+            tracks.firstOrNull()
+        } ?: return
         val lastPos = repo.getLastPlaybackPositionMs()
         val queueIds = repo.getLastQueueIds()
         val queueIdx = repo.getLastQueueIndex()

@@ -103,11 +103,6 @@ class VideoRepository(private val context: Context) {
             Log.e("VideoRepository", "Error scanning device videos", e)
         }
 
-        // If no offline videos exist on the physical device or emulator, provide offline sample showcase clips
-        if (videoList.isEmpty()) {
-            videoList.addAll(getSampleOfflineVideos())
-        }
-
         _videos.value = videoList
         _isScanning.value = false
     }
@@ -125,66 +120,6 @@ class VideoRepository(private val context: Context) {
             dateAdded = System.currentTimeMillis() / 1000
         )
         _videos.value = listOf(newItem) + _videos.value.filter { it.uri != uri }
-    }
-
-    private fun getSampleOfflineVideos(): List<VideoItem> {
-        return listOf(
-            VideoItem(
-                id = 1001L,
-                title = "Lo-Fi Beats & City Neon Lights",
-                path = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-                uri = Uri.parse("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"),
-                durationMs = 15000L,
-                sizeBytes = 15_400_000L,
-                width = 1920,
-                height = 1080,
-                dateAdded = System.currentTimeMillis() / 1000
-            ),
-            VideoItem(
-                id = 1002L,
-                title = "Acoustic Nature Session - Sunset Vibes",
-                path = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-                uri = Uri.parse("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"),
-                durationMs = 60000L,
-                sizeBytes = 28_700_000L,
-                width = 1920,
-                height = 1080,
-                dateAdded = (System.currentTimeMillis() - 86400000) / 1000
-            ),
-            VideoItem(
-                id = 1003L,
-                title = "Studio Bass & Subwoofer Frequency Test",
-                path = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-                uri = Uri.parse("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"),
-                durationMs = 45000L,
-                sizeBytes = 22_100_000L,
-                width = 1280,
-                height = 720,
-                dateAdded = (System.currentTimeMillis() - 172800000) / 1000
-            ),
-            VideoItem(
-                id = 1004L,
-                title = "Tears of Steel - Cinematic Visuals",
-                path = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
-                uri = Uri.parse("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"),
-                durationMs = 120000L,
-                sizeBytes = 48_500_000L,
-                width = 3840,
-                height = 2160,
-                dateAdded = (System.currentTimeMillis() - 259200000) / 1000
-            ),
-            VideoItem(
-                id = 1005L,
-                title = "Chill Hop & Ambient City Walk",
-                path = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4",
-                uri = Uri.parse("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4"),
-                durationMs = 30000L,
-                sizeBytes = 18_900_000L,
-                width = 1920,
-                height = 1080,
-                dateAdded = (System.currentTimeMillis() - 345600000) / 1000
-            )
-        )
     }
 
     companion object {

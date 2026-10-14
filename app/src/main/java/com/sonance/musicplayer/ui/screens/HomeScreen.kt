@@ -69,10 +69,26 @@ fun HomeScreen(
     onToggleFavorite: ((String) -> Unit)? = null,
     recentPlayCount: Int? = null,
     mostPlayCount: Int? = null,
-    recentTracks: List<Track> = emptyList()
+    recentTracks: List<Track> = emptyList(),
+    videosCount: Int = 0,
+    onTogglePlay: (() -> Unit)? = null,
+    onNextTrack: (() -> Unit)? = null,
+    onOpenFullPlayer: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var isAnnouncementDismissed by remember { mutableStateOf(false) }
+
+    val musicCount = tracks.size
+    val videoCount = videosCount
+    val favoriteCount = remember(tracks) { tracks.count { it.isFavorite } }
+    val folderCount = remember(tracks) {
+        tracks.mapNotNull { if (it.folder.isNotBlank()) it.folder else null }.distinct().size.coerceAtLeast(if (tracks.isNotEmpty()) 1 else 0)
+    }
+    val recentAddCount = remember(tracks) {
+        val count = tracks.count { it.dateAdded > 0 }
+        if (count > 0) count.coerceAtMost(tracks.size) else tracks.size.coerceAtMost(30)
+    }
+    val effectiveMostPlayCount = mostPlayCount ?: remember(tracks) { tracks.count { it.playCount > 0 } }
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -147,8 +163,7 @@ fun HomeScreen(
             }
 
             // ==========================================
-            // 6 FACETED GEM BUTTONS (MATCHING THE PICTURE)
-            // EXCLUDING RAW NUMBERS AS REQUESTED
+            // 6 FACETED GEM BUTTONS WITH COUNT BADGES
             // ROW 1: [LIBRARY] [VIDEO PLAYER] [FAVORITE]
             // ROW 2: [FOLDER] [RECENT ADD] [MOST PLAY]
             // ==========================================
@@ -159,6 +174,7 @@ fun HomeScreen(
                 // 1. LIBRARY (Royal Sapphire Gem)
                 BeveledGemCard(
                     title = "LIBRARY",
+                    count = musicCount,
                     icon = Icons.Default.MusicNote,
                     primaryColor = Color(0xFF2555B4),
                     highlightColor = Color(0xFF4C82F7),
@@ -168,9 +184,10 @@ fun HomeScreen(
                     onClick = { onSelectView(ActiveView.LIBRARY) }
                 )
 
-                // 2. VIDEO (Terracotta / Warm Amber Gem - Replaces Folder)
+                // 2. VIDEO (Terracotta / Warm Amber Gem)
                 BeveledGemCard(
                     title = "VIDEO",
+                    count = videoCount,
                     icon = Icons.Default.VideoLibrary,
                     primaryColor = Color(0xFFBF5B3A),
                     highlightColor = Color(0xFFDE7C5B),
@@ -183,6 +200,7 @@ fun HomeScreen(
                 // 3. FAVORITE (Rose Ruby Gem)
                 BeveledGemCard(
                     title = "FAVORITE",
+                    count = favoriteCount,
                     icon = Icons.Default.Favorite,
                     primaryColor = Color(0xFFBE2A56),
                     highlightColor = Color(0xFFE84D7B),
@@ -199,9 +217,10 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // 4. FOLDER (Jade Emerald Gem - Replaces Recent Play)
+                // 4. FOLDER (Jade Emerald Gem)
                 BeveledGemCard(
                     title = "FOLDER",
+                    count = folderCount,
                     icon = Icons.Default.Folder,
                     primaryColor = Color(0xFF2E7D5B),
                     highlightColor = Color(0xFF4FA87F),
@@ -214,6 +233,7 @@ fun HomeScreen(
                 // 5. RECENT ADD (Deep Cyan / Teal Gem)
                 BeveledGemCard(
                     title = "RECENT ADD",
+                    count = recentAddCount,
                     icon = Icons.Default.PlaylistAddCheck,
                     primaryColor = Color(0xFF1A6B73),
                     highlightColor = Color(0xFF33959F),
@@ -226,6 +246,7 @@ fun HomeScreen(
                 // 6. MOST PLAY (Amethyst Purple Gem)
                 BeveledGemCard(
                     title = "MOST PLAY",
+                    count = effectiveMostPlayCount,
                     icon = Icons.Default.Equalizer,
                     primaryColor = Color(0xFF6B3A82),
                     highlightColor = Color(0xFF9857B8),
@@ -358,11 +379,254 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             // ==========================================
-            // RECENT PLAY SECTION (Replaces Create Playlist at bottom)
+            // PLACE 1: CURRENT MUSIC PLAYING SECTION
+            // (Circled and labeled 1 by user: shows current music playing)
+            // ==========================================
+            val activeCurrentTrack = currentTrack ?: recentTracks.firstOrNull() ?: tracks.firstOrNull()
+            if (activeCurrentTrack != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onOpenFullPlayer?.invoke() }
+                            .padding(start = 2.dp, top = 4.dp, bottom = 4.dp, end = 6.dp)
+                            .testTag("btn_home_current_playing_header")
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(4.dp, 16.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color(0xFF22C55E))
+                        )
+                        Text(
+                            text = "CURRENT PLAYING",
+                            color = Color.White,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 1.2.sp
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF22C55E).copy(alpha = 0.2f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = if (isPlaying && currentTrack?.id == activeCurrentTrack.id) "PLAYING" else "READY",
+                                color = Color(0xFF22C55E),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    if (onOpenFullPlayer != null) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onOpenFullPlayer.invoke() }
+                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                                .testTag("btn_home_open_full_player"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "NOW PLAYING",
+                                color = Color(0xFF22C55E),
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = "Open Full Player",
+                                tint = Color(0xFF22C55E),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // High-End Hardware Card for Current Music Playing
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .border(
+                            width = 1.5.dp,
+                            color = if (isPlaying && currentTrack?.id == activeCurrentTrack.id) Color(0xFF22C55E) else Color(0xFF22C55E).copy(alpha = 0.45f),
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                        .clickable {
+                            if (currentTrack?.id == activeCurrentTrack.id) {
+                                onOpenFullPlayer?.invoke()
+                            } else {
+                                onPlayTrack?.invoke(activeCurrentTrack, tracks)
+                            }
+                        }
+                        .testTag("card_current_music_playing"),
+                    color = Color(0xFF141922),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Cover Art Box
+                            Box(
+                                modifier = Modifier
+                                    .size(50.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF22C55E).copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (activeCurrentTrack.coverArt.isNotBlank()) {
+                                    coil.compose.AsyncImage(
+                                        model = activeCurrentTrack.coverArt,
+                                        contentDescription = activeCurrentTrack.title,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.MusicNote,
+                                        contentDescription = null,
+                                        tint = Color(0xFF22C55E),
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+
+                                if (isPlaying && currentTrack?.id == activeCurrentTrack.id) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.45f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Equalizer,
+                                            contentDescription = "Playing",
+                                            tint = Color(0xFF22C55E),
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = activeCurrentTrack.title,
+                                    color = Color.White,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = if (activeCurrentTrack.artist == "<unknown>") "Unknown Artist" else activeCurrentTrack.artist,
+                                        color = Color(0xFF22C55E),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    val m = activeCurrentTrack.duration / 60
+                                    val s = activeCurrentTrack.duration % 60
+                                    Text(
+                                        text = "• ${String.format("%d:%02d", m, s)}",
+                                        color = Color(0xFF8E8E93),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        // Play/Pause and Next Action Buttons
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    if (currentTrack?.id == activeCurrentTrack.id) {
+                                        onTogglePlay?.invoke()
+                                    } else {
+                                        onPlayTrack?.invoke(activeCurrentTrack, tracks)
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF22C55E))
+                                    .testTag("btn_home_current_play_pause")
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlaying && currentTrack?.id == activeCurrentTrack.id) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = "Play/Pause",
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+
+                            if (onNextTrack != null) {
+                                IconButton(
+                                    onClick = onNextTrack,
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SkipNext,
+                                        contentDescription = "Next Track",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+
+            // ==========================================
+            // PLACE 2: RECENT PLAY SECTION
+            // (Circled and labeled 2 by user: showing strictly 2 recent play songs)
             // ==========================================
             val displayRecentTracks = remember(recentTracks, tracks) {
-                if (recentTracks.isNotEmpty()) recentTracks
+                val recents = if (recentTracks.isNotEmpty()) recentTracks
                 else tracks.filter { it.lastPlayed > 0L || it.playCount > 0 }.sortedByDescending { it.lastPlayed }
+                if (recents.size >= 2) {
+                    recents.take(2)
+                } else if (recents.isNotEmpty()) {
+                    val additional = tracks.filter { t -> recents.none { it.id == t.id } }
+                    (recents + additional).take(2)
+                } else {
+                    tracks.take(2)
+                }
             }
 
             Row(
@@ -437,9 +701,9 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Recent Play Items List
+            // Recent Play Items List - Strictly 2 Songs as requested
             if (displayRecentTracks.isNotEmpty()) {
-                val showcaseRecent = displayRecentTracks.take(4)
+                val showcaseRecent = displayRecentTracks.take(2)
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -469,7 +733,7 @@ fun HomeScreen(
                                 modifier = Modifier.weight(1f),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Rank index indicator (#1, #2, etc. based on new play music order)
+                                // Rank index indicator (#1, #2 based on recent play order)
                                 Text(
                                     text = "#${index + 1}",
                                     color = if (index == 0) Color(0xFF22C55E) else Color(0xFF8E8E93),
@@ -568,44 +832,6 @@ fun HomeScreen(
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
-                        }
-                    }
-
-                    // Bottom "View All X Recent Plays" Button
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { onSelectView(ActiveView.RECENT_PLAY) }
-                            .border(1.dp, Color(0xFF22C55E).copy(alpha = 0.25f), RoundedCornerShape(12.dp)),
-                        color = Color(0xFF14171E).copy(alpha = 0.6f)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.History,
-                                contentDescription = null,
-                                tint = Color(0xFF22C55E),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "View All Recent Plays (${displayRecentTracks.size})",
-                                color = Color(0xFF22C55E),
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = Color(0xFF22C55E),
-                                modifier = Modifier.size(16.dp)
-                            )
                         }
                     }
                 }

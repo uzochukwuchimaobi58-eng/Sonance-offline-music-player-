@@ -497,8 +497,8 @@ class MainActivity : ComponentActivity() {
                                 )
                             },
                             bottomBar = {
-                                // Exclude current music playing that was displaying down when on Home or Videos as requested
-                                if (activeView != ActiveView.HOME && activeView != ActiveView.VIDEOS) {
+                                // Show current music playing bar across all music views including Home
+                                if (activeView != ActiveView.VIDEOS) {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -602,7 +602,10 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onToggleFavorite = { trId ->
                                         repository.toggleFavorite(trId)
-                                    }
+                                    },
+                                    onTogglePlay = { playbackManager.togglePlayPause() },
+                                    onNextTrack = { playbackManager.skipToNext() },
+                                    onOpenFullPlayer = { isFullPlayerOpen = true }
                                 )
                             } else if (activeView == ActiveView.VIDEOS) {
                                 VideoPlayerScreen(
