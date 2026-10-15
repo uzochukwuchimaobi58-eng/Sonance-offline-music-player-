@@ -89,10 +89,15 @@ fun VideoPlayerScreen(
     val videoRepo = remember { VideoRepository.getInstance(context) }
     val videos by videoRepo.videos.collectAsState()
     val isScanning by videoRepo.isScanning.collectAsState()
+    val globalVideoManager = remember { com.sonance.musicplayer.video.GlobalVideoManager.getInstance(context) }
+    val globalLooping by globalVideoManager.isLooping.collectAsState()
 
     var activeVideoIndex by remember { mutableIntStateOf(0) }
     var trimmingVideo by remember { mutableStateOf<VideoItem?>(null) }
     var detailsVideo by remember { mutableStateOf<VideoItem?>(null) }
+    var isConverterOpen by remember { mutableStateOf(false) }
+    var convertingVideo by remember { mutableStateOf<VideoItem?>(null) }
+    var videoSearchQuery by remember { mutableStateOf("") }
 
     // Playback and UI states
     var isPlaying by remember { mutableStateOf(false) }
@@ -968,6 +973,167 @@ fun VideoPlayerScreen(
                     }
                 }
 
+                // ==========================================
+                // QUICK TOOLS RACK (Video Converter, Trimming, Cutter, to MP3, Loop, Speed, Details)
+                // ==========================================
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item {
+                        VideoToolActionChip(
+                            icon = Icons.Default.Transform,
+                            label = "Video Converter",
+                            color = Color(0xFF22C55E),
+                            onClick = {
+                                convertingVideo = activeVideo ?: videos.firstOrNull()
+                                isConverterOpen = true
+                            }
+                        )
+                    }
+                    item {
+                        VideoToolActionChip(
+                            icon = Icons.Default.ContentCut,
+                            label = "Video Trimming",
+                            color = Color(0xFF38BDF8),
+                            onClick = {
+                                val target = activeVideo ?: videos.firstOrNull()
+                                if (target != null) {
+                                    trimmingVideo = target
+                                } else {
+                                    showToastBadge("Please import or select a video to trim")
+                                }
+                            }
+                        )
+                    }
+                    item {
+                        VideoToolActionChip(
+                            icon = Icons.Default.Straighten,
+                            label = "Video Cutter",
+                            color = Color(0xFFF59E0B),
+                            onClick = {
+                                val target = activeVideo ?: videos.firstOrNull()
+                                if (target != null) {
+                                    trimmingVideo = target
+                                } else {
+                                    showToastBadge("Please import or select a video to cut")
+                                }
+                            }
+                        )
+                    }
+                    item {
+                        VideoToolActionChip(
+                            icon = Icons.Default.MusicNote,
+                            label = "Video to MP3",
+                            color = Color(0xFFA855F7),
+                            onClick = {
+                                convertingVideo = activeVideo ?: videos.firstOrNull()
+                                isConverterOpen = true
+                            }
+                        )
+                    }
+                    item {
+                        VideoToolActionChip(
+                            icon = Icons.Default.RepeatOne,
+                            label = if (globalLooping) "Looping Active" else "Loop Video",
+                            color = if (globalLooping) Color(0xFF22C55E) else Color(0xFFEC4899),
+                            isActive = globalLooping,
+                            onClick = {
+                                val target = activeVideo ?: videos.firstOrNull()
+                                if (target != null) {
+                                    globalVideoManager.startLoopingVideo(target)
+                                    showToastBadge("Looping across app: ${target.title}")
+                                } else {
+                                    showToastBadge("Please select a video to loop")
+                                }
+                            }
+                        )
+                    }
+                    item {
+                        VideoToolActionChip(
+                            icon = Icons.Default.Speed,
+                            label = "Speed (${playbackSpeed}x)",
+                            color = Color(0xFF10B981),
+                            onClick = {
+                                playbackSpeed = when (playbackSpeed) {
+                                    1.0f -> 1.25f
+                                    1.25f -> 1.5f
+                                    1.5f -> 2.0f
+                                    2.0f -> 0.5f
+                                    0.5f -> 0.75f
+                                    else -> 1.0f
+                                }
+                                exoPlayer.setPlaybackSpeed(playbackSpeed)
+                                showToastBadge("Playback Speed: ${playbackSpeed}x")
+                            }
+                        )
+                    }
+                    item {
+                        VideoToolActionChip(
+                            icon = Icons.Default.Info,
+                            label = "Video Details",
+                            color = Color(0xFF94A3B8),
+                            onClick = {
+                                val target = activeVideo ?: videos.firstOrNull()
+                                if (target != null) {
+                                    detailsVideo = target
+                                } else {
+                                    showToastBadge("No video selected")
+                                }
+                            }
+                        )
+                    }
+                }
+
+                // ==========================================
+                // SEARCH BAR FOR VIDEOS
+                // ==========================================
+                OutlinedTextField(
+                    value = videoSearchQuery,
+                    onValueChange = { videoSearchQuery = it },
+                    placeholder = {
+                        Text("Search videos...", color = Color(0xFF8E8E93), fontSize = 13.sp)
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search videos",
+                            tint = Color(0xFF22C55E),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        if (videoSearchQuery.isNotEmpty()) {
+                            IconButton(onClick = { videoSearchQuery = "" }, modifier = Modifier.size(24.dp)) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear search",
+                                    tint = Color(0xFF8E8E93),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color(0xFF181B22),
+                        unfocusedContainerColor = Color(0xFF14161E),
+                        focusedBorderColor = Color(0xFF22C55E),
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp)
+                        .testTag("input_search_videos")
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
                 // Embedded Responsive Video Player (16:9 frame) - Only displays when user selects a video
                 if (hasSelectedVideo && activeVideo != null) {
                     Box(
@@ -1269,8 +1435,13 @@ fun VideoPlayerScreen(
                     )
                 }
 
+                val filteredVideos = remember(videos, videoSearchQuery) {
+                    if (videoSearchQuery.isBlank()) videos
+                    else videos.filter { it.title.contains(videoSearchQuery, ignoreCase = true) }
+                }
+
                 // ALL VIDEOS LIST - Showing vertical list till user plays any video
-                if (videos.isEmpty()) {
+                if (filteredVideos.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1280,9 +1451,19 @@ fun VideoPlayerScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(Icons.Default.VideoLibrary, contentDescription = null, tint = Color(0xFF22C55E), modifier = Modifier.size(48.dp))
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text("No videos found", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = if (videoSearchQuery.isNotEmpty()) "No matching videos" else "No user videos found",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                             Spacer(modifier = Modifier.height(6.dp))
-                            Text("Tap '+ Import' above to browse and watch any video from your phone", color = Color(0xFF8E8E93), fontSize = 12.5.sp, textAlign = TextAlign.Center)
+                            Text(
+                                text = if (videoSearchQuery.isNotEmpty()) "Try searching for another title" else "Tap '+ Import' above to browse and watch your own videos",
+                                color = Color(0xFF8E8E93),
+                                fontSize = 12.5.sp,
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
                 } else {
@@ -1291,7 +1472,7 @@ fun VideoPlayerScreen(
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        itemsIndexed(videos, key = { _, v -> v.id }) { index, itemVideo ->
+                        itemsIndexed(filteredVideos, key = { _, v -> v.id }) { index, itemVideo ->
                             val isCurrentlyPlaying = (hasSelectedVideo && itemVideo.id == activeVideo?.id)
                             VideoRowItem(
                                 video = itemVideo,
@@ -1302,11 +1483,16 @@ fun VideoPlayerScreen(
                                 },
                                 onOpenTrim = { trimmingVideo = itemVideo },
                                 onSetLoop = {
-                                    val realIdx = videos.indexOfFirst { it.id == itemVideo.id }
-                                    if (realIdx >= 0) playVideoAtIndex(realIdx)
-                                    isLooping = true
-                                    exoPlayer.repeatMode = Player.REPEAT_MODE_ONE
-                                    showToastBadge("Looping: ${itemVideo.title}")
+                                    globalVideoManager.startLoopingVideo(itemVideo)
+                                    showToastBadge("Looping across app: ${itemVideo.title}")
+                                },
+                                onOpenConvert = {
+                                    convertingVideo = itemVideo
+                                    isConverterOpen = true
+                                },
+                                onDelete = {
+                                    videoRepo.deleteVideo(itemVideo.id)
+                                    showToastBadge("Video removed from library")
                                 },
                                 onShowDetails = { detailsVideo = itemVideo }
                             )
@@ -1331,9 +1517,67 @@ fun VideoPlayerScreen(
                 onClose = { detailsVideo = null }
             )
         }
+
+        // Dedicated Video Converter Dialog
+        if (isConverterOpen) {
+            VideoConverterDialog(
+                initialVideo = convertingVideo ?: activeVideo ?: videos.firstOrNull(),
+                allVideos = videos,
+                onClose = {
+                    isConverterOpen = false
+                    convertingVideo = null
+                },
+                onConversionComplete = { _ ->
+                    scope.launch {
+                        videoRepo.scanDeviceVideos()
+                    }
+                }
+            )
+        }
     }
 }
 
+/**
+ * Quick Tool Action Chip with icon & label
+ */
+@Composable
+private fun VideoToolActionChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    color: Color,
+    isActive: Boolean = false,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = if (isActive) color.copy(alpha = 0.22f) else Color(0xFF191D26),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isActive) color else Color.White.copy(alpha = 0.12f)
+        ),
+        modifier = Modifier.height(34.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (isActive) color else Color(0xFF22C55E),
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = label,
+                color = if (isActive) Color.White else Color(0xFFE4E4E7),
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
 
 /**
  * Video Row Item with actual thumbnail, duration, resolution, "NOW PLAYING" indicator,
@@ -1346,6 +1590,8 @@ private fun VideoRowItem(
     onPlay: () -> Unit,
     onOpenTrim: () -> Unit,
     onSetLoop: () -> Unit,
+    onOpenConvert: () -> Unit,
+    onDelete: () -> Unit,
     onShowDetails: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1504,11 +1750,27 @@ private fun VideoRowItem(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("Video Loop (Repeat This)", color = Color.White, fontSize = 13.sp) },
+                        text = { Text("Loop Video (Across App & PiP)", color = Color.White, fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.RepeatOne, contentDescription = null, tint = Color(0xFF22C55E)) },
                         onClick = {
                             showMenu = false
                             onSetLoop()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Video Converter / Extract MP3", color = Color.White, fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Transform, contentDescription = null, tint = Color(0xFF22C55E)) },
+                        onClick = {
+                            showMenu = false
+                            onOpenConvert()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete / Remove Video", color = Color(0xFFEF4444), fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFEF4444)) },
+                        onClick = {
+                            showMenu = false
+                            onDelete()
                         }
                     )
                     DropdownMenuItem(

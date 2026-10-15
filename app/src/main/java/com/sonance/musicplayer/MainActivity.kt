@@ -106,6 +106,10 @@ class MainActivity : ComponentActivity() {
             var searchQuery by remember { mutableStateOf("") }
             var currentSortBy by remember { mutableStateOf("title") }
 
+            val videoRepo = remember { com.sonance.musicplayer.video.VideoRepository.getInstance(applicationContext) }
+            val videoList by videoRepo.videos.collectAsState()
+            val globalVideoManager = remember { com.sonance.musicplayer.video.GlobalVideoManager.getInstance(applicationContext) }
+
             fun navigateTo(newView: ActiveView, newPlaylistId: String? = null) {
                 if (activeView != newView || activePlaylistId != newPlaylistId) {
                     viewBackStack.add(activeView)
@@ -605,7 +609,8 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onTogglePlay = { playbackManager.togglePlayPause() },
                                     onNextTrack = { playbackManager.skipToNext() },
-                                    onOpenFullPlayer = { isFullPlayerOpen = true }
+                                    onOpenFullPlayer = { isFullPlayerOpen = true },
+                                    videosCount = videoList.size
                                 )
                             } else if (activeView == ActiveView.VIDEOS) {
                                 VideoPlayerScreen(
@@ -717,6 +722,14 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onPlayNext = { tr -> playbackManager.playNext(tr) },
                                     activeSortBy = currentSortBy
+                                )
+                            }
+
+                            // Persistent Floating Video Overlay across all views
+                            if (activeView != ActiveView.VIDEOS) {
+                                FloatingVideoOverlay(
+                                    videoManager = globalVideoManager,
+                                    onExpand = { navigateTo(ActiveView.VIDEOS) }
                                 )
                             }
                         }
@@ -984,6 +997,16 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         lifecycleScope.launch {
             repository.scanMediaStore()
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        try {
+            val globalVideoManager = com.sonance.musicplayer.video.GlobalVideoManager.getInstance(applicationContext)
+            globalVideoManager.enterPictureInPictureIfActive(this)
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error entering PiP on user leave", e)
         }
     }
 

@@ -912,12 +912,12 @@ fun HomeScreen(
 }
 
 /**
- * 3D Faceted Crystal Gemstone Button (matching the picture exactly)
- * Features faceted bevels, vibrant jewel tone gradients, crystal highlights, and NO counter numbers.
+ * 3D Faceted Crystal Gemstone Button with count number displayed on top of each component
  */
 @Composable
 private fun BeveledGemCard(
     title: String,
+    count: Int? = null,
     icon: ImageVector,
     primaryColor: Color,
     highlightColor: Color,
@@ -995,7 +995,28 @@ private fun BeveledGemCard(
                 )
             }
 
-            // Center Content: Iconic Symbol + Capitalized Label (NO numbers)
+            // Top Badge: Prominent Number of music, videos, favorite, folder, recent add, mostly play
+            count?.let { cnt ->
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 5.dp, end = 6.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black.copy(alpha = 0.65f))
+                        .border(0.8.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 6.dp, vertical = 1.5.dp)
+                ) {
+                    Text(
+                        text = "$cnt",
+                        color = Color.White,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.4.sp
+                    )
+                }
+            }
+
+            // Center Content: Iconic Symbol + Capitalized Label
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1007,13 +1028,13 @@ private fun BeveledGemCard(
                     imageVector = icon,
                     contentDescription = title,
                     tint = Color.White,
-                    modifier = Modifier.size(26.dp)
+                    modifier = Modifier.size(24.dp)
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = title,
                     color = Color.White,
-                    fontSize = 11.sp,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 0.8.sp,
                     textAlign = TextAlign.Center,
