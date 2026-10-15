@@ -7,6 +7,7 @@ import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -14,6 +15,7 @@ import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.compose.animation.*
@@ -280,13 +282,22 @@ fun VideoPlayerScreen(
         }
     }
 
-    // File Picker for adding local device videos
+    // Google Play compliant zero-permission system Video Picker
     val videoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val title = uri.lastPathSegment?.substringAfterLast("/") ?: "Imported Video"
-            videoRepo.addCustomVideo(uri, title)
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            uris.forEach { uri ->
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (e: Exception) {
+                    Log.w("VideoPlayerScreen", "Persistable permission notice", e)
+                }
+            }
+            videoRepo.addCustomVideos(uris)
             scope.launch {
                 delay(300)
                 playVideoAtIndex(0)
@@ -294,21 +305,8 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Storage permissions
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            scope.launch { videoRepo.scanDeviceVideos() }
-        }
-    }
-
     LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissionLauncher.launch(android.Manifest.permission.READ_MEDIA_VIDEO)
-        } else {
-            permissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+        // Load the user's curated video collection
         videoRepo.scanDeviceVideos()
     }
 
@@ -938,9 +936,13 @@ fun VideoPlayerScreen(
                         )
                     }
 
-                    // Import Video Button
+                    // Import Video Button (Google Play Photo Picker)
                     IconButton(
-                        onClick = { videoPickerLauncher.launch("video/*") },
+                        onClick = {
+                            videoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                            )
+                        },
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
@@ -1459,11 +1461,38 @@ fun VideoPlayerScreen(
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = if (videoSearchQuery.isNotEmpty()) "Try searching for another title" else "Tap '+ Import' above to browse and watch your own videos",
+                                text = if (videoSearchQuery.isNotEmpty()) "Try searching for another title" else "Add videos from your gallery using the secure system video picker",
                                 color = Color(0xFF8E8E93),
                                 fontSize = 12.5.sp,
                                 textAlign = TextAlign.Center
                             )
+                            if (videoSearchQuery.isEmpty()) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(
+                                    onClick = {
+                                        videoPickerLauncher.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                                        )
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.testTag("btn_empty_import_videos")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = null,
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "Select Videos",
+                                        color = Color.Black,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
                         }
                     }
                 } else {

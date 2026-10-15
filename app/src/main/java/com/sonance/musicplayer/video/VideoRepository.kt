@@ -3,9 +3,10 @@ package com.sonance.musicplayer.video
 import android.content.ContentUris
 import android.content.Context
 import android.content.SharedPreferences
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
-import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -70,106 +71,69 @@ class VideoRepository(private val context: Context) {
         return false
     }
 
-    suspend fun scanDeviceVideos() = withContext(Dispatchers.IO) {
-        _isScanning.value = true
-        val videoList = mutableListOf<VideoItem>()
-        val deletedIds = getDeletedVideoIds()
-
-        // Always include user-saved custom imported videos first
-        val customVideos = loadSavedCustomVideos()
-        val customUris = customVideos.map { it.uri.toString() }.toSet()
-        videoList.addAll(customVideos.filter { !deletedIds.contains(it.id.toString()) })
+    private fun extractVideoMetadata(uri: Uri, customTitle: String = ""): VideoItem {
+        var title = if (customTitle.isNotBlank()) customTitle else "User Video"
+        var duration = 0L
+        var size = 0L
+        var width = 1920
+        var height = 1080
+        val dateAdded = System.currentTimeMillis() / 1000
 
         try {
-            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
-            } else {
-                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-            }
-
-            val projection = arrayOf(
-                MediaStore.Video.Media._ID,
-                MediaStore.Video.Media.TITLE,
-                MediaStore.Video.Media.DISPLAY_NAME,
-                MediaStore.Video.Media.DATA,
-                MediaStore.Video.Media.DURATION,
-                MediaStore.Video.Media.SIZE,
-                MediaStore.Video.Media.WIDTH,
-                MediaStore.Video.Media.HEIGHT,
-                MediaStore.Video.Media.DATE_ADDED
-            )
-
-            val sortOrder = "${MediaStore.Video.Media.DATE_ADDED} DESC"
-
-            context.contentResolver.query(
-                collection,
-                projection,
-                null,
-                null,
-                sortOrder
-            )?.use { cursor ->
-                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                val titleCol = cursor.getColumnIndex(MediaStore.Video.Media.TITLE)
-                val nameCol = cursor.getColumnIndex(MediaStore.Video.Media.DISPLAY_NAME)
-                val dataCol = cursor.getColumnIndex(MediaStore.Video.Media.DATA)
-                val durCol = cursor.getColumnIndex(MediaStore.Video.Media.DURATION)
-                val sizeCol = cursor.getColumnIndex(MediaStore.Video.Media.SIZE)
-                val widthCol = cursor.getColumnIndex(MediaStore.Video.Media.WIDTH)
-                val heightCol = cursor.getColumnIndex(MediaStore.Video.Media.HEIGHT)
-                val dateCol = cursor.getColumnIndex(MediaStore.Video.Media.DATE_ADDED)
-
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idCol)
-                    if (deletedIds.contains(id.toString())) continue
-
-                    val title = if (titleCol != -1) cursor.getString(titleCol) ?: "" else ""
-                    val name = if (nameCol != -1) cursor.getString(nameCol) ?: "" else ""
-                    val path = if (dataCol != -1) cursor.getString(dataCol) ?: "" else ""
-
-                    // STRICT FILTER: Remove emulator sample / dummy / preloaded 5 videos
-                    if (isSampleOrSystemVideo(title, name, path)) {
-                        continue
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameCol = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeCol = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (cursor.moveToFirst()) {
+                    if (nameCol != -1) {
+                        val n = cursor.getString(nameCol)
+                        if (!n.isNullOrBlank() && customTitle.isBlank()) {
+                            title = n.substringBeforeLast(".")
+                        }
                     }
-
-                    val duration = if (durCol != -1) cursor.getLong(durCol) else 0L
-                    val size = if (sizeCol != -1) cursor.getLong(sizeCol) else 0L
-                    val width = if (widthCol != -1) cursor.getInt(widthCol) else 1920
-                    val height = if (heightCol != -1) cursor.getInt(heightCol) else 1080
-                    val dateAdded = if (dateCol != -1) cursor.getLong(dateCol) else 0L
-
-                    val cleanTitle = when {
-                        title.isNotBlank() -> title
-                        name.isNotBlank() -> name.substringBeforeLast(".")
-                        else -> "Video_${id}"
-                    }
-
-                    val contentUri = ContentUris.withAppendedId(
-                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                        id
-                    )
-
-                    if (!customUris.contains(contentUri.toString())) {
-                        videoList.add(
-                            VideoItem(
-                                id = id,
-                                title = cleanTitle,
-                                path = path,
-                                uri = contentUri,
-                                durationMs = duration,
-                                sizeBytes = size,
-                                width = width,
-                                height = height,
-                                dateAdded = dateAdded
-                            )
-                        )
+                    if (sizeCol != -1) {
+                        size = cursor.getLong(sizeCol)
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e("VideoRepository", "Error scanning device videos", e)
+            Log.w("VideoRepository", "Could not query OpenableColumns", e)
         }
 
-        _videos.value = videoList.distinctBy { it.uri.toString() }
+        try {
+            val retriever = MediaMetadataRetriever()
+            retriever.setDataSource(context, uri)
+            val d = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            if (d != null) duration = d.toLongOrNull() ?: 0L
+            val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            if (w != null) width = w.toIntOrNull() ?: 1920
+            val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            if (h != null) height = h.toIntOrNull() ?: 1080
+            val t = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+            if (!t.isNullOrBlank() && customTitle.isBlank()) title = t
+            retriever.release()
+        } catch (e: Exception) {
+            Log.w("VideoRepository", "Retriever metadata extraction info", e)
+        }
+
+        return VideoItem(
+            id = System.currentTimeMillis() + (0..999).random(),
+            title = title,
+            path = uri.toString(),
+            uri = uri,
+            durationMs = duration,
+            sizeBytes = size,
+            width = width,
+            height = height,
+            dateAdded = dateAdded
+        )
+    }
+
+    suspend fun scanDeviceVideos() = withContext(Dispatchers.IO) {
+        _isScanning.value = true
+        val deletedIds = getDeletedVideoIds()
+        val customVideos = loadSavedCustomVideos()
+        // Only load the user's authentic chosen videos - no emulator / system / sample videos
+        _videos.value = customVideos.filter { !deletedIds.contains(it.id.toString()) }
         _isScanning.value = false
     }
 
@@ -234,21 +198,20 @@ class VideoRepository(private val context: Context) {
         saveCustomVideos(list)
     }
 
-    fun addCustomVideo(uri: Uri, title: String) {
-        val newItem = VideoItem(
-            id = System.currentTimeMillis(),
-            title = title,
-            path = uri.toString(),
-            uri = uri,
-            durationMs = 0L,
-            sizeBytes = 0L,
-            width = 1920,
-            height = 1080,
-            dateAdded = System.currentTimeMillis() / 1000
-        )
+    fun addCustomVideo(uri: Uri, title: String = "") {
+        val newItem = extractVideoMetadata(uri, title)
         val updated = listOf(newItem) + loadSavedCustomVideos().filter { it.uri != uri }
         saveCustomVideos(updated)
-        _videos.value = listOf(newItem) + _videos.value.filter { it.uri != uri }
+        _videos.value = updated
+    }
+
+    fun addCustomVideos(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val newItems = uris.map { extractVideoMetadata(it) }
+        val existing = loadSavedCustomVideos().filter { existing -> uris.none { it == existing.uri } }
+        val updated = newItems + existing
+        saveCustomVideos(updated)
+        _videos.value = updated
     }
 
     companion object {
