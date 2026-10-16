@@ -53,7 +53,8 @@ fun SidebarDrawer(
     onOpenPro: () -> Unit = {},
     customWallpaperUri: String? = null,
     theme: ThemeConfig,
-    onOpenVideos: () -> Unit = {}
+    onOpenVideos: () -> Unit = {},
+    onOpenFavorites: () -> Unit = {}
 ) {
     if (!isOpen) return
 
@@ -203,6 +204,16 @@ fun SidebarDrawer(
                             }
                         }
                     }
+
+                    // Favorite Songs
+                    SidebarItem(
+                        icon = Icons.Default.Favorite,
+                        title = "Favorite Songs",
+                        iconColor = Color(0xFFF43F5E),
+                        onClick = { onClose(); onOpenFavorites() },
+                        tag = "menu_favorite_songs",
+                        theme = theme
+                    )
 
                     // Video
                     SidebarItem(
@@ -432,6 +443,14 @@ fun SidebarDrawer(
                         onClick = { onClose(); onOpenSettings() },
                         tag = "menu_settings",
                         theme = theme
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Sonance v${com.sonance.musicplayer.BuildConfig.VERSION_NAME} • ${theme.theme.displayName}",
+                        color = theme.textSecondary.copy(alpha = 0.6f),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                     )
                 }
                     }

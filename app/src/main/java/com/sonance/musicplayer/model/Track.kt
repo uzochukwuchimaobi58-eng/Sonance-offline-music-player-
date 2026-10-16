@@ -22,10 +22,12 @@ enum class EqPreset(val displayName: String) {
 
 @Serializable
 enum class AppTheme(val idStr: String, val displayName: String, val isProOnly: Boolean = false) {
-    // 3 Free Templates & Wallpapers
+    // 2 Free Templates & Wallpapers
     NATURE_FLOWER("nature-flower", "Nature Bellflower Meadow", false),
-    ANIMAL_PETS("animal-pets", "Meadow Puppy & Kitten", false),
     DARK_AMOLED("dark-amoled", "Classic Player (AMOLED)", false),
+
+    // Template Themes (Locked for Pro or Watch Ad)
+    ANIMAL_PETS("animal-pets", "Meadow Puppy & Kitten", true),
 
     // Template Themes (Locked for Pro or Watch Ad)
     DARK_SLATE("dark-slate", "Modern Slate & Cyan", true),

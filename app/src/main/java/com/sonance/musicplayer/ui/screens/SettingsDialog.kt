@@ -8,6 +8,8 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,7 +28,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import coil.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -62,7 +68,9 @@ fun SettingsDialog(
     userSubscription: com.sonance.musicplayer.model.UserSubscription = com.sonance.musicplayer.model.UserSubscription(),
     onOpenProUpgrade: () -> Unit = {},
     onSetDevProState: (Boolean) -> Unit = {},
-    theme: ThemeConfig
+    onOpenThemes: () -> Unit = {},
+    theme: ThemeConfig,
+    customWallpaperUri: String? = null
 ) {
     if (!isOpen) return
 
@@ -115,13 +123,32 @@ fun SettingsDialog(
                 .navigationBarsPadding()
                 .testTag("settings_screen")
         ) {
+            // Live background wallpaper / theme artwork shining through settings
+            if (customWallpaperUri != null) {
+                AsyncImage(
+                    model = customWallpaperUri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.72f)))
+            } else if (theme.coverDrawableRes != null) {
+                Image(
+                    painter = painterResource(id = theme.coverDrawableRes),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.72f)))
+            }
+
             Column(modifier = Modifier.fillMaxSize()) {
-                // Top App Bar: Back arrow and Settings title (Clean, zero ads, no hot app)
+                // Top App Bar: Back arrow, Settings title, and active theme badge
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)
-                        .background(theme.headerBg)
+                        .background(theme.headerBg.copy(alpha = 0.88f))
                         .padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -145,6 +172,39 @@ fun SettingsDialog(
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
                     )
+
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    // Small indicator badge of current theme
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = theme.accentColor.copy(alpha = 0.16f),
+                        border = BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.45f)),
+                        modifier = Modifier
+                            .clickable { onOpenThemes() }
+                            .testTag("btn_settings_active_theme_pill")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(theme.accentColor)
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = theme.theme.displayName,
+                                color = theme.accentColor,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
 
                 // Settings List
@@ -192,16 +252,157 @@ fun SettingsDialog(
                         theme = theme
                     )
 
+                    // --- Theme & Appearance Section ---
+                    SettingsSectionHeader(title = "Theme & Appearance", color = headerGold)
+
+                    // Prominent Current Theme Card
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { onOpenThemes() }
+                            .testTag("current_theme_showcase_card"),
+                        colors = CardDefaults.cardColors(
+                            containerColor = theme.sidebarBg.copy(alpha = 0.88f)
+                        ),
+                        border = BorderStroke(1.2.dp, theme.accentColor.copy(alpha = 0.6f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .border(1.5.dp, theme.accentColor, RoundedCornerShape(10.dp))
+                            ) {
+                                if (customWallpaperUri != null) {
+                                    AsyncImage(
+                                        model = customWallpaperUri,
+                                        contentDescription = "Active Wallpaper",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else if (theme.coverDrawableRes != null) {
+                                    Image(
+                                        painter = painterResource(id = theme.coverDrawableRes),
+                                        contentDescription = "Active Theme Artwork",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                Brush.linearGradient(
+                                                    listOf(theme.accentColor, theme.headerBg)
+                                                )
+                                            )
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(2.dp)
+                                        .size(16.dp)
+                                        .clip(CircleShape)
+                                        .background(theme.accentColor),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Active",
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "CURRENT THEME",
+                                        color = theme.accentColor,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.8.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(theme.accentColor.copy(alpha = 0.2f))
+                                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                                    ) {
+                                        Text(
+                                            text = theme.previewTag.ifBlank { "ACTIVE" },
+                                            color = theme.accentColor,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = theme.theme.displayName,
+                                    color = theme.textPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (theme.styleDescription.isNotBlank()) theme.styleDescription else "Applied to entire app & player",
+                                    color = theme.textSecondary,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            OutlinedButton(
+                                onClick = onOpenThemes,
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = theme.accentColor
+                                ),
+                                border = BorderStroke(1.dp, theme.accentColor),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Text("Change", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+
+                    SettingActionItem(
+                        title = "App Themes & Wallpapers",
+                        subtitle = "Current: ${theme.theme.displayName} • Tap to change",
+                        trailingLabel = theme.theme.displayName,
+                        onClick = onOpenThemes,
+                        theme = theme
+                    )
+
                     SettingActionItem(
                         title = "Accent color",
-                        subtitle = "The accent theme color",
+                        subtitle = "Theme accent: ${theme.theme.displayName}",
                         trailingContent = {
                             Box(
                                 modifier = Modifier
-                                    .size(18.dp)
+                                    .size(20.dp)
                                     .clip(CircleShape)
                                     .background(theme.accentColor)
-                                    .border(1.dp, Color.White.copy(alpha = 0.4f), CircleShape)
+                                    .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape)
                             )
                         },
                         onClick = { showAccentColorDialog = true },
@@ -491,7 +692,45 @@ fun SettingsDialog(
                         theme = theme
                     )
 
-                    Spacer(modifier = Modifier.height(32.dp))
+                    // --- App Info & Version Section ---
+                    SettingsSectionHeader(title = "App Info", color = headerGold)
+
+                    SettingActionItem(
+                        title = "App Version",
+                        subtitle = "v${com.sonance.musicplayer.BuildConfig.VERSION_NAME} (Build ${com.sonance.musicplayer.BuildConfig.VERSION_CODE}) • Tap to check updates",
+                        trailingLabel = "v${com.sonance.musicplayer.BuildConfig.VERSION_NAME}",
+                        onClick = {
+                            isCheckingUpdate = true
+                            showUpdateDialog = true
+                            coroutineScope.launch {
+                                delay(600)
+                                isCheckingUpdate = false
+                            }
+                        },
+                        theme = theme
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Sonance Music Player v${com.sonance.musicplayer.BuildConfig.VERSION_NAME}",
+                            color = theme.textSecondary.copy(alpha = 0.8f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Build ${com.sonance.musicplayer.BuildConfig.VERSION_CODE} • Theme: ${theme.theme.displayName}",
+                            color = theme.textSecondary.copy(alpha = 0.55f),
+                            fontSize = 11.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(48.dp))
                 }
             }
         }
@@ -582,6 +821,7 @@ fun SettingsDialog(
     // 3. Accent Color Picker Dialog
     if (showAccentColorDialog) {
         val accentOptions = listOf(
+            Triple("Nature Bellflower", Color(0xFF2E7D5B), AppTheme.NATURE_FLOWER),
             Triple("Emerald Forest", Color(0xFF18AD75), AppTheme.EMERALD_FOREST),
             Triple("Golden Luxury", Color(0xFFF9BE39), AppTheme.GOLDEN_LUXURY),
             Triple("Dark Slate", Color(0xFF06B6D4), AppTheme.DARK_SLATE),
@@ -1050,7 +1290,7 @@ fun SettingsDialog(
                 }
             },
             dismissButton = {
-                val hasNewer = remoteSettings.latestVersion.isNotBlank() && remoteSettings.latestVersion != "1.0.0"
+                val hasNewer = remoteSettings.latestVersion.isNotBlank() && remoteSettings.latestVersion != com.sonance.musicplayer.BuildConfig.VERSION_NAME
                 if (!isCheckingUpdate && hasNewer) {
                     TextButton(onClick = { showUpdateDialog = false }) {
                         Text("Later", color = theme.textSecondary)

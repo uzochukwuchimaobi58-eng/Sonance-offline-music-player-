@@ -29,9 +29,10 @@ class GooglePlayBillingManager private constructor(private val context: Context)
     companion object {
         private const val TAG = "GooglePlayBilling"
 
-        // Google Play Console Product IDs (Renamed to sonance prefix)
+        // Google Play Console Product IDs & Base Plan IDs
         const val PRODUCT_LIFETIME = "sonance_lifetime"
         const val PRODUCT_YEARLY = "sonance_yearly"
+        const val BASE_PLAN_YEARLY = "sonance-yearly-access"
         const val PRODUCT_MONTHLY = "sonance_monthly"
 
         // Candidate IDs to match whatever the developer named their products in Google Play Console (sonance, sonance_pro, gee_music, etc.)
@@ -241,9 +242,12 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                 val productDetailsParamsBuilder = BillingFlowParams.ProductDetailsParams.newBuilder()
                     .setProductDetails(productDetails)
 
-                // For subscriptions, select the first offer token if available
+                // For subscriptions, select the offer token matching basePlanId "sonance-yearly-access"
                 if (isSubscription) {
-                    val offerToken = productDetails.subscriptionOfferDetails?.firstOrNull()?.offerToken
+                    val matchingOffer = productDetails.subscriptionOfferDetails?.find {
+                        it.basePlanId == BASE_PLAN_YEARLY
+                    } ?: productDetails.subscriptionOfferDetails?.firstOrNull()
+                    val offerToken = matchingOffer?.offerToken
                     if (offerToken != null) {
                         productDetailsParamsBuilder.setOfferToken(offerToken)
                     }

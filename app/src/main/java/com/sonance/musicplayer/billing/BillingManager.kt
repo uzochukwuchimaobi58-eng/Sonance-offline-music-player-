@@ -27,9 +27,10 @@ class BillingManager private constructor(private val context: Context) : Purchas
     companion object {
         private const val TAG = "BillingManager"
 
-        // Official requested Product IDs (Sonance)
+        // Official requested Product IDs & Base Plan IDs (Sonance)
         const val PRODUCT_LIFETIME = "sonance_lifetime"
         const val PRODUCT_YEARLY = "sonance_yearly"
+        const val BASE_PLAN_YEARLY = "sonance-yearly-access"
 
         // Legacy / fallback product IDs for backwards compatibility
         const val LEGACY_PRODUCT_LIFETIME = "sonance_pro_lifetime"
@@ -279,9 +280,12 @@ class BillingManager private constructor(private val context: Context) : Purchas
             val productDetailsParamsBuilder = BillingFlowParams.ProductDetailsParams.newBuilder()
                 .setProductDetails(productDetails)
 
-            // For subscriptions, offer token is mandatory
+            // For subscriptions, match requested Base Plan ID "sonance-yearly-access"
             if (productDetails.productType == BillingClient.ProductType.SUBS) {
-                val offerToken = productDetails.subscriptionOfferDetails?.firstOrNull()?.offerToken
+                val matchingOffer = productDetails.subscriptionOfferDetails?.find {
+                    it.basePlanId == BASE_PLAN_YEARLY
+                } ?: productDetails.subscriptionOfferDetails?.firstOrNull()
+                val offerToken = matchingOffer?.offerToken
                 if (!offerToken.isNullOrBlank()) {
                     productDetailsParamsBuilder.setOfferToken(offerToken)
                 }

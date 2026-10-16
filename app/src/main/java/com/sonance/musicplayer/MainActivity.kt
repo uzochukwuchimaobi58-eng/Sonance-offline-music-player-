@@ -605,7 +605,7 @@ class MainActivity : ComponentActivity() {
                                         isFullPlayerOpen = true
                                     },
                                     onToggleFavorite = { trId ->
-                                        repository.toggleFavorite(trId)
+                                        playbackManager.toggleFavorite(trId)
                                     },
                                     onTogglePlay = { playbackManager.togglePlayPause() },
                                     onNextTrack = { playbackManager.skipToNext() },
@@ -666,7 +666,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     onToggleFavorite = { trId ->
-                                        repository.toggleFavorite(trId)
+                                        playbackManager.toggleFavorite(trId)
                                     },
                                     onAddToPlaylist = { trId, plId ->
                                         repository.addTrackToPlaylist(trId, plId)
@@ -769,6 +769,9 @@ class MainActivity : ComponentActivity() {
                     onOpenVideos = {
                         playbackManager.pause()
                         navigateTo(ActiveView.VIDEOS)
+                    },
+                    onOpenFavorites = {
+                        navigateTo(ActiveView.FAVORITE)
                     }
                 )
 
@@ -794,7 +797,7 @@ class MainActivity : ComponentActivity() {
                     onSeek = { playbackManager.seekTo(it) },
                     onToggleRepeat = { playbackManager.cycleRepeatMode() },
                     onToggleShuffle = { playbackManager.toggleShuffle() },
-                    onToggleFavorite = { trId -> repository.toggleFavorite(trId) },
+                    onToggleFavorite = { trId -> playbackManager.toggleFavorite(trId) },
                     onSetSpeed = { playbackManager.setSpeed(it) },
                     onSetAudioEffect = { playbackManager.setAudioEffect(it) },
                     onToggleKaraoke = {
@@ -937,7 +940,9 @@ class MainActivity : ComponentActivity() {
                     userSubscription = userSubscription.copy(isPro = isProEffective),
                     onOpenProUpgrade = { isProUpgradeOpen = true },
                     onSetDevProState = { isPro -> repository.setDevProState(isPro) },
-                    theme = theme
+                    onOpenThemes = { isThemePickerOpen = true },
+                    theme = theme,
+                    customWallpaperUri = customWallpaperUri
                 )
 
                 // Web Browser Dialog

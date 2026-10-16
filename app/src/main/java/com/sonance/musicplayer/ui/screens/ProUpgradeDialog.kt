@@ -102,13 +102,16 @@ fun ProUpgradeDialog(
     val cardUnselectedBg = Color(0xFF141316)
     val textMuted = Color(0xFF8F8B83)
 
-    // Dynamic Google Play billing prices or main fallback prices (supports local currencies PEN, NGN, USD etc.)
-    val yearlyProduct = GooglePlayBillingManager.SUBS_CANDIDATE_IDS.firstNotNullOfOrNull { queriedProducts[it] }
+    // Dynamic Google Play billing prices (querying sonance_yearly with base plan sonance-yearly-access)
+    val yearlyProduct = queriedProducts["sonance_yearly"]
+        ?: GooglePlayBillingManager.SUBS_CANDIDATE_IDS.firstNotNullOfOrNull { queriedProducts[it] }
         ?: queriedProducts.values.firstOrNull { it.productType == com.android.billingclient.api.BillingClient.ProductType.SUBS }
 
-    val yearlyPrice = yearlyProduct?.let { prod ->
-        prod.subscriptionOfferDetails?.firstOrNull()?.pricingPhases?.pricingPhaseList?.firstOrNull()?.formattedPrice
-    } ?: defaultYearlyPrice
+    val yearlyOffer = yearlyProduct?.subscriptionOfferDetails?.find { it.basePlanId == "sonance-yearly-access" }
+        ?: yearlyProduct?.subscriptionOfferDetails?.firstOrNull()
+
+    val yearlyPrice = yearlyOffer?.pricingPhases?.pricingPhaseList?.firstOrNull()?.formattedPrice
+        ?: defaultYearlyPrice
 
     val oneTimeProduct = GooglePlayBillingManager.INAPP_CANDIDATE_IDS.firstNotNullOfOrNull { queriedProducts[it] }
         ?: queriedProducts.values.firstOrNull { it.productType == com.android.billingclient.api.BillingClient.ProductType.INAPP }

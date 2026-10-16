@@ -507,14 +507,18 @@ fun FullPlayerSheet(
                     )
                 }
 
+                var isFavLocal by remember(track.id, track.isFavorite) { mutableStateOf(track.isFavorite) }
                 IconButton(
-                    onClick = { onToggleFavorite(track.id) },
+                    onClick = {
+                        isFavLocal = !isFavLocal
+                        onToggleFavorite(track.id)
+                    },
                     modifier = Modifier.testTag("btn_full_favorite")
                 ) {
                     Icon(
-                        imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        imageVector = if (isFavLocal) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                         contentDescription = "Favorite",
-                        tint = if (track.isFavorite) Color(0xFFF43F5E) else theme.textSecondary,
+                        tint = if (isFavLocal) Color(0xFFF43F5E) else theme.textSecondary,
                         modifier = Modifier.size(28.dp)
                     )
                 }

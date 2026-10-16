@@ -46,6 +46,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -333,12 +334,21 @@ fun VideoPlayerScreen(
         String.format("%02d:%02d", m, s)
     }
 
-    // Root Container
+    // Root Container with active theme
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF090A0E))
+            .background(theme.bgCanvas)
     ) {
+        if (!isFullscreen && theme.coverDrawableRes != null) {
+            Image(
+                painter = painterResource(id = theme.coverDrawableRes),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.58f)))
+        }
         if (isFullscreen) {
             // ================= FULLSCREEN THEATER MODE =================
             Box(
@@ -915,23 +925,23 @@ fun VideoPlayerScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
-                                    .size(7.dp)
+                                    .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF22C55E))
+                                    .background(theme.accentColor)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "VIDEO",
-                                color = Color(0xFF22C55E),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
+                                text = "VIDEO STUDIO",
+                                color = theme.accentColor,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 1.2.sp
                             )
                         }
                         Text(
-                            text = "Video (${videos.size})",
-                            color = Color.White,
-                            fontSize = 17.sp,
+                            text = "My Videos (${videos.size})",
+                            color = theme.textPrimary,
+                            fontSize = 18.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
                     }
@@ -946,13 +956,14 @@ fun VideoPlayerScreen(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF22C55E).copy(alpha = 0.15f))
+                            .background(theme.accentColor.copy(alpha = 0.2f))
+                            .border(1.dp, theme.accentColor.copy(alpha = 0.5f), CircleShape)
                             .testTag("btn_import_video")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Import Video",
-                            tint = Color(0xFF22C55E)
+                            tint = theme.accentColor
                         )
                     }
 
@@ -1506,6 +1517,7 @@ fun VideoPlayerScreen(
                             VideoRowItem(
                                 video = itemVideo,
                                 isPlaying = isCurrentlyPlaying,
+                                theme = theme,
                                 onPlay = {
                                     val realIdx = videos.indexOfFirst { it.id == itemVideo.id }
                                     if (realIdx >= 0) playVideoAtIndex(realIdx)
@@ -1616,6 +1628,7 @@ private fun VideoToolActionChip(
 private fun VideoRowItem(
     video: VideoItem,
     isPlaying: Boolean,
+    theme: ThemeConfig,
     onPlay: () -> Unit,
     onOpenTrim: () -> Unit,
     onSetLoop: () -> Unit,
@@ -1629,28 +1642,29 @@ private fun VideoRowItem(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onPlay)
             .border(
                 width = if (isPlaying) 1.5.dp else 1.dp,
-                color = if (isPlaying) Color(0xFF22C55E) else Color.White.copy(alpha = 0.08f),
-                shape = RoundedCornerShape(12.dp)
+                color = if (isPlaying) theme.accentColor else theme.cardBorder.copy(alpha = 0.25f),
+                shape = RoundedCornerShape(14.dp)
             )
             .testTag("video_row_${video.id}"),
-        color = if (isPlaying) Color(0xFF14241B) else Color(0xFF13161F),
-        shape = RoundedCornerShape(12.dp)
+        color = if (isPlaying) theme.accentColor.copy(alpha = 0.16f) else theme.headerBg.copy(alpha = 0.92f),
+        shape = RoundedCornerShape(14.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp),
+                .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Video Thumbnail Box
             Box(
                 modifier = Modifier
-                    .size(width = 110.dp, height = 70.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(width = 112.dp, height = 72.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
             ) {
                 VideoThumbnailView(video = video, modifier = Modifier.fillMaxSize())
 
@@ -1658,16 +1672,16 @@ private fun VideoRowItem(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopStart)
-                        .padding(4.dp)
+                        .padding(5.dp)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(Color.Black.copy(alpha = 0.8f))
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                        .background(Color.Black.copy(alpha = 0.82f))
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
                 ) {
                     Text(
                         text = video.resolution,
-                        color = Color(0xFF22C55E),
-                        fontSize = 8.5.sp,
-                        fontWeight = FontWeight.Bold
+                        color = theme.accentColor,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold
                     )
                 }
 
@@ -1675,7 +1689,7 @@ private fun VideoRowItem(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(4.dp)
+                        .padding(5.dp)
                         .clip(RoundedCornerShape(4.dp))
                         .background(Color.Black.copy(alpha = 0.85f))
                         .padding(horizontal = 5.dp, vertical = 2.dp)
@@ -1683,7 +1697,7 @@ private fun VideoRowItem(
                     Text(
                         text = video.formattedDuration,
                         color = Color.White,
-                        fontSize = 9.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -1699,15 +1713,15 @@ private fun VideoRowItem(
                             modifier = Modifier
                                 .size(6.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF22C55E))
+                                .background(theme.accentColor)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "NOW PLAYING",
-                            color = Color(0xFF22C55E),
-                            fontSize = 9.5.sp,
+                            color = theme.accentColor,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 0.5.sp
+                            letterSpacing = 0.8.sp
                         )
                     }
                     Spacer(modifier = Modifier.height(2.dp))
@@ -1715,28 +1729,37 @@ private fun VideoRowItem(
 
                 Text(
                     text = video.title,
-                    color = if (isPlaying) Color(0xFF22C55E) else Color.White,
-                    fontSize = 13.5.sp,
-                    fontWeight = FontWeight.Bold,
+                    color = if (isPlaying) theme.accentColor else theme.textPrimary,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(3.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "${video.formattedDuration} • ${video.formattedSize}",
-                        color = Color(0xFF8E8E93),
-                        fontSize = 11.sp
+                        color = theme.textSecondary,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium
                     )
-                    Text(
-                        text = "Offline",
-                        color = Color(0xFF22C55E),
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(theme.accentColor.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "OFFLINE",
+                            color = theme.accentColor,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 

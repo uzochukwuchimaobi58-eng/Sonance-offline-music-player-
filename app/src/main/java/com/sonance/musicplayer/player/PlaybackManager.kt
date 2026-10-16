@@ -1086,12 +1086,24 @@ class PlaybackManager(
 
     fun toggleFavoriteCurrent() {
         val track = _currentTrack.value ?: return
-        val newFav = !track.isFavorite
-        repository?.toggleFavorite(track.id)
-        val updatedTrack = track.copy(isFavorite = newFav)
-        _currentTrack.value = updatedTrack
-        _queue.value = _queue.value.map { if (it.id == track.id) updatedTrack else it }
-        notificationManager.updateNotification(updatedTrack, _isPlaying.value, _currentPositionMs.value, _durationMs.value)
+        toggleFavorite(track.id)
+    }
+
+    fun toggleFavorite(trackId: String) {
+        val repo = repository
+        val targetTrack = repo?.tracks?.value?.find { it.id == trackId }
+        val newFav = !(targetTrack?.isFavorite ?: (_currentTrack.value?.takeIf { it.id == trackId }?.isFavorite ?: false))
+        repo?.toggleFavorite(trackId)
+
+        val cur = _currentTrack.value
+        if (cur != null && cur.id == trackId) {
+            val updatedTrack = cur.copy(isFavorite = newFav)
+            _currentTrack.value = updatedTrack
+            _queue.value = _queue.value.map { if (it.id == trackId) updatedTrack else it }
+            notificationManager.updateNotification(updatedTrack, _isPlaying.value, _currentPositionMs.value, _durationMs.value)
+        } else {
+            _queue.value = _queue.value.map { if (it.id == trackId) it.copy(isFavorite = newFav) else it }
+        }
     }
 
     fun stopPlaybackAndDismiss() {

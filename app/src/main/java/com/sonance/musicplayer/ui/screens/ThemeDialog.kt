@@ -77,12 +77,12 @@ fun ThemeDialog(
 
     val allThemes = remember {
         listOf(
-            // 3 Free Wallpapers
+            // 2 Free Wallpapers & Themes
             AppTheme.NATURE_FLOWER,
-            AppTheme.ANIMAL_PETS,
             AppTheme.DARK_AMOLED,
 
-            // Premium Wallpapers
+            // Premium Locked Wallpapers & Themes
+            AppTheme.ANIMAL_PETS,
             AppTheme.CRIMSON_COUNTDOWN,
             AppTheme.SKY_BLOSSOM,
             AppTheme.ROMANTIC_DREAMS,
@@ -96,8 +96,9 @@ fun ThemeDialog(
     }
 
     fun isThemeUnlocked(item: AppTheme): Boolean {
-        // 3 free wallpapers: NATURE_FLOWER, ANIMAL_PETS, DARK_AMOLED are free for any user
-        if (!item.isProOnly) return true
+        // Only 2 themes: NATURE_FLOWER and DARK_AMOLED are free for non-Pro users
+        val freeThemes = setOf(AppTheme.NATURE_FLOWER, AppTheme.DARK_AMOLED)
+        if (freeThemes.contains(item)) return true
         if (isPro) return true
         if (unlockedThemeIds.contains(item.idStr)) return true
         return false
