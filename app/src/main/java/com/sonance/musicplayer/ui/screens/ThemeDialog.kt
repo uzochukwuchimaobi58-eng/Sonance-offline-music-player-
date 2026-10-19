@@ -1,7 +1,6 @@
 package com.sonance.musicplayer.ui.screens
 
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import android.app.Activity
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -15,8 +14,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -43,6 +44,8 @@ import coil.compose.AsyncImage
 import com.sonance.musicplayer.model.AppTheme
 import com.sonance.musicplayer.model.ThemeConfig
 import com.sonance.musicplayer.model.ThemeRepository
+import com.sonance.musicplayer.ui.components.PRODUCTION_REWARDED_UNIT_ID
+import com.sonance.musicplayer.ui.components.RewardedAdController
 import kotlinx.coroutines.delay
 
 @Composable
@@ -57,14 +60,21 @@ fun ThemeDialog(
     unlockedThemeIds: Set<String> = emptySet(),
     onUnlockThemeByAd: (AppTheme) -> Unit = {},
     customWallpaperUri: String? = null,
-    onSetCustomWallpaperUri: (String?) -> Unit = {}
+    onSetCustomWallpaperUri: (String?) -> Unit = {},
+    rewardedAdUnitId: String = PRODUCTION_REWARDED_UNIT_ID
 ) {
     if (!isOpen) return
 
     val context = LocalContext.current
+    val activity = context as? Activity
     var unlockPromptTheme by remember { mutableStateOf<AppTheme?>(null) }
-    var adThemeToUnlock by remember { mutableStateOf<AppTheme?>(null) }
     var showAccentColorDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isOpen) {
+        if (isOpen) {
+            RewardedAdController.loadRewardedAd(context, rewardedAdUnitId)
+        }
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -281,30 +291,38 @@ fun ThemeDialog(
             onDismiss = { unlockPromptTheme = null },
             onWatchAd = {
                 unlockPromptTheme = null
-                adThemeToUnlock = targetTheme
+                if (activity != null) {
+                    RewardedAdController.showRewardedAd(
+                        activity = activity,
+                        adUnitId = rewardedAdUnitId,
+                        onUserEarnedReward = {
+                            onUnlockThemeByAd(targetTheme)
+                            if (customWallpaperUri != null) {
+                                onSetCustomWallpaperUri(null)
+                            }
+                            onSelectTheme(targetTheme)
+                            Toast.makeText(context, "🎉 ${targetTheme.displayName} unlocked & applied to app body!", Toast.LENGTH_LONG).show()
+                        },
+                        onAdUnavailable = {
+                            Toast.makeText(
+                                context,
+                                "Rewarded ad is not available right now. Please try again shortly.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    )
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Rewarded ad is not available right now. Please try again shortly.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             },
             onUpgradePro = {
                 unlockPromptTheme = null
                 onClose()
                 onOpenProUpgrade()
-            }
-        )
-    }
-
-    // Rewarded Ad Simulation Dialog
-    adThemeToUnlock?.let { targetTheme ->
-        RewardedAdDialog(
-            theme = theme,
-            targetTheme = targetTheme,
-            onDismiss = { adThemeToUnlock = null },
-            onRewardEarned = {
-                onUnlockThemeByAd(targetTheme)
-                if (customWallpaperUri != null) {
-                    onSetCustomWallpaperUri(null)
-                }
-                onSelectTheme(targetTheme)
-                Toast.makeText(context, "🎉 ${targetTheme.displayName} unlocked & applied to app body!", Toast.LENGTH_LONG).show()
-                adThemeToUnlock = null
             }
         )
     }
@@ -776,203 +794,6 @@ private fun ThemeWallpaperCard(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
-        }
-    }
-}
-
-@Composable
-fun RewardedAdDialog(
-    theme: ThemeConfig,
-    targetTheme: AppTheme,
-    onDismiss: () -> Unit,
-    onRewardEarned: () -> Unit
-) {
-    val targetCfg = remember(targetTheme) { ThemeRepository.getTheme(targetTheme) }
-    var countdownSeconds by remember { mutableStateOf(5) }
-    var adFinished by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        while (countdownSeconds > 0) {
-            delay(1000L)
-            countdownSeconds--
-        }
-        adFinished = true
-    }
-
-    Dialog(
-        onDismissRequest = {
-            if (adFinished) onDismiss()
-        },
-        properties = DialogProperties(
-            dismissOnBackPress = adFinished,
-            dismissOnClickOutside = false
-        )
-    ) {
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = Color(0xFF111827),
-            border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF06B6D4)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF06B6D4).copy(alpha = 0.2f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF06B6D4))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayCircle,
-                            contentDescription = null,
-                            tint = Color(0xFF06B6D4),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "SPONSORED REWARD AD",
-                            color = Color(0xFF06B6D4),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(140.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xFF1F2937))
-                        .border(1.dp, Color(0xFF374151), RoundedCornerShape(14.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (targetCfg.coverDrawableRes != null) {
-                        Image(
-                            painter = painterResource(id = targetCfg.coverDrawableRes),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.45f))
-                        )
-                    }
-
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.Palette,
-                            contentDescription = null,
-                            tint = Color(0xFF06B6D4),
-                            modifier = Modifier.size(36.dp)
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Unlocking: ${targetTheme.displayName}",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
-                        Text(
-                            text = "Keep music free • Supporting Sonance Player",
-                            color = Color(0xFFE5E7EB),
-                            fontSize = 10.sp
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color.Black.copy(alpha = 0.7f))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = if (adFinished) "REWARD READY!" else "Reward in: ${countdownSeconds}s",
-                            color = if (adFinished) Color(0xFF10B981) else Color(0xFFFFD700),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                LinearProgressIndicator(
-                    progress = { (5 - countdownSeconds) / 5f },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp)),
-                    color = Color(0xFF06B6D4),
-                    trackColor = Color(0xFF374151)
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = if (adFinished) "Awesome! Your reward is ready!" else "Watching video to unlock wallpaper...",
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                if (adFinished) {
-                    Button(
-                        onClick = onRewardEarned,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(46.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            tint = Color.Black,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Claim & Apply Wallpaper",
-                            color = Color.Black,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color(0xFF9CA3AF)
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Cancel Ad (No Reward)", fontSize = 12.sp)
-                    }
-                }
-            }
         }
     }
 }

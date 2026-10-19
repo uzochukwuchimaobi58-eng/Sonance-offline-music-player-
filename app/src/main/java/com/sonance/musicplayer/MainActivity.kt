@@ -851,7 +851,9 @@ class MainActivity : ComponentActivity() {
                     isOpen = trimmingTrack != null,
                     onClose = { trimmingTrack = null },
                     track = trimmingTrack,
-                    theme = theme
+                    theme = theme,
+                    playbackManager = playbackManager,
+                    repository = repository
                 )
 
                 // Karaoke Studio Dialog
@@ -915,7 +917,8 @@ class MainActivity : ComponentActivity() {
                     unlockedThemeIds = unlockedThemeIds,
                     onUnlockThemeByAd = { repository.unlockThemeByAd(it) },
                     customWallpaperUri = customWallpaperUri,
-                    onSetCustomWallpaperUri = { repository.setCustomWallpaperUri(it) }
+                    onSetCustomWallpaperUri = { repository.setCustomWallpaperUri(it) },
+                    rewardedAdUnitId = remoteSettings.admobRewardedUnitId
                 )
 
                 // Settings Dialog

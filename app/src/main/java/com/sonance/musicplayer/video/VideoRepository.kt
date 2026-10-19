@@ -44,6 +44,8 @@ class VideoRepository(private val context: Context) {
     private var videoContentObserver: ContentObserver? = null
 
     init {
+        // Purge any residual demo videos
+        purgeDemoVideos()
         // Load initially saved custom user videos
         loadCustomVideos()
 
@@ -311,81 +313,51 @@ class VideoRepository(private val context: Context) {
             }
         }
 
-        // If STILL empty (e.g. fresh emulator or device without user videos), seed the bundled HD demo videos
-        if (allMap.isEmpty()) {
-            val demos = seedDemoSampleVideos()
-            demos.forEach { demo ->
-                allMap[demo.uri.toString()] = demo
-            }
-        }
+        purgeDemoVideos()
 
-        _videos.value = allMap.values.sortedByDescending { it.dateAdded }
+        _videos.value = allMap.values
+            .filter { !isDemoVideo(it) }
+            .sortedByDescending { it.dateAdded }
         _isScanning.value = false
+    }
+
+    private fun isDemoVideo(item: VideoItem): Boolean {
+        val titleLower = item.title.lowercase()
+        val pathLower = item.path.lowercase()
+        return titleLower.contains("sonance studio demo") ||
+               titleLower.contains("synthwave neon soundstage") ||
+               titleLower.contains("acoustic chill showcase") ||
+               pathLower.contains("sonance_studio_demo") ||
+               pathLower.contains("synthwave_neon_soundstage") ||
+               pathLower.contains("acoustic_chill_showcase")
+    }
+
+    fun purgeDemoVideos() {
+        try {
+            val targetDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: context.filesDir
+            val demoFiles = listOf(
+                File(targetDir, "Sonance_Studio_Demo.mp4"),
+                File(targetDir, "Synthwave_Neon_Soundstage.mp4"),
+                File(targetDir, "Acoustic_Chill_Showcase.mp4"),
+                File(context.filesDir, "Sonance_Studio_Demo.mp4"),
+                File(context.filesDir, "Synthwave_Neon_Soundstage.mp4"),
+                File(context.filesDir, "Acoustic_Chill_Showcase.mp4"),
+                File(context.filesDir, "videos/Sonance_Studio_Demo.mp4"),
+                File(context.filesDir, "videos/Synthwave_Neon_Soundstage.mp4"),
+                File(context.filesDir, "videos/Acoustic_Chill_Showcase.mp4")
+            )
+            demoFiles.forEach { file ->
+                if (file.exists()) {
+                    file.delete()
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     private fun isVideoExtension(ext: String): Boolean {
         val e = ext.lowercase()
         return e == "mp4" || e == "mkv" || e == "webm" || e == "3gp" ||
                e == "mov" || e == "m4v" || e == "ts" || e == "avi"
-    }
-
-    fun seedDemoSampleVideos(): List<VideoItem> {
-        val seededList = mutableListOf<VideoItem>()
-        try {
-            val targetDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: context.filesDir
-            if (!targetDir.exists()) targetDir.mkdirs()
-
-            // 1. Sonance Studio Demo (720p HD)
-            val demoFile1 = File(targetDir, "Sonance_Studio_Demo.mp4")
-            if (!demoFile1.exists() || demoFile1.length() < 1000L) {
-                context.resources.openRawResource(R.raw.sample_offline_video).use { input ->
-                    FileOutputStream(demoFile1).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            }
-            if (demoFile1.exists() && demoFile1.length() > 0L) {
-                val item1 = extractVideoMetadata(Uri.fromFile(demoFile1), "Sonance Studio Demo (720p HD)", demoFile1)
-                seededList.add(item1)
-            }
-
-            // 2. Synthwave Neon Soundstage (1080p FHD)
-            val demoFile2 = File(targetDir, "Synthwave_Neon_Soundstage.mp4")
-            if (!demoFile2.exists() || demoFile2.length() < 1000L) {
-                demoFile1.copyTo(demoFile2, overwrite = true)
-            }
-            if (demoFile2.exists() && demoFile2.length() > 0L) {
-                val item2 = extractVideoMetadata(Uri.fromFile(demoFile2), "Synthwave Neon Soundstage (1080p FHD)", demoFile2)
-                seededList.add(item2)
-            }
-
-            // 3. Acoustic Chill Showcase (720p HD)
-            val demoFile3 = File(targetDir, "Acoustic_Chill_Showcase.mp4")
-            if (!demoFile3.exists() || demoFile3.length() < 1000L) {
-                demoFile1.copyTo(demoFile3, overwrite = true)
-            }
-            if (demoFile3.exists() && demoFile3.length() > 0L) {
-                val item3 = extractVideoMetadata(Uri.fromFile(demoFile3), "Acoustic Chill Showcase (720p HD)", demoFile3)
-                seededList.add(item3)
-            }
-        } catch (e: Exception) {
-            Log.e("VideoRepository", "Error seeding sample offline demo videos", e)
-        }
-        return seededList
-    }
-
-    suspend fun reloadSampleVideos() = withContext(Dispatchers.IO) {
-        _isScanning.value = true
-        val demos = seedDemoSampleVideos()
-        val allMap = linkedMapOf<String, VideoItem>()
-        _videos.value.forEach { allMap[it.uri.toString()] = it }
-        demos.forEach { allMap[it.uri.toString()] = it }
-        _videos.value = allMap.values.sortedByDescending { it.dateAdded }
-        _isScanning.value = false
-    }
-
-    fun seedDemoSampleVideo(): VideoItem? {
-        return seedDemoSampleVideos().firstOrNull()
     }
 
     private fun loadCustomVideos() {

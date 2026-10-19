@@ -1670,8 +1670,8 @@ fun VideoPlayerScreen(
                             Text(
                                 text = when {
                                     videoSearchQuery.isNotEmpty() -> "No videos match '$videoSearchQuery'"
-                                    isScanning -> "Please wait while Sonance searches your storage for offline videos."
-                                    else -> "Sonance scans your storage for offline videos (Movies, Downloads, DCIM). You can scan device folders, load bundled HD demo videos, or select files directly."
+                                    isScanning -> "Please wait while Sonance searches your phone for offline videos."
+                                    else -> "No videos found on device. Scan your device storage or select video files from your phone."
                                 },
                                 color = Color(0xFFA1A1AA),
                                 fontSize = 13.sp,
@@ -1702,7 +1702,7 @@ fun VideoPlayerScreen(
                                             onClick = {
                                                 scope.launch {
                                                     videoRepo.scanDeviceVideos()
-                                                    showToastBadge("Scanned device: ${videos.size} videos available")
+                                                    showToastBadge("Scanned phone: ${videos.size} videos found")
                                                 }
                                             },
                                             colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
@@ -1717,7 +1717,7 @@ fun VideoPlayerScreen(
                                             )
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
-                                                "Scan Storage",
+                                                "Scan Device",
                                                 color = Color.Black,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 13.sp
@@ -1749,56 +1749,26 @@ fun VideoPlayerScreen(
                                         }
                                     }
 
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        OutlinedButton(
-                                            onClick = {
-                                                scope.launch {
-                                                    videoRepo.reloadSampleVideos()
-                                                    showToastBadge("Loaded offline sample demo videos")
-                                                }
-                                            },
+                                    if (!hasVideoPermission) {
+                                        Button(
+                                            onClick = { permissionLauncher.launch(videoPermission) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
                                             shape = RoundedCornerShape(12.dp),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
-                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                                            modifier = Modifier.testTag("btn_empty_load_sample_videos")
+                                            modifier = Modifier.testTag("btn_grant_video_permission")
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Default.PlayCircle,
+                                                imageVector = Icons.Default.CheckCircle,
                                                 contentDescription = null,
+                                                tint = Color.White,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
-                                                "Load Demo Videos",
-                                                fontWeight = FontWeight.Medium,
+                                                "Grant Permission",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
                                                 fontSize = 13.sp
                                             )
-                                        }
-
-                                        if (!hasVideoPermission) {
-                                            Button(
-                                                onClick = { permissionLauncher.launch(videoPermission) },
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
-                                                shape = RoundedCornerShape(12.dp),
-                                                modifier = Modifier.testTag("btn_grant_video_permission")
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.CheckCircle,
-                                                    contentDescription = null,
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text(
-                                                    "Grant Permission",
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 13.sp
-                                                )
-                                            }
                                         }
                                     }
                                 }

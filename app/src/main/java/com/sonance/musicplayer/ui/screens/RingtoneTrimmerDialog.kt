@@ -1,5 +1,7 @@
 package com.sonance.musicplayer.ui.screens
 
+import android.media.MediaPlayer
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -25,7 +27,9 @@ import com.sonance.musicplayer.model.ThemeConfig
 import com.sonance.musicplayer.model.Track
 import com.sonance.musicplayer.player.PlaybackManager
 import com.sonance.musicplayer.util.AudioExportHelper
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,9 +50,53 @@ fun RingtoneTrimmerDialog(
     var endTimeSec by remember(track) { mutableFloatStateOf(track.duration.toFloat().coerceAtMost(30f)) }
     var isPreviewing by remember { mutableStateOf(false) }
     var isDownloading by remember { mutableStateOf(false) }
+    var isSettingRingtone by remember { mutableStateOf(false) }
+
+    val previewPlayer = remember { MediaPlayer() }
+
+    fun stopPreview() {
+        try {
+            if (previewPlayer.isPlaying) {
+                previewPlayer.pause()
+            }
+        } catch (_: Exception) {}
+        playbackManager?.pause()
+        isPreviewing = false
+    }
+
+    DisposableEffect(track) {
+        onDispose {
+            try {
+                if (previewPlayer.isPlaying) {
+                    previewPlayer.stop()
+                }
+                previewPlayer.release()
+            } catch (_: Exception) {}
+        }
+    }
+
+    // Loop or stop cleanly when reaching endTimeSec
+    LaunchedEffect(isPreviewing, startTimeSec, endTimeSec) {
+        if (isPreviewing) {
+            while (isPreviewing) {
+                delay(100L)
+                try {
+                    if (previewPlayer.isPlaying) {
+                        val currentSec = previewPlayer.currentPosition / 1000f
+                        if (currentSec >= endTimeSec || currentSec < startTimeSec - 0.5f) {
+                            previewPlayer.seekTo((startTimeSec * 1000).toInt())
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
 
     ModalBottomSheet(
-        onDismissRequest = onClose,
+        onDismissRequest = {
+            stopPreview()
+            onClose()
+        },
         containerColor = theme.sidebarBg,
         modifier = Modifier.testTag("ringtone_trimmer_dialog")
     ) {
@@ -100,6 +148,11 @@ fun RingtoneTrimmerDialog(
                 value = startTimeSec,
                 onValueChange = {
                     startTimeSec = it.coerceAtMost(endTimeSec - 5f)
+                    if (isPreviewing) {
+                        try {
+                            previewPlayer.seekTo((startTimeSec * 1000).toInt())
+                        } catch (_: Exception) {}
+                    }
                 },
                 valueRange = 0f..track.duration.toFloat().coerceAtLeast(10f),
                 colors = SliderDefaults.colors(
@@ -135,29 +188,64 @@ fun RingtoneTrimmerDialog(
                 OutlinedButton(
                     onClick = {
                         if (isPreviewing) {
-                            playbackManager?.pause()
-                            isPreviewing = false
+                            stopPreview()
                         } else {
-                            playbackManager?.playTrack(track, startPositionMs = (startTimeSec * 1000L).toLong())
-                            isPreviewing = true
-                            Toast.makeText(context, "Playing preview from ${startTimeSec.toInt()}s", Toast.LENGTH_SHORT).show()
+                            try {
+                                playbackManager?.pause()
+                                previewPlayer.reset()
+                                val uri: Uri? = when {
+                                    track.contentUri.isNotBlank() -> Uri.parse(track.contentUri)
+                                    track.url.isNotBlank() -> Uri.parse(track.url)
+                                    else -> null
+                                }
+
+                                if (uri != null) {
+                                    previewPlayer.setDataSource(context, uri)
+                                    previewPlayer.prepare()
+                                    previewPlayer.seekTo((startTimeSec * 1000).toInt())
+                                    previewPlayer.start()
+                                    isPreviewing = true
+                                    Toast.makeText(
+                                        context,
+                                        "Playing preview from ${startTimeSec.toInt()}s to ${endTimeSec.toInt()}s",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    playbackManager?.playTrack(track, startPositionMs = (startTimeSec * 1000L).toLong())
+                                    isPreviewing = true
+                                }
+                            } catch (e: Exception) {
+                                playbackManager?.playTrack(track, startPositionMs = (startTimeSec * 1000L).toLong())
+                                isPreviewing = true
+                            }
                         }
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (isPreviewing) theme.accentColor.copy(alpha = 0.2f) else Color.Transparent
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isPreviewing) theme.accentColor else Color.White.copy(alpha = 0.25f)
+                    )
                 ) {
                     Icon(
                         imageVector = if (isPreviewing) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = null
+                        contentDescription = null,
+                        tint = if (isPreviewing) theme.accentColor else theme.textPrimary
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(if (isPreviewing) "Stop" else "Preview", color = theme.textPrimary)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        if (isPreviewing) "Stop Preview" else "Preview Segment",
+                        color = if (isPreviewing) theme.accentColor else theme.textPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
-
-                var isSettingRingtone by remember { mutableStateOf(false) }
 
                 Button(
                     onClick = {
                         if (isSettingRingtone) return@Button
+                        stopPreview()
                         isSettingRingtone = true
                         coroutineScope.launch {
                             val durationSec = (endTimeSec - startTimeSec).toInt().coerceAtLeast(1)
@@ -202,6 +290,7 @@ fun RingtoneTrimmerDialog(
             Button(
                 onClick = {
                     if (isDownloading) return@Button
+                    stopPreview()
                     isDownloading = true
                     coroutineScope.launch {
                         val exported = AudioExportHelper.exportTrimmedAudio(
@@ -217,7 +306,7 @@ fun RingtoneTrimmerDialog(
                                 id = "trim-${UUID.randomUUID()}",
                                 title = "${track.title} (Trimmed ${durationSec}s)",
                                 duration = durationSec.toLong(),
-                                url = android.net.Uri.fromFile(exported).toString(),
+                                url = Uri.fromFile(exported).toString(),
                                 folder = exported.parent ?: "Download",
                                 dateAdded = System.currentTimeMillis()
                             )
