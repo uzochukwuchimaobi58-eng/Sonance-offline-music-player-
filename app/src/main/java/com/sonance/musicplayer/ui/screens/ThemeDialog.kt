@@ -77,11 +77,11 @@ fun ThemeDialog(
 
     val allThemes = remember {
         listOf(
-            // 2 Free Wallpapers & Themes
+            // Free Wallpapers & Themes
             AppTheme.NATURE_FLOWER,
             AppTheme.DARK_AMOLED,
 
-            // Premium Locked Wallpapers & Themes
+            // Photographic & Visual Themes
             AppTheme.ANIMAL_PETS,
             AppTheme.CRIMSON_COUNTDOWN,
             AppTheme.SKY_BLOSSOM,
@@ -91,7 +91,31 @@ fun ThemeDialog(
             AppTheme.MOUNTAIN_BLUR,
             AppTheme.STUDIO_PIANO,
             AppTheme.AUTUMN_BOKEH,
-            AppTheme.ROCK_PLAYLIST
+            AppTheme.ROCK_PLAYLIST,
+            AppTheme.DARK_SLATE,
+            AppTheme.FROSTED_GLASS,
+            AppTheme.MONOCHROME_SPOKE,
+            AppTheme.EMERALD_ARC,
+            AppTheme.WEEKLY_BLUE,
+            AppTheme.TROPICAL_DUSK,
+            AppTheme.CAMPUS_SUNSHINE,
+            AppTheme.BOHO_PAMPAS,
+            AppTheme.ALPINE_LAKE,
+            AppTheme.LIQUID_CHROME,
+
+            // Classic & VIP Themes
+            AppTheme.CYBERPUNK,
+            AppTheme.MIDNIGHT_BLUE,
+            AppTheme.SUNSET_WARM,
+            AppTheme.EMERALD_FOREST,
+            AppTheme.CRIMSON_RUBY,
+            AppTheme.GOLDEN_LUXURY,
+            AppTheme.LIGHT_MINIMAL,
+            AppTheme.ROYAL_AMETHYST,
+            AppTheme.AURORA_BOREALIS,
+            AppTheme.CARBON_TITANIUM,
+            AppTheme.ROSE_GOLD_LUXE,
+            AppTheme.NEON_MATRIX
         )
     }
 

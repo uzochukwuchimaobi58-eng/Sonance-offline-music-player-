@@ -1,13 +1,16 @@
 package com.sonance.musicplayer.ui.screens
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -84,7 +87,10 @@ import kotlinx.coroutines.launch
 fun VideoPlayerScreen(
     theme: ThemeConfig,
     onBack: () -> Unit,
-    onPauseMusic: () -> Unit
+    onPauseMusic: () -> Unit,
+    isPro: Boolean = false,
+    admobEnabled: Boolean = true,
+    onOpenProUpgrade: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -101,6 +107,20 @@ fun VideoPlayerScreen(
     var isConverterOpen by remember { mutableStateOf(false) }
     var convertingVideo by remember { mutableStateOf<VideoItem?>(null) }
     var videoSearchQuery by remember { mutableStateOf("") }
+
+    // Interstitial ad states for Video Tools
+    var showInterstitialAd by remember { mutableStateOf(false) }
+    var interstitialPendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    fun runWithInterstitial(action: () -> Unit) {
+        if (com.sonance.musicplayer.ui.components.InterstitialAdController.shouldTriggerInterstitial(isPro, admobEnabled)) {
+            com.sonance.musicplayer.ui.components.InterstitialAdController.recordAdImpression()
+            interstitialPendingAction = action
+            showInterstitialAd = true
+        } else {
+            action()
+        }
+    }
 
     // Playback and UI states
     var isPlaying by remember { mutableStateOf(false) }
@@ -283,6 +303,31 @@ fun VideoPlayerScreen(
         }
     }
 
+    val videoPermission = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_VIDEO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+    }
+
+    var hasVideoPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, videoPermission) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasVideoPermission = isGranted
+        if (isGranted) {
+            scope.launch {
+                videoRepo.scanDeviceVideos()
+            }
+        }
+    }
+
     // Google Play compliant zero-permission system Video Picker
     val videoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
@@ -307,7 +352,12 @@ fun VideoPlayerScreen(
     }
 
     LaunchedEffect(Unit) {
-        // Load the user's curated video collection
+        val granted = ContextCompat.checkSelfPermission(context, videoPermission) == PackageManager.PERMISSION_GRANTED
+        hasVideoPermission = granted
+        if (!granted) {
+            permissionLauncher.launch(videoPermission)
+        }
+        // Load all offline videos from device storage
         videoRepo.scanDeviceVideos()
     }
 
@@ -969,9 +1019,14 @@ fun VideoPlayerScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    // Refresh Button
+                    // Refresh / Scan Button
                     IconButton(
-                        onClick = { scope.launch { videoRepo.scanDeviceVideos() } },
+                        onClick = {
+                            scope.launch {
+                                videoRepo.scanDeviceVideos()
+                                showToastBadge("Scanned device: ${videos.size} videos available")
+                            }
+                        },
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
@@ -980,9 +1035,62 @@ fun VideoPlayerScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh Videos",
+                            contentDescription = "Scan Videos",
                             tint = Color.White
                         )
+                    }
+                }
+
+                // Storage permission informational banner (non-blocking)
+                AnimatedVisibility(visible = !hasVideoPermission) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 4.dp),
+                        color = Color(0xFF1E293B),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = theme.accentColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Grant storage permission to scan all device folders",
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    fontSize = 11.5.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = { permissionLauncher.launch(videoPermission) },
+                                colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                modifier = Modifier.height(26.dp),
+                                shape = RoundedCornerShape(13.dp)
+                            ) {
+                                Text(
+                                    "Grant",
+                                    color = Color.Black,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -1001,8 +1109,10 @@ fun VideoPlayerScreen(
                             label = "Video Converter",
                             color = Color(0xFF22C55E),
                             onClick = {
-                                convertingVideo = activeVideo ?: videos.firstOrNull()
-                                isConverterOpen = true
+                                runWithInterstitial {
+                                    convertingVideo = activeVideo ?: videos.firstOrNull()
+                                    isConverterOpen = true
+                                }
                             }
                         )
                     }
@@ -1014,7 +1124,7 @@ fun VideoPlayerScreen(
                             onClick = {
                                 val target = activeVideo ?: videos.firstOrNull()
                                 if (target != null) {
-                                    trimmingVideo = target
+                                    runWithInterstitial { trimmingVideo = target }
                                 } else {
                                     showToastBadge("Please import or select a video to trim")
                                 }
@@ -1029,7 +1139,7 @@ fun VideoPlayerScreen(
                             onClick = {
                                 val target = activeVideo ?: videos.firstOrNull()
                                 if (target != null) {
-                                    trimmingVideo = target
+                                    runWithInterstitial { trimmingVideo = target }
                                 } else {
                                     showToastBadge("Please import or select a video to cut")
                                 }
@@ -1042,8 +1152,10 @@ fun VideoPlayerScreen(
                             label = "Video to MP3",
                             color = Color(0xFFA855F7),
                             onClick = {
-                                convertingVideo = activeVideo ?: videos.firstOrNull()
-                                isConverterOpen = true
+                                runWithInterstitial {
+                                    convertingVideo = activeVideo ?: videos.firstOrNull()
+                                    isConverterOpen = true
+                                }
                             }
                         )
                     }
@@ -1436,7 +1548,77 @@ fun VideoPlayerScreen(
                         }
                     }
                 }
-            }
+            } else if (videos.isNotEmpty()) {
+                    val previewVideo = videos[0]
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+                                )
+                            )
+                            .border(1.2.dp, Color(0xFF22C55E).copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                            .clickable { playVideoAtIndex(0) }
+                            .testTag("card_video_hero_play")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xFF22C55E).copy(alpha = 0.2f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF22C55E).copy(alpha = 0.5f))
+                                ) {
+                                    Text(
+                                        text = "READY TO PLAY",
+                                        color = Color(0xFF22C55E),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = previewVideo.title,
+                                    color = Color.White,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "${previewVideo.resolution} • ${previewVideo.formattedDuration} • Tap to start playback",
+                                    color = Color(0xFFA1A1AA),
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF22C55E)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Play Video",
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+                    }
+                }
 
             if (isScanning) {
                     LinearProgressIndicator(
@@ -1457,58 +1639,177 @@ fun VideoPlayerScreen(
                 if (filteredVideos.isEmpty()) {
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(20.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.VideoLibrary, contentDescription = null, tint = Color(0xFF22C55E), modifier = Modifier.size(48.dp))
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = if (videoSearchQuery.isNotEmpty()) "No matching videos" else "No user videos found",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = if (!hasVideoPermission) Icons.Default.Lock else Icons.Default.VideoLibrary,
+                                contentDescription = null,
+                                tint = theme.accentColor,
+                                modifier = Modifier.size(54.dp)
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
                             Text(
-                                text = if (videoSearchQuery.isNotEmpty()) "Try searching for another title" else "Add videos from your gallery using the secure system video picker",
-                                color = Color(0xFF8E8E93),
-                                fontSize = 12.5.sp,
+                                text = when {
+                                    videoSearchQuery.isNotEmpty() -> "No matching videos"
+                                    isScanning -> "Scanning Device for Offline Videos..."
+                                    else -> "Offline Video Studio Ready"
+                                },
+                                color = Color.White,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
                                 textAlign = TextAlign.Center
                             )
-                            if (videoSearchQuery.isEmpty()) {
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Button(
-                                    onClick = {
-                                        videoPickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
-                                        )
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = when {
+                                    videoSearchQuery.isNotEmpty() -> "No videos match '$videoSearchQuery'"
+                                    isScanning -> "Please wait while Sonance searches your storage for offline videos."
+                                    else -> "Sonance scans your storage for offline videos (Movies, Downloads, DCIM). You can scan device folders, load bundled HD demo videos, or select files directly."
+                                },
+                                color = Color(0xFFA1A1AA),
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 18.sp
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
+
+                            if (videoSearchQuery.isNotEmpty()) {
+                                OutlinedButton(
+                                    onClick = { videoSearchQuery = "" },
                                     shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.testTag("btn_empty_import_videos")
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentColor),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = theme.accentColor)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Add,
-                                        contentDescription = null,
-                                        tint = Color.Black,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        "Select Videos",
-                                        color = Color.Black,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp
-                                    )
+                                    Text("Clear Search", fontWeight = FontWeight.Bold)
+                                }
+                            } else {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                scope.launch {
+                                                    videoRepo.scanDeviceVideos()
+                                                    showToastBadge("Scanned device: ${videos.size} videos available")
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.testTag("btn_empty_rescan_videos")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Refresh,
+                                                contentDescription = null,
+                                                tint = Color.Black,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                "Scan Storage",
+                                                color = Color.Black,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = {
+                                                videoPickerLauncher.launch(
+                                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                                                )
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentColor),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = theme.accentColor),
+                                            modifier = Modifier.testTag("btn_empty_import_videos")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Add,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                "Select Videos",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    }
+
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    videoRepo.reloadSampleVideos()
+                                                    showToastBadge("Loaded offline sample demo videos")
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                            modifier = Modifier.testTag("btn_empty_load_sample_videos")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.PlayCircle,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                "Load Demo Videos",
+                                                fontWeight = FontWeight.Medium,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+
+                                        if (!hasVideoPermission) {
+                                            Button(
+                                                onClick = { permissionLauncher.launch(videoPermission) },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.testTag("btn_grant_video_permission")
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CheckCircle,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    "Grant Permission",
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 } else {
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {

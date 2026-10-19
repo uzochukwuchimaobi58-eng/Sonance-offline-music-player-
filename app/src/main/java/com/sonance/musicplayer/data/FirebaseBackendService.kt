@@ -881,14 +881,14 @@ class FirebaseBackendService(private val context: Context) {
                 supportEmail = getString("support_email", "uzochukwuchimaobi58@gmail.com"),
                 enableGearBillboard = getBoolean("enable_gear_billboard", true),
                 defaultCrossfadeSeconds = getInt("default_crossfade_seconds", 0),
-                showShuffleButtonDefault = getBoolean("show_shuffle_button_default", true),
-                admobEnabled = getBoolean("admob_enabled", false), // Paused for Play Store release
+                admobEnabled = getBoolean("admob_enabled", true),
                 forceProOverride = getString("force_pro_override", "none"),
                 proYearlyPrice = getString("pro_yearly_price", "$5.00"),
                 proLifetimePrice = getString("pro_lifetime_price", "$10.00"),
                 admobAppId = getString("admob_app_id", "ca-app-pub-6322953088287505~5972613999"),
                 admobBannerUnitId = getString("admob_banner_unit_id", "ca-app-pub-6322953088287505/5517813262"),
                 admobInterstitialUnitId = getString("admob_interstitial_unit_id", "ca-app-pub-6322953088287505/2734992395"),
+                admobRewardedUnitId = getString("admob_rewarded_unit_id", "ca-app-pub-6322953088287505/6817514112"),
                 lastSyncedAt = System.currentTimeMillis(),
                 syncStatus = "Active from Firebase"
             )
@@ -923,6 +923,7 @@ class FirebaseBackendService(private val context: Context) {
             "admob_app_id": { "stringValue": ${escapeJson(settings.admobAppId)} },
             "admob_banner_unit_id": { "stringValue": ${escapeJson(settings.admobBannerUnitId)} },
             "admob_interstitial_unit_id": { "stringValue": ${escapeJson(settings.admobInterstitialUnitId)} },
+            "admob_rewarded_unit_id": { "stringValue": ${escapeJson(settings.admobRewardedUnitId)} },
             "updatedAt": { "stringValue": "${java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())}" }
           }
         }

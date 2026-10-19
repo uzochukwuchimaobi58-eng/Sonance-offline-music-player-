@@ -37,6 +37,7 @@ import com.sonance.musicplayer.model.ThemeConfig
 import kotlinx.coroutines.delay
 
 const val PRODUCTION_INTERSTITIAL_UNIT_ID = "ca-app-pub-6322953088287505/2734992395"
+const val TEST_INTERSTITIAL_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
 
 object InterstitialAdController {
     private const val TAG = "InterstitialAd"
@@ -50,16 +51,13 @@ object InterstitialAdController {
 
     fun loadInterstitial(context: Context, adUnitId: String = PRODUCTION_INTERSTITIAL_UNIT_ID) {
         if (interstitialAd != null || isLoading) return
-        if (com.sonance.musicplayer.MusicApplication.isEmulatorDevice()) {
-            Log.d(TAG, "Emulator device detected; skipping InterstitialAd load")
-            return
-        }
         isLoading = true
+        val targetUnitId = adUnitId.ifBlank { PRODUCTION_INTERSTITIAL_UNIT_ID }
         val adRequest = AdRequest.Builder().build()
         try {
             InterstitialAd.load(
                 context.applicationContext,
-                adUnitId,
+                targetUnitId,
                 adRequest,
                 object : InterstitialAdLoadCallback() {
                     override fun onAdLoaded(ad: InterstitialAd) {

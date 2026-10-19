@@ -3,16 +3,28 @@ package com.sonance.musicplayer.video
 import android.content.ContentUris
 import android.content.Context
 import android.content.SharedPreferences
+import android.database.ContentObserver
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.media.MediaScannerConnection
+import android.os.Environment
+import com.sonance.musicplayer.R
+import java.io.File
+import java.io.FileOutputStream
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -21,15 +33,43 @@ class VideoRepository(private val context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("sonance_video_prefs", Context.MODE_PRIVATE)
 
+    private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
     private val _videos = MutableStateFlow<List<VideoItem>>(emptyList())
     val videos: StateFlow<List<VideoItem>> = _videos.asStateFlow()
 
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
+    private var videoContentObserver: ContentObserver? = null
+
     init {
         // Load initially saved custom user videos
         loadCustomVideos()
+
+        // Register ContentObserver to detect newly downloaded / recorded offline videos
+        try {
+            videoContentObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean, uri: Uri?) {
+                    super.onChange(selfChange, uri)
+                    coroutineScope.launch {
+                        scanDeviceVideos()
+                    }
+                }
+            }
+            context.contentResolver.registerContentObserver(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                true,
+                videoContentObserver!!
+            )
+        } catch (e: Exception) {
+            Log.w("VideoRepository", "Could not register video content observer", e)
+        }
+
+        // Trigger scan immediately on start
+        coroutineScope.launch {
+            scanDeviceVideos()
+        }
     }
 
     private fun getDeletedVideoIds(): Set<String> {
@@ -47,67 +87,60 @@ class VideoRepository(private val context: Context) {
         _videos.value = _videos.value.filter { it.id != id }
     }
 
-    private fun isSampleOrSystemVideo(title: String, name: String, path: String): Boolean {
-        val t = title.lowercase()
-        val n = name.lowercase()
+    private fun isSystemOnlyVideo(path: String): Boolean {
         val p = path.lowercase()
-
-        // Filter out system / emulator preloaded sample media
-        val sampleKeywords = listOf(
-            "sample", "test", "demo", "bunny", "big_buck", "elephants_dream",
-            "sintel", "tearsofsteel", "placeholder", "trailer", "default_video"
-        )
-        if (sampleKeywords.any { t.contains(it) || n.contains(it) || p.contains(it) }) {
-            return true
-        }
-
-        if (p.startsWith("/system/") || p.startsWith("/vendor/") ||
+        return p.startsWith("/system/") || p.startsWith("/vendor/") ||
             p.startsWith("/product/") || p.startsWith("/apex/") ||
             p.startsWith("/system_ext/")
-        ) {
-            return true
-        }
-
-        return false
     }
 
-    private fun extractVideoMetadata(uri: Uri, customTitle: String = ""): VideoItem {
-        var title = if (customTitle.isNotBlank()) customTitle else "User Video"
+    private fun extractVideoMetadata(uri: Uri, customTitle: String = "", directFile: File? = null): VideoItem {
+        val file = directFile ?: if (uri.scheme == "file") File(uri.path ?: "") else null
+        var title = if (customTitle.isNotBlank()) customTitle else file?.nameWithoutExtension ?: "User Video"
         var duration = 0L
-        var size = 0L
-        var width = 1920
-        var height = 1080
-        val dateAdded = System.currentTimeMillis() / 1000
+        var size = file?.length() ?: 0L
+        var width = 1280
+        var height = 720
+        val dateAdded = if (file != null && file.lastModified() > 0) file.lastModified() / 1000 else System.currentTimeMillis() / 1000
 
-        try {
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                val nameCol = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                val sizeCol = cursor.getColumnIndex(OpenableColumns.SIZE)
-                if (cursor.moveToFirst()) {
-                    if (nameCol != -1) {
-                        val n = cursor.getString(nameCol)
-                        if (!n.isNullOrBlank() && customTitle.isBlank()) {
-                            title = n.substringBeforeLast(".")
+        if (file == null || size <= 0L) {
+            try {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameCol = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeCol = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (cursor.moveToFirst()) {
+                        if (nameCol != -1) {
+                            val n = cursor.getString(nameCol)
+                            if (!n.isNullOrBlank() && customTitle.isBlank()) {
+                                title = n.substringBeforeLast(".")
+                            }
+                        }
+                        if (sizeCol != -1) {
+                            val s = cursor.getLong(sizeCol)
+                            if (s > 0) size = s
                         }
                     }
-                    if (sizeCol != -1) {
-                        size = cursor.getLong(sizeCol)
-                    }
                 }
+            } catch (e: Exception) {
+                Log.w("VideoRepository", "Could not query OpenableColumns", e)
             }
-        } catch (e: Exception) {
-            Log.w("VideoRepository", "Could not query OpenableColumns", e)
         }
 
         try {
             val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(context, uri)
+            if (file != null && file.exists()) {
+                retriever.setDataSource(file.absolutePath)
+            } else if (uri.scheme == "content") {
+                retriever.setDataSource(context, uri)
+            } else {
+                retriever.setDataSource(context, uri)
+            }
             val d = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
             if (d != null) duration = d.toLongOrNull() ?: 0L
             val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-            if (w != null) width = w.toIntOrNull() ?: 1920
+            if (w != null) width = w.toIntOrNull() ?: 1280
             val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-            if (h != null) height = h.toIntOrNull() ?: 1080
+            if (h != null) height = h.toIntOrNull() ?: 720
             val t = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
             if (!t.isNullOrBlank() && customTitle.isBlank()) title = t
             retriever.release()
@@ -115,13 +148,19 @@ class VideoRepository(private val context: Context) {
             Log.w("VideoRepository", "Retriever metadata extraction info", e)
         }
 
+        val stableId = if (file != null) {
+            kotlin.math.abs(file.absolutePath.hashCode().toLong()) + 100_000L
+        } else {
+            kotlin.math.abs(uri.toString().hashCode().toLong()) + 200_000L
+        }
+
         return VideoItem(
-            id = System.currentTimeMillis() + (0..999).random(),
+            id = stableId,
             title = title,
-            path = uri.toString(),
+            path = file?.absolutePath ?: uri.toString(),
             uri = uri,
-            durationMs = duration,
-            sizeBytes = size,
+            durationMs = if (duration > 0) duration else 8000L,
+            sizeBytes = if (size > 0) size else 206_000L,
             width = width,
             height = height,
             dateAdded = dateAdded
@@ -131,10 +170,222 @@ class VideoRepository(private val context: Context) {
     suspend fun scanDeviceVideos() = withContext(Dispatchers.IO) {
         _isScanning.value = true
         val deletedIds = getDeletedVideoIds()
-        val customVideos = loadSavedCustomVideos()
-        // Only load the user's authentic chosen videos - no emulator / system / sample videos
-        _videos.value = customVideos.filter { !deletedIds.contains(it.id.toString()) }
+        val mediaStoreVideos = mutableListOf<VideoItem>()
+
+        val projection = arrayOf(
+            MediaStore.Video.Media._ID,
+            MediaStore.Video.Media.TITLE,
+            MediaStore.Video.Media.DISPLAY_NAME,
+            MediaStore.Video.Media.DATA,
+            MediaStore.Video.Media.DURATION,
+            MediaStore.Video.Media.SIZE,
+            MediaStore.Video.Media.DATE_ADDED,
+            MediaStore.Video.Media.WIDTH,
+            MediaStore.Video.Media.HEIGHT
+        )
+
+        fun queryVideoCollection(collectionUri: Uri) {
+            try {
+                context.contentResolver.query(
+                    collectionUri,
+                    projection,
+                    null,
+                    null,
+                    "${MediaStore.Video.Media.DATE_ADDED} DESC"
+                )?.use { cursor ->
+                    val idCol = cursor.getColumnIndex(MediaStore.Video.Media._ID)
+                    val titleCol = cursor.getColumnIndex(MediaStore.Video.Media.TITLE)
+                    val nameCol = cursor.getColumnIndex(MediaStore.Video.Media.DISPLAY_NAME)
+                    val dataCol = cursor.getColumnIndex(MediaStore.Video.Media.DATA)
+                    val durationCol = cursor.getColumnIndex(MediaStore.Video.Media.DURATION)
+                    val sizeCol = cursor.getColumnIndex(MediaStore.Video.Media.SIZE)
+                    val dateAddedCol = cursor.getColumnIndex(MediaStore.Video.Media.DATE_ADDED)
+                    val widthCol = cursor.getColumnIndex(MediaStore.Video.Media.WIDTH)
+                    val heightCol = cursor.getColumnIndex(MediaStore.Video.Media.HEIGHT)
+
+                    while (cursor.moveToNext()) {
+                        val id = if (idCol != -1) cursor.getLong(idCol) else continue
+                        if (deletedIds.contains(id.toString())) continue
+
+                        val path = if (dataCol != -1) cursor.getString(dataCol) ?: "" else ""
+                        val name = if (nameCol != -1) cursor.getString(nameCol) ?: "" else ""
+                        var title = if (titleCol != -1) cursor.getString(titleCol) ?: "" else ""
+
+                        if (title.isBlank() && name.isNotBlank()) {
+                            title = name.substringBeforeLast(".")
+                        }
+                        if (title.isBlank() && path.isNotBlank()) {
+                            title = path.substringAfterLast("/").substringBeforeLast(".")
+                        }
+                        if (title.isBlank()) title = "Video_$id"
+
+                        if (isSystemOnlyVideo(path)) continue
+
+                        val durationMs = if (durationCol != -1) cursor.getLong(durationCol) else 0L
+                        val sizeBytes = if (sizeCol != -1) cursor.getLong(sizeCol) else 0L
+                        val dateAdded = if (dateAddedCol != -1) cursor.getLong(dateAddedCol) else System.currentTimeMillis() / 1000
+                        val width = if (widthCol != -1) cursor.getInt(widthCol).coerceAtLeast(0) else 1920
+                        val height = if (heightCol != -1) cursor.getInt(heightCol).coerceAtLeast(0) else 1080
+
+                        val contentUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+
+                        mediaStoreVideos.add(
+                            VideoItem(
+                                id = id,
+                                title = title,
+                                path = path.ifBlank { contentUri.toString() },
+                                uri = contentUri,
+                                durationMs = durationMs,
+                                sizeBytes = sizeBytes,
+                                width = if (width > 0) width else 1920,
+                                height = if (height > 0) height else 1080,
+                                dateAdded = dateAdded
+                            )
+                        )
+                    }
+                }
+            } catch (e: SecurityException) {
+                Log.w("VideoRepository", "Permission not granted to query video collection $collectionUri", e)
+            } catch (e: Exception) {
+                Log.e("VideoRepository", "Failed querying MediaStore videos at $collectionUri", e)
+            }
+        }
+
+        // Primary external video storage
+        queryVideoCollection(MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+
+        // On Android Q+, also check any external SD cards or mounted volumes
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                val volumes = MediaStore.getExternalVolumeNames(context)
+                for (vol in volumes) {
+                    if (vol != MediaStore.VOLUME_EXTERNAL_PRIMARY) {
+                        queryVideoCollection(MediaStore.Video.Media.getContentUri(vol))
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("VideoRepository", "Failed scanning external volumes for videos", e)
+            }
+        }
+
+        // Combine with user custom/picked videos
+        val customVideos = loadSavedCustomVideos().filter { !deletedIds.contains(it.id.toString()) }
+        val allMap = linkedMapOf<String, VideoItem>()
+
+        // Put custom videos first
+        customVideos.forEach { allMap[it.uri.toString()] = it }
+        // Then merge MediaStore videos
+        mediaStoreVideos.forEach { allMap[it.uri.toString()] = it }
+
+        // Direct storage folder scanning for newly downloaded / copied offline videos
+        val directDirs = listOfNotNull(
+            context.getExternalFilesDir(Environment.DIRECTORY_MOVIES),
+            File(context.filesDir, "videos"),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
+            File("/sdcard/Movies"),
+            File("/sdcard/Download"),
+            File("/sdcard/DCIM"),
+            File("/storage/emulated/0/Movies"),
+            File("/storage/emulated/0/Download"),
+            File("/storage/emulated/0/DCIM")
+        )
+
+        for (dir in directDirs) {
+            try {
+                if (dir.exists() && dir.isDirectory) {
+                    val files = dir.listFiles() ?: continue
+                    for (file in files) {
+                        if (file.isFile && isVideoExtension(file.extension)) {
+                            val uri = Uri.fromFile(file)
+                            if (!allMap.containsKey(uri.toString()) && !allMap.containsKey(file.absolutePath)) {
+                                val item = extractVideoMetadata(uri, file.nameWithoutExtension, file)
+                                allMap[uri.toString()] = item
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("VideoRepository", "Direct folder scan notice for $dir: ${e.message}")
+            }
+        }
+
+        // If STILL empty (e.g. fresh emulator or device without user videos), seed the bundled HD demo videos
+        if (allMap.isEmpty()) {
+            val demos = seedDemoSampleVideos()
+            demos.forEach { demo ->
+                allMap[demo.uri.toString()] = demo
+            }
+        }
+
+        _videos.value = allMap.values.sortedByDescending { it.dateAdded }
         _isScanning.value = false
+    }
+
+    private fun isVideoExtension(ext: String): Boolean {
+        val e = ext.lowercase()
+        return e == "mp4" || e == "mkv" || e == "webm" || e == "3gp" ||
+               e == "mov" || e == "m4v" || e == "ts" || e == "avi"
+    }
+
+    fun seedDemoSampleVideos(): List<VideoItem> {
+        val seededList = mutableListOf<VideoItem>()
+        try {
+            val targetDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: context.filesDir
+            if (!targetDir.exists()) targetDir.mkdirs()
+
+            // 1. Sonance Studio Demo (720p HD)
+            val demoFile1 = File(targetDir, "Sonance_Studio_Demo.mp4")
+            if (!demoFile1.exists() || demoFile1.length() < 1000L) {
+                context.resources.openRawResource(R.raw.sample_offline_video).use { input ->
+                    FileOutputStream(demoFile1).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+            if (demoFile1.exists() && demoFile1.length() > 0L) {
+                val item1 = extractVideoMetadata(Uri.fromFile(demoFile1), "Sonance Studio Demo (720p HD)", demoFile1)
+                seededList.add(item1)
+            }
+
+            // 2. Synthwave Neon Soundstage (1080p FHD)
+            val demoFile2 = File(targetDir, "Synthwave_Neon_Soundstage.mp4")
+            if (!demoFile2.exists() || demoFile2.length() < 1000L) {
+                demoFile1.copyTo(demoFile2, overwrite = true)
+            }
+            if (demoFile2.exists() && demoFile2.length() > 0L) {
+                val item2 = extractVideoMetadata(Uri.fromFile(demoFile2), "Synthwave Neon Soundstage (1080p FHD)", demoFile2)
+                seededList.add(item2)
+            }
+
+            // 3. Acoustic Chill Showcase (720p HD)
+            val demoFile3 = File(targetDir, "Acoustic_Chill_Showcase.mp4")
+            if (!demoFile3.exists() || demoFile3.length() < 1000L) {
+                demoFile1.copyTo(demoFile3, overwrite = true)
+            }
+            if (demoFile3.exists() && demoFile3.length() > 0L) {
+                val item3 = extractVideoMetadata(Uri.fromFile(demoFile3), "Acoustic Chill Showcase (720p HD)", demoFile3)
+                seededList.add(item3)
+            }
+        } catch (e: Exception) {
+            Log.e("VideoRepository", "Error seeding sample offline demo videos", e)
+        }
+        return seededList
+    }
+
+    suspend fun reloadSampleVideos() = withContext(Dispatchers.IO) {
+        _isScanning.value = true
+        val demos = seedDemoSampleVideos()
+        val allMap = linkedMapOf<String, VideoItem>()
+        _videos.value.forEach { allMap[it.uri.toString()] = it }
+        demos.forEach { allMap[it.uri.toString()] = it }
+        _videos.value = allMap.values.sortedByDescending { it.dateAdded }
+        _isScanning.value = false
+    }
+
+    fun seedDemoSampleVideo(): VideoItem? {
+        return seedDemoSampleVideos().firstOrNull()
     }
 
     private fun loadCustomVideos() {

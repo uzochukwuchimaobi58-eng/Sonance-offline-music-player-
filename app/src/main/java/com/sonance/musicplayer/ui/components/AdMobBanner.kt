@@ -34,6 +34,7 @@ import com.sonance.musicplayer.model.ThemeConfig
 
 private const val TAG = "AdMobBanner"
 const val PRODUCTION_BANNER_UNIT_ID = "ca-app-pub-6322953088287505/5517813262"
+const val TEST_BANNER_UNIT_ID = "ca-app-pub-3940256099942544/6300978111"
 
 @Composable
 fun AdMobBanner(
@@ -47,7 +48,9 @@ fun AdMobBanner(
     if (isPro || !admobEnabled) return
 
     val context = LocalContext.current
-    val isEmulator = remember { com.sonance.musicplayer.MusicApplication.isEmulatorDevice() }
+    val effectiveUnitId = remember(adUnitId) {
+        adUnitId.ifBlank { PRODUCTION_BANNER_UNIT_ID }
+    }
     var isAdLoaded by remember { mutableStateOf(false) }
     var adLoadFailed by remember { mutableStateOf(false) }
     var showAdInfoDialog by remember { mutableStateOf(false) }
@@ -73,8 +76,8 @@ fun AdMobBanner(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                if (isEmulator || (!isAdLoaded && adLoadFailed)) {
-                    // Clean branded sponsor bar on emulator or fallback when ad is loading/offline
+                if (adLoadFailed && !isAdLoaded) {
+                    // Clean branded sponsor bar fallback only when ad fails to load or offline
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
@@ -120,53 +123,53 @@ fun AdMobBanner(
                             )
                         }
                     }
-                } else {
-                    // Real Google AdMob Banner View (on physical user devices)
-                    AndroidView(
-                        modifier = Modifier.wrapContentSize(),
-                        factory = { ctx ->
-                            AdView(ctx).apply {
-                                setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
-                                setAdSize(AdSize.BANNER)
-                                this.adUnitId = adUnitId
-                                this.adListener = object : AdListener() {
-                                    override fun onAdLoaded() {
-                                        super.onAdLoaded()
-                                        isAdLoaded = true
-                                        adLoadFailed = false
-                                        Log.d(TAG, "AdMob production banner loaded successfully.")
-                                    }
-
-                                    override fun onAdFailedToLoad(error: LoadAdError) {
-                                        super.onAdFailedToLoad(error)
-                                        isAdLoaded = false
-                                        adLoadFailed = true
-                                        Log.w(TAG, "AdMob production banner failed to load: ${error.message} (code ${error.code})")
-                                    }
-
-                                    override fun onAdOpened() {
-                                        super.onAdOpened()
-                                        Log.d(TAG, "AdMob banner opened by user.")
-                                    }
-                                }
-                                loadAd(AdRequest.Builder().build())
-                            }
-                        },
-                        update = { adView ->
-                            if (adView.adUnitId != adUnitId) {
-                                adView.adUnitId = adUnitId
-                                adView.loadAd(AdRequest.Builder().build())
-                            }
-                        },
-                        onRelease = { adView ->
-                            try {
-                                adView.destroy()
-                            } catch (t: Throwable) {
-                                Log.e(TAG, "Error destroying AdView", t)
-                            }
-                        }
-                    )
                 }
+
+                // Real Google AdMob Banner View (uses production unit ID)
+                AndroidView(
+                    modifier = Modifier.wrapContentSize(),
+                    factory = { ctx ->
+                        AdView(ctx).apply {
+                            setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
+                            setAdSize(AdSize.BANNER)
+                            this.adUnitId = effectiveUnitId
+                            this.adListener = object : AdListener() {
+                                override fun onAdLoaded() {
+                                    super.onAdLoaded()
+                                    isAdLoaded = true
+                                    adLoadFailed = false
+                                    Log.d(TAG, "AdMob banner loaded successfully ($effectiveUnitId).")
+                                }
+
+                                override fun onAdFailedToLoad(error: LoadAdError) {
+                                    super.onAdFailedToLoad(error)
+                                    isAdLoaded = false
+                                    adLoadFailed = true
+                                    Log.w(TAG, "AdMob banner notice: ${error.message} (code ${error.code})")
+                                }
+
+                                override fun onAdOpened() {
+                                    super.onAdOpened()
+                                    Log.d(TAG, "AdMob banner opened by user.")
+                                }
+                            }
+                            loadAd(AdRequest.Builder().build())
+                        }
+                    },
+                    update = { adView ->
+                        if (adView.adUnitId != effectiveUnitId) {
+                            adView.adUnitId = effectiveUnitId
+                            adView.loadAd(AdRequest.Builder().build())
+                        }
+                    },
+                    onRelease = { adView ->
+                        try {
+                            adView.destroy()
+                        } catch (t: Throwable) {
+                            Log.e(TAG, "Error destroying AdView", t)
+                        }
+                    }
+                )
 
                 // Info icon on top-right
                 IconButton(
@@ -308,9 +311,13 @@ fun InlineTrackAdCard(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            val isEmulator = remember { com.sonance.musicplayer.MusicApplication.isEmulatorDevice() }
-            if (isEmulator) {
-                // In emulator environment, show clean sponsor bar directly
+            val effectiveUnitId = remember(adUnitId) {
+                adUnitId.ifBlank { PRODUCTION_BANNER_UNIT_ID }
+            }
+            var inlineAdLoaded by remember { mutableStateOf(false) }
+            var inlineAdFailed by remember { mutableStateOf(false) }
+
+            if (inlineAdFailed && !inlineAdLoaded) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -324,25 +331,42 @@ fun InlineTrackAdCard(
                         fontSize = 11.sp
                     )
                 }
-            } else {
-                // Real Google AdMob Banner
-                AndroidView(
-                    modifier = Modifier.wrapContentSize(),
-                    factory = { ctx ->
-                        AdView(ctx).apply {
-                            setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
-                            setAdSize(AdSize.BANNER)
-                            this.adUnitId = adUnitId
-                            loadAd(AdRequest.Builder().build())
-                        }
-                    },
-                    onRelease = { adView ->
-                        try {
-                            adView.destroy()
-                        } catch (_: Throwable) {}
-                    }
-                )
             }
+
+            AndroidView(
+                modifier = Modifier.wrapContentSize(),
+                factory = { ctx ->
+                    AdView(ctx).apply {
+                        setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
+                        setAdSize(AdSize.BANNER)
+                        this.adUnitId = effectiveUnitId
+                        this.adListener = object : AdListener() {
+                            override fun onAdLoaded() {
+                                super.onAdLoaded()
+                                inlineAdLoaded = true
+                                inlineAdFailed = false
+                            }
+                            override fun onAdFailedToLoad(error: LoadAdError) {
+                                super.onAdFailedToLoad(error)
+                                inlineAdLoaded = false
+                                inlineAdFailed = true
+                            }
+                        }
+                        loadAd(AdRequest.Builder().build())
+                    }
+                },
+                update = { adView ->
+                    if (adView.adUnitId != effectiveUnitId) {
+                        adView.adUnitId = effectiveUnitId
+                        adView.loadAd(AdRequest.Builder().build())
+                    }
+                },
+                onRelease = { adView ->
+                    try {
+                        adView.destroy()
+                    } catch (_: Throwable) {}
+                }
+            )
         }
     }
 }

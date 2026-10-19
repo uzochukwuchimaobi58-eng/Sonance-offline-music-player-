@@ -49,15 +49,7 @@ class MainActivity : ComponentActivity() {
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                if (isRunningOnEmulator()) {
-                    android.util.Log.i("MainActivity", "Emulator environment detected: skipping MobileAds init")
-                    return@launch
-                }
-                val gmsAvailability = com.google.android.gms.common.GoogleApiAvailability.getInstance()
-                val resultCode = gmsAvailability.isGooglePlayServicesAvailable(applicationContext)
-                if (resultCode == com.google.android.gms.common.ConnectionResult.SUCCESS) {
-                    com.google.android.gms.ads.MobileAds.initialize(applicationContext) {}
-                }
+                com.google.android.gms.ads.MobileAds.initialize(applicationContext) {}
             } catch (t: Throwable) {
                 android.util.Log.w("MainActivity", "MobileAds init safe catch: ${t.message}")
             }
@@ -239,6 +231,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            fun checkVideoPermission(): Boolean {
+                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
+                } else {
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+                }
+            }
+
             // Accurate permission for this Android OS version
             fun checkNotificationPermission(): Boolean {
                 return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -252,6 +252,7 @@ class MainActivity : ComponentActivity() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     arrayOf(
                         Manifest.permission.READ_MEDIA_AUDIO,
+                        Manifest.permission.READ_MEDIA_VIDEO,
                         Manifest.permission.POST_NOTIFICATIONS
                     )
                 } else {
@@ -266,13 +267,12 @@ class MainActivity : ComponentActivity() {
             val permissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestMultiplePermissions()
             ) { perms ->
-                val granted = checkAudioPermission()
-                hasAudioPermission = granted
-                if (granted) {
-                    // Immediately scan so newly permitted music is discovered and shown without delay
-                    scope.launch {
-                        repository.scanMediaStore()
-                    }
+                val audioGranted = checkAudioPermission()
+                hasAudioPermission = audioGranted
+                // Immediately scan so newly permitted music & video is discovered and shown without delay
+                scope.launch {
+                    repository.scanMediaStore()
+                    videoRepo.scanDeviceVideos()
                 }
                 playbackManager.updateNotificationImmediate()
             }
@@ -280,22 +280,20 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(Unit) {
                 val hasPerm = checkAudioPermission()
                 hasAudioPermission = hasPerm
+                val hasVidPerm = checkVideoPermission()
 
-                if (hasPerm) {
-                    // Immediately initiate background music scan on launch so music shows right away
-                    scope.launch {
-                        repository.scanMediaStore()
-                    }
-                } else {
-                    // Prompt permission dialog immediately upon installation so user can allow access right away
-                    permissionLauncher.launch(permissionsToRequest)
+                // Immediately initiate background music & video scan on launch so media shows right away
+                scope.launch {
+                    repository.scanMediaStore()
+                    videoRepo.scanDeviceVideos()
                 }
-                if (!checkNotificationPermission()) {
+
+                if (!hasPerm || !hasVidPerm || !checkNotificationPermission()) {
                     permissionLauncher.launch(permissionsToRequest)
                 }
 
-                // Preload production AdMob Interstitial ad for free tier on real devices
-                if (!isProEffective && remoteSettings.admobEnabled && !isRunningOnEmulator()) {
+                // Preload production AdMob Interstitial ad for free tier
+                if (!isProEffective && remoteSettings.admobEnabled) {
                     com.sonance.musicplayer.ui.components.InterstitialAdController.loadInterstitial(
                         this@MainActivity,
                         remoteSettings.admobInterstitialUnitId.ifBlank { com.sonance.musicplayer.ui.components.PRODUCTION_INTERSTITIAL_UNIT_ID }
@@ -559,9 +557,8 @@ class MainActivity : ComponentActivity() {
                                     mostPlayCount = musicOnlyTracks.count { it.playCount > 0 },
                                     onSelectView = { selected ->
                                         when (selected) {
-                                            ActiveView.VIDEOS -> {
-                                                navigateTo(ActiveView.VIDEOS)
-                                            }
+                                            ActiveView.LIBRARY,
+                                            ActiveView.VIDEOS,
                                             ActiveView.RECENT_ADD,
                                             ActiveView.MOST_PLAY,
                                             ActiveView.RECENT_PLAY,
@@ -618,7 +615,10 @@ class MainActivity : ComponentActivity() {
                                     onBack = { handleBack() },
                                     onPauseMusic = {
                                         playbackManager.pause()
-                                    }
+                                    },
+                                    isPro = isProEffective,
+                                    admobEnabled = remoteSettings.admobEnabled,
+                                    onOpenProUpgrade = { isProUpgradeOpen = true }
                                 )
                             } else {
                                 TrackListScreen(

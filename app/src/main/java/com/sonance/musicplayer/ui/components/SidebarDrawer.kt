@@ -396,6 +396,7 @@ fun SidebarDrawer(
                     SidebarItem(
                         icon = Icons.Default.Palette,
                         title = "Themes",
+                        badge = theme.theme.displayName,
                         onClick = { onClose(); onOpenThemes() },
                         tag = "menu_themes",
                         theme = theme

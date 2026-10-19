@@ -27,21 +27,11 @@ class MusicApplication : Application() {
             Log.w("BillingManager", "BillingManager startup connection error: ${t.message}")
         }
 
-        // Initialize Google Mobile Ads SDK for production ad serving on real devices
+        // Initialize Google Mobile Ads SDK for production ad serving
         Thread {
             try {
-                if (!isEmulatorDevice()) {
-                    val gmsAvailability = com.google.android.gms.common.GoogleApiAvailability.getInstance()
-                    val resultCode = gmsAvailability.isGooglePlayServicesAvailable(this)
-                    if (resultCode == com.google.android.gms.common.ConnectionResult.SUCCESS) {
-                        com.google.android.gms.ads.MobileAds.initialize(this) { initStatus ->
-                            Log.d("AdMob", "Google Mobile Ads initialized successfully: $initStatus")
-                        }
-                    } else {
-                        Log.i("AdMob", "Skipping MobileAds init (Play Services status: $resultCode)")
-                    }
-                } else {
-                    Log.i("AdMob", "Emulator environment detected: skipping MobileAds initialization to avoid missing DRI rendernode")
+                com.google.android.gms.ads.MobileAds.initialize(this) { initStatus ->
+                    Log.d("AdMob", "Google Mobile Ads initialized successfully: $initStatus")
                 }
             } catch (t: Throwable) {
                 Log.w("AdMob", "Safe catch during MobileAds initialization: ${t.message}")

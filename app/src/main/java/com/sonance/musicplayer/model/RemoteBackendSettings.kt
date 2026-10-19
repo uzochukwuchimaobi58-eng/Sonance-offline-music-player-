@@ -18,13 +18,14 @@ data class RemoteBackendSettings(
     val enableGearBillboard: Boolean = true,
     val defaultCrossfadeSeconds: Int = 0,
     val showShuffleButtonDefault: Boolean = true,
-    val admobEnabled: Boolean = false, // Paused for Play Store release; will be re-enabled on instruction
+    val admobEnabled: Boolean = true,
     val forceProOverride: String = "none", // "none", "force_true", "force_false"
     val proYearlyPrice: String = "$5.00",
     val proLifetimePrice: String = "$10.00",
     val admobAppId: String = "ca-app-pub-6322953088287505~5972613999",
     val admobBannerUnitId: String = "ca-app-pub-6322953088287505/5517813262",
     val admobInterstitialUnitId: String = "ca-app-pub-6322953088287505/2734992395",
+    val admobRewardedUnitId: String = "ca-app-pub-6322953088287505/6817514112",
     val lastSyncedAt: Long = 0L,
     val syncStatus: String = "Ready"
 )
