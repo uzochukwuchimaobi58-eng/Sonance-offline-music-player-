@@ -303,31 +303,6 @@ fun VideoPlayerScreen(
         }
     }
 
-    val videoPermission = remember {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.READ_MEDIA_VIDEO
-        } else {
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        }
-    }
-
-    var hasVideoPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, videoPermission) == PackageManager.PERMISSION_GRANTED
-        )
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasVideoPermission = isGranted
-        if (isGranted) {
-            scope.launch {
-                videoRepo.scanDeviceVideos()
-            }
-        }
-    }
-
     // Google Play compliant zero-permission system Video Picker
     val videoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
@@ -352,12 +327,7 @@ fun VideoPlayerScreen(
     }
 
     LaunchedEffect(Unit) {
-        val granted = ContextCompat.checkSelfPermission(context, videoPermission) == PackageManager.PERMISSION_GRANTED
-        hasVideoPermission = granted
-        if (!granted) {
-            permissionLauncher.launch(videoPermission)
-        }
-        // Load all offline videos from device storage
+        // Load offline videos from device storage
         videoRepo.scanDeviceVideos()
     }
 
@@ -1041,58 +1011,7 @@ fun VideoPlayerScreen(
                     }
                 }
 
-                // Storage permission informational banner (non-blocking)
-                AnimatedVisibility(visible = !hasVideoPermission) {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 4.dp),
-                        color = Color(0xFF1E293B),
-                        shape = RoundedCornerShape(10.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.4f))
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                modifier = Modifier.weight(1f),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = null,
-                                    tint = theme.accentColor,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Grant storage permission to scan all device folders",
-                                    color = Color.White.copy(alpha = 0.85f),
-                                    fontSize = 11.5.sp
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Button(
-                                onClick = { permissionLauncher.launch(videoPermission) },
-                                colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                                modifier = Modifier.height(26.dp),
-                                shape = RoundedCornerShape(13.dp)
-                            ) {
-                                Text(
-                                    "Grant",
-                                    color = Color.Black,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
+
 
                 // ==========================================
                 // QUICK TOOLS RACK (Video Converter, Trimming, Cutter, to MP3, Loop, Speed, Details)
@@ -1649,7 +1568,7 @@ fun VideoPlayerScreen(
                             verticalArrangement = Arrangement.Center
                         ) {
                             Icon(
-                                imageVector = if (!hasVideoPermission) Icons.Default.Lock else Icons.Default.VideoLibrary,
+                                imageVector = Icons.Default.VideoLibrary,
                                 contentDescription = null,
                                 tint = theme.accentColor,
                                 modifier = Modifier.size(54.dp)
@@ -1743,29 +1662,6 @@ fun VideoPlayerScreen(
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
                                                 "Select Videos",
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp
-                                            )
-                                        }
-                                    }
-
-                                    if (!hasVideoPermission) {
-                                        Button(
-                                            onClick = { permissionLauncher.launch(videoPermission) },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
-                                            shape = RoundedCornerShape(12.dp),
-                                            modifier = Modifier.testTag("btn_grant_video_permission")
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.CheckCircle,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                "Grant Permission",
-                                                color = Color.White,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 13.sp
                                             )

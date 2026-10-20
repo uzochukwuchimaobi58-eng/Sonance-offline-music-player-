@@ -231,14 +231,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            fun checkVideoPermission(): Boolean {
-                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
-                } else {
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-                }
-            }
-
             // Accurate permission for this Android OS version
             fun checkNotificationPermission(): Boolean {
                 return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -252,7 +244,6 @@ class MainActivity : ComponentActivity() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     arrayOf(
                         Manifest.permission.READ_MEDIA_AUDIO,
-                        Manifest.permission.READ_MEDIA_VIDEO,
                         Manifest.permission.POST_NOTIFICATIONS
                     )
                 } else {
@@ -280,7 +271,6 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(Unit) {
                 val hasPerm = checkAudioPermission()
                 hasAudioPermission = hasPerm
-                val hasVidPerm = checkVideoPermission()
 
                 // Immediately initiate background music & video scan on launch so media shows right away
                 scope.launch {
@@ -288,7 +278,7 @@ class MainActivity : ComponentActivity() {
                     videoRepo.scanDeviceVideos()
                 }
 
-                if (!hasPerm || !hasVidPerm || !checkNotificationPermission()) {
+                if (!hasPerm || !checkNotificationPermission()) {
                     permissionLauncher.launch(permissionsToRequest)
                 }
 

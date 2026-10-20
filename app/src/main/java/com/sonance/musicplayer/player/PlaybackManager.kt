@@ -556,8 +556,14 @@ class PlaybackManager(
                 _isPlaying.value = true
             }
         } else {
-            val track = _currentTrack.value ?: _queue.value.firstOrNull()
+            val track = _currentTrack.value ?: _queue.value.firstOrNull() ?: repository?.tracks?.value?.firstOrNull()
             if (track != null) {
+                if (_queue.value.isEmpty()) {
+                    val lib = repository?.tracks?.value ?: listOf(track)
+                    _queue.value = lib
+                    val idx = lib.indexOfFirst { it.id == track.id }
+                    _queueIndex.value = if (idx >= 0) idx else 0
+                }
                 loadAndPlay(track, _currentPositionMs.value)
             }
         }
@@ -622,7 +628,17 @@ class PlaybackManager(
     }
 
     fun next() {
-        val q = _queue.value
+        var q = _queue.value
+        if (q.isEmpty() || q.size <= 1) {
+            val libraryTracks = repository?.tracks?.value ?: emptyList()
+            if (libraryTracks.isNotEmpty()) {
+                val currentId = _currentTrack.value?.id
+                val curIdx = if (currentId != null) libraryTracks.indexOfFirst { it.id == currentId } else -1
+                _queue.value = libraryTracks
+                q = libraryTracks
+                _queueIndex.value = if (curIdx >= 0) curIdx else 0
+            }
+        }
         if (q.isEmpty()) return
 
         val playNextTarget = pendingPlayNextTrack
@@ -638,7 +654,13 @@ class PlaybackManager(
         }
 
         val nextIndex = if (_isShuffle.value) {
-            (0 until q.size).random()
+            if (q.size > 1) {
+                var rand = (0 until q.size).random()
+                if (rand == _queueIndex.value) {
+                    rand = (rand + 1) % q.size
+                }
+                rand
+            } else 0
         } else {
             (_queueIndex.value + 1) % q.size
         }
@@ -649,11 +671,21 @@ class PlaybackManager(
     }
 
     fun previous() {
-        val q = _queue.value
+        var q = _queue.value
+        if (q.isEmpty() || q.size <= 1) {
+            val libraryTracks = repository?.tracks?.value ?: emptyList()
+            if (libraryTracks.isNotEmpty()) {
+                val currentId = _currentTrack.value?.id
+                val curIdx = if (currentId != null) libraryTracks.indexOfFirst { it.id == currentId } else -1
+                _queue.value = libraryTracks
+                q = libraryTracks
+                _queueIndex.value = if (curIdx >= 0) curIdx else 0
+            }
+        }
         if (q.isEmpty()) return
 
-        // If played more than 3 seconds, restart current track
-        if (_currentPositionMs.value > 3000L) {
+        // If played more than 3 seconds and actively playing, restart current track
+        if (_currentPositionMs.value > 3000L && mediaPlayer?.isPlaying == true) {
             seekTo(0L)
             return
         }
@@ -1071,13 +1103,22 @@ class PlaybackManager(
         val queueIds = repo.getLastQueueIds()
         val queueIdx = repo.getLastQueueIndex()
 
-        val restoredQueue = if (queueIds.isNotEmpty()) {
+        val restoredQueue = if (queueIds.isNotEmpty() && queueIds.size > 1) {
             val q = queueIds.mapNotNull { qId -> tracks.find { it.id == qId } }
-            if (q.isNotEmpty()) q else listOf(track)
-        } else listOf(track)
+            if (q.isNotEmpty()) q else tracks
+        } else {
+            tracks
+        }
+
+        val effectiveIndex = if (queueIds.isNotEmpty() && queueIds.size > 1) {
+            queueIdx.coerceIn(0, restoredQueue.size - 1)
+        } else {
+            val foundIdx = restoredQueue.indexOfFirst { it.id == track.id }
+            if (foundIdx >= 0) foundIdx else 0
+        }
 
         _queue.value = restoredQueue
-        _queueIndex.value = queueIdx.coerceIn(0, restoredQueue.size - 1)
+        _queueIndex.value = effectiveIndex
         _currentTrack.value = track
         _currentPositionMs.value = lastPos
         _durationMs.value = track.duration * 1000L

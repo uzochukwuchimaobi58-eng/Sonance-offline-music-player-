@@ -258,14 +258,13 @@ fun HomeScreen(
                 )
             }
 
-            // Decorative Analog Audio Patch Cables connecting Cards to Studio Tools
-            AnalogPatchCables(modifier = Modifier.fillMaxWidth().height(22.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // ==========================================
-            // STUDIO TOOLS RACK SECTION (EXACT PICTURE MATCH)
+            // STUDIO TOOLS SECTION
             // ==========================================
             Row(
-                modifier = Modifier.padding(start = 2.dp, bottom = 8.dp),
+                modifier = Modifier.padding(start = 2.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -284,95 +283,34 @@ fun HomeScreen(
                 )
             }
 
-            // Integrated Hardware Audio Rack Console (Brushed Metal Enclosure)
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .border(1.5.dp, Color(0xFF3A3F4D), RoundedCornerShape(16.dp))
-                    .shadow(8.dp, RoundedCornerShape(16.dp)),
-                color = Color(0xFF181B22),
-                shape = RoundedCornerShape(16.dp)
+            // Studio Tools Grid - Clean spacing directly on top of the user selected wallpaper
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color(0xFF20242D),
-                                    Color(0xFF16181E),
-                                    Color(0xFF121419)
-                                )
-                            )
-                        )
+                // Top Row: Music Trim & Karaoke Mode with spacing
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Corner Mounting Screws on Rack Console
-                    Canvas(modifier = Modifier.matchParentSize()) {
-                        val screwColor = Color(0xFF4B5563)
-                        val slotColor = Color(0xFF1E242C)
-                        val radius = 4.dp.toPx()
-
-                        // 4 Corner screws
-                        val points = listOf(
-                            Offset(12.dp.toPx(), 12.dp.toPx()),
-                            Offset(size.width - 12.dp.toPx(), 12.dp.toPx()),
-                            Offset(12.dp.toPx(), size.height - 12.dp.toPx()),
-                            Offset(size.width - 12.dp.toPx(), size.height - 12.dp.toPx()),
-                            // Center divider screws
-                            Offset(size.width / 2f, 8.dp.toPx()),
-                            Offset(size.width / 2f, size.height - 8.dp.toPx())
-                        )
-
-                        points.forEach { p ->
-                            drawCircle(color = screwColor, radius = radius, center = p)
-                            drawLine(
-                                color = slotColor,
-                                start = Offset(p.x - radius * 0.7f, p.y),
-                                end = Offset(p.x + radius * 0.7f, p.y),
-                                strokeWidth = 1.5.dp.toPx()
-                            )
-                        }
+                    Box(modifier = Modifier.weight(1f)) {
+                        StudioMusicTrimModule(onClick = onOpenMusicTrim)
                     }
+                    Box(modifier = Modifier.weight(1f)) {
+                        StudioKaraokeModule(onClick = onOpenKaraoke)
+                    }
+                }
 
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 14.dp)
-                    ) {
-                        // Top Row: Music Trim & Karaoke Mode with generous spacing
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            // Module 1: Music Trim
-                            Box(modifier = Modifier.weight(1f)) {
-                                StudioMusicTrimModule(onClick = onOpenMusicTrim)
-                            }
-
-                            // Module 2: Karaoke Mode
-                            Box(modifier = Modifier.weight(1f)) {
-                                StudioKaraokeModule(onClick = onOpenKaraoke)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Bottom Row: Music Bass & Sound Equalizer with generous spacing
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            // Module 3: Music Bass
-                            Box(modifier = Modifier.weight(1f)) {
-                                StudioMusicBassModule(onClick = onOpenMusicBass)
-                            }
-
-                            // Module 4: Sound Equalizer
-                            Box(modifier = Modifier.weight(1f)) {
-                                StudioSoundEqualizerModule(onClick = onOpenEqualizer)
-                            }
-                        }
+                // Bottom Row: Music Bass & Sound Equalizer with spacing
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        StudioMusicBassModule(onClick = onOpenMusicBass)
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        StudioSoundEqualizerModule(onClick = onOpenEqualizer)
                     }
                 }
             }
@@ -541,44 +479,6 @@ private fun BeveledGemCard(
 }
 
 /**
- * Decorative Audio Patch Cables connecting the gems down to the Studio Tools rack
- */
-@Composable
-private fun AnalogPatchCables(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-
-        val wireColor1 = Color(0xFF2D3748)
-        val wireColor2 = Color(0xFF1F2937)
-        val jackColor = Color(0xFF4A5568)
-
-        // Draw 3 subtle curved hanging cables
-        val path1 = Path().apply {
-            moveTo(w * 0.22f, 0f)
-            cubicTo(w * 0.25f, h * 0.9f, w * 0.45f, h * 0.9f, w * 0.48f, h)
-        }
-        drawPath(path1, color = wireColor1, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
-
-        val path2 = Path().apply {
-            moveTo(w * 0.5f, 0f)
-            cubicTo(w * 0.52f, h * 0.8f, w * 0.50f, h * 0.8f, w * 0.52f, h)
-        }
-        drawPath(path2, color = wireColor2, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
-
-        val path3 = Path().apply {
-            moveTo(w * 0.78f, 0f)
-            cubicTo(w * 0.75f, h * 0.9f, w * 0.55f, h * 0.9f, w * 0.52f, h)
-        }
-        drawPath(path3, color = wireColor1, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
-
-        // Small jack terminals at bottom
-        drawCircle(color = jackColor, radius = 3.dp.toPx(), center = Offset(w * 0.48f, h - 2.dp.toPx()))
-        drawCircle(color = jackColor, radius = 3.dp.toPx(), center = Offset(w * 0.52f, h - 2.dp.toPx()))
-    }
-}
-
-/**
  * Studio Tool 1: "Music Trim" (Matching Picture Top-Left)
  */
 @Composable
@@ -586,18 +486,18 @@ private fun StudioMusicTrimModule(onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(94.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .height(96.dp)
+            .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .border(1.dp, Color(0xFF2D323E), RoundedCornerShape(12.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(14.dp))
             .testTag("card_music_trim"),
-        color = Color(0xFF14161C),
-        shape = RoundedCornerShape(12.dp)
+        color = Color.Black.copy(alpha = 0.22f),
+        shape = RoundedCornerShape(14.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(8.dp),
+                .padding(9.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
@@ -609,7 +509,7 @@ private fun StudioMusicTrimModule(onClick: () -> Unit) {
                     modifier = Modifier
                         .size(26.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFF22C55E).copy(alpha = 0.22f)),
+                        .background(Color(0xFF22C55E).copy(alpha = 0.25f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -628,8 +528,8 @@ private fun StudioMusicTrimModule(onClick: () -> Unit) {
                         .weight(1f)
                         .height(38.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFF0C0E14))
-                        .border(1.dp, Color(0xFF1E2330), RoundedCornerShape(6.dp))
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
                 ) {
                     // Audio waveform & trim sliders
                     Canvas(modifier = Modifier.fillMaxSize()) {
@@ -733,18 +633,18 @@ private fun StudioKaraokeModule(onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(94.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .height(96.dp)
+            .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .border(1.dp, Color(0xFF2D323E), RoundedCornerShape(12.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(14.dp))
             .testTag("card_karaoke_studio"),
-        color = Color(0xFF14161C),
-        shape = RoundedCornerShape(12.dp)
+        color = Color.Black.copy(alpha = 0.22f),
+        shape = RoundedCornerShape(14.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(8.dp),
+                .padding(9.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
@@ -757,7 +657,7 @@ private fun StudioKaraokeModule(onClick: () -> Unit) {
                     modifier = Modifier
                         .size(26.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFFE11D48).copy(alpha = 0.22f)),
+                        .background(Color(0xFFE11D48).copy(alpha = 0.25f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -800,7 +700,7 @@ private fun StudioKaraokeModule(onClick: () -> Unit) {
                     )
                     Text(
                         text = "Removal Level",
-                        color = Color(0xFF8E8E93),
+                        color = Color(0xFFCBD5E1),
                         fontSize = 9.sp
                     )
                 }
@@ -813,8 +713,8 @@ private fun StudioKaraokeModule(onClick: () -> Unit) {
                         .fillMaxWidth()
                         .height(14.dp)
                         .clip(RoundedCornerShape(7.dp))
-                        .background(Color(0xFF0C0E14))
-                        .border(1.dp, Color(0xFF1E2330), RoundedCornerShape(7.dp))
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(7.dp))
                 ) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         val w = size.width
@@ -864,18 +764,18 @@ private fun StudioMusicBassModule(onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(94.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .height(96.dp)
+            .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .border(1.dp, Color(0xFF2D323E), RoundedCornerShape(12.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(14.dp))
             .testTag("card_music_bass"),
-        color = Color(0xFF14161C),
-        shape = RoundedCornerShape(12.dp)
+        color = Color.Black.copy(alpha = 0.22f),
+        shape = RoundedCornerShape(14.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(8.dp),
+                .padding(9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(
@@ -889,7 +789,7 @@ private fun StudioMusicBassModule(onClick: () -> Unit) {
                     modifier = Modifier
                         .size(26.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFFF59E0B).copy(alpha = 0.22f)),
+                        .background(Color(0xFFF59E0B).copy(alpha = 0.25f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -937,22 +837,22 @@ private fun StudioMusicBassModule(onClick: () -> Unit) {
                             (center.y + r2 * sin(angleRad)).toFloat()
                         )
                         drawLine(
-                            color = if (i > 14) Color(0xFFF59E0B) else Color(0xFF64748B),
+                            color = if (i > 14) Color(0xFFF59E0B) else Color(0xFF94A3B8),
                             start = p1,
                             end = p2,
                             strokeWidth = 1.2.dp.toPx()
                         )
                     }
 
-                    // Rotary Knob Body (Brushed Dark Metallic with Drop Shadow)
+                    // Rotary Knob Body (Translucent Metallic with border)
                     drawCircle(
-                        color = Color(0xFF0F1116),
+                        color = Color.Black.copy(alpha = 0.45f),
                         radius = knobRadius + 2.dp.toPx(),
                         center = center
                     )
                     drawCircle(
                         brush = Brush.radialGradient(
-                            colors = listOf(Color(0xFF2C3240), Color(0xFF161922)),
+                            colors = listOf(Color.White.copy(alpha = 0.25f), Color.Black.copy(alpha = 0.50f)),
                             center = center,
                             radius = knobRadius
                         ),
@@ -960,7 +860,7 @@ private fun StudioMusicBassModule(onClick: () -> Unit) {
                         center = center
                     )
                     drawCircle(
-                        color = Color(0xFF3E4554),
+                        color = Color.White.copy(alpha = 0.20f),
                         radius = knobRadius,
                         center = center,
                         style = Stroke(width = 1.dp.toPx())
@@ -999,7 +899,7 @@ private fun StudioMusicBassModule(onClick: () -> Unit) {
                     )
                     Text(
                         text = "Boost",
-                        color = Color(0xFF8E8E93),
+                        color = Color(0xFFCBD5E1),
                         fontSize = 6.5.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -1017,18 +917,18 @@ private fun StudioSoundEqualizerModule(onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(94.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .height(96.dp)
+            .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .border(1.dp, Color(0xFF2D323E), RoundedCornerShape(12.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(14.dp))
             .testTag("card_sound_equalizer"),
-        color = Color(0xFF14161C),
-        shape = RoundedCornerShape(12.dp)
+        color = Color.Black.copy(alpha = 0.22f),
+        shape = RoundedCornerShape(14.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(8.dp),
+                .padding(9.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
@@ -1041,7 +941,7 @@ private fun StudioSoundEqualizerModule(onClick: () -> Unit) {
                     modifier = Modifier
                         .size(26.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFFA855F7).copy(alpha = 0.22f)),
+                        .background(Color(0xFFA855F7).copy(alpha = 0.25f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -1057,8 +957,8 @@ private fun StudioSoundEqualizerModule(onClick: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF0F1116))
-                        .border(1.dp, Color(0xFF2D323E), RoundedCornerShape(10.dp))
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     // 5-bar glowing spectrum
@@ -1090,8 +990,8 @@ private fun StudioSoundEqualizerModule(onClick: () -> Unit) {
                     .fillMaxWidth()
                     .height(28.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF0C0E14))
-                    .border(1.dp, Color(0xFF1E2330), RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.35f))
+                    .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
             ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
@@ -1104,7 +1004,7 @@ private fun StudioSoundEqualizerModule(onClick: () -> Unit) {
                         val x = spacing * (i + 1)
                         // Vertical Groove Track
                         drawLine(
-                            color = Color(0xFF232834),
+                            color = Color.White.copy(alpha = 0.20f),
                             start = Offset(x, 4.dp.toPx()),
                             end = Offset(x, h - 4.dp.toPx()),
                             strokeWidth = 2.dp.toPx(),
@@ -1115,7 +1015,7 @@ private fun StudioSoundEqualizerModule(onClick: () -> Unit) {
                         val pos = faderPositions[i]
                         val knobY = 4.dp.toPx() + (h - 8.dp.toPx()) * (1f - pos)
                         drawRoundRect(
-                            color = Color(0xFFCBD5E1),
+                            color = Color(0xFFE2E8F0),
                             topLeft = Offset(x - 4.5.dp.toPx(), knobY - 2.5.dp.toPx()),
                             size = Size(9.dp.toPx(), 5.dp.toPx()),
                             cornerRadius = CornerRadius(1.5.dp.toPx())
