@@ -9,8 +9,10 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.os.Build
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import android.media.audiofx.Virtualizer
@@ -131,6 +133,86 @@ class PlaybackManager(
     val statsTracker = com.sonance.musicplayer.data.PlayStatsTracker(store)
     private var currentStatsTrackId: String? = null
     private val audioPrefs = context.getSharedPreferences("sonance_audio_effects", Context.MODE_PRIVATE)
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private var pausedDueToTransientLoss = false
+
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        handleAudioFocusChange(focusChange)
+    }
+
+    private fun handleAudioFocusChange(focusChange: Int) {
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // Incoming or outgoing phone call, or system priority sound
+                if (_isPlaying.value) {
+                    Log.i(tag, "Audio focus lost transiently (e.g. phone call). Auto-pausing playback.")
+                    pausedDueToTransientLoss = true
+                    pause(fromTransientLoss = true)
+                }
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                // Phone call finished: resume playback right where it stopped
+                if (pausedDueToTransientLoss) {
+                    Log.i(tag, "Audio focus regained after phone call ended. Auto-resuming playback.")
+                    pausedDueToTransientLoss = false
+                    resume()
+                } else {
+                    try {
+                        mediaPlayer?.setVolume(_volume.value, _volume.value)
+                    } catch (_: Exception) {}
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                Log.i(tag, "Audio focus lost permanently. Pausing playback.")
+                pausedDueToTransientLoss = false
+                pause(fromTransientLoss = false)
+            }
+        }
+    }
+
+    private fun requestAudioFocus(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val playbackAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+                val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(playbackAttributes)
+                    .setAcceptsDelayedFocusGain(true)
+                    .setOnAudioFocusChangeListener(audioFocusChangeListener, Handler(Looper.getMainLooper()))
+                    .build()
+                audioFocusRequest = request
+                audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.requestAudioFocus(
+                    audioFocusChangeListener,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN
+                ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "Error requesting audio focus", e)
+            true
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+                audioFocusRequest = null
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.abandonAudioFocus(audioFocusChangeListener)
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "Error abandoning audio focus", e)
+        }
+    }
 
     init {
         val musicPrefs = context.getSharedPreferences("sonance_music_prefs", Context.MODE_PRIVATE)
@@ -464,6 +546,7 @@ class PlaybackManager(
                             player.seekTo(startPositionMs.toInt())
                             _currentPositionMs.value = startPositionMs
                         }
+                        requestAudioFocus()
                         player.start()
                         _isPlaying.value = true
                         currentStatsTrackId = track.id
@@ -541,6 +624,7 @@ class PlaybackManager(
         val mp = mediaPlayer
         if (mp != null) {
             if (mp.isPlaying) {
+                pausedDueToTransientLoss = false
                 mp.pause()
                 _isPlaying.value = false
                 _currentTrack.value?.let { track ->
@@ -552,6 +636,7 @@ class PlaybackManager(
                     )
                 }
             } else {
+                requestAudioFocus()
                 mp.start()
                 _isPlaying.value = true
             }
@@ -569,10 +654,13 @@ class PlaybackManager(
         }
     }
 
-    fun pause() {
+    fun pause(fromTransientLoss: Boolean = false) {
+        if (!fromTransientLoss) {
+            pausedDueToTransientLoss = false
+        }
         mediaPlayer?.let { mp ->
             if (mp.isPlaying) {
-                if (playerSettings.playPauseFade) {
+                if (playerSettings.playPauseFade && !fromTransientLoss) {
                     fadeVolume(1f, 0f, 250L) {
                         mp.pause()
                         _isPlaying.value = false
@@ -589,6 +677,7 @@ class PlaybackManager(
     fun resume() {
         mediaPlayer?.let { mp ->
             if (!mp.isPlaying) {
+                requestAudioFocus()
                 if (playerSettings.playPauseFade) {
                     mp.setVolume(0f, 0f)
                     mp.start()
@@ -603,6 +692,8 @@ class PlaybackManager(
     }
 
     fun stop() {
+        pausedDueToTransientLoss = false
+        abandonAudioFocus()
         releasePlayer()
         _isPlaying.value = false
         _currentTrack.value = null
@@ -1197,6 +1288,8 @@ class PlaybackManager(
     }
 
     fun release() {
+        pausedDueToTransientLoss = false
+        abandonAudioFocus()
         progressJob?.cancel()
         sleepTimerJob?.cancel()
         notificationManager.cancelNotification()

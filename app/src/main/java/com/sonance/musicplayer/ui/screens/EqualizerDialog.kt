@@ -1,8 +1,11 @@
 package com.sonance.musicplayer.ui.screens
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -17,13 +20,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import com.sonance.musicplayer.model.EqPreset
 import com.sonance.musicplayer.model.EqualizerSettings
 import com.sonance.musicplayer.model.ThemeConfig
@@ -199,31 +206,29 @@ fun EqualizerDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     freqLabels.forEach { (freq, label) ->
                         val gain = currentSettings.bands[freq] ?: 0
 
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.width(36.dp)
+                            modifier = Modifier.width(44.dp)
                         ) {
                             Text(
                                 text = if (gain > 0) "+$gain" else "$gain",
-                                color = if (gain != 0) theme.accentColor else theme.textSecondary,
+                                color = if (gain != 0 && currentSettings.enabled) theme.accentColor else theme.textSecondary,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
 
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                            // Custom vertical slider represented via custom bar or Slider
-                            Slider(
-                                value = gain.toFloat(),
-                                onValueChange = { newVal ->
-                                    val intVal = newVal.toInt()
+                            VerticalEqFader(
+                                gain = gain,
+                                onGainChange = { newVal ->
                                     val updatedBands = currentSettings.bands.toMutableMap().apply {
-                                        put(freq, intVal)
+                                        put(freq, newVal)
                                     }
                                     val updated = currentSettings.copy(
                                         enabled = true,
@@ -233,21 +238,13 @@ fun EqualizerDialog(
                                     currentSettings = updated
                                     onApplySettings(updated)
                                 },
-                                valueRange = -12f..12f,
-                                steps = 23,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = theme.accentColor,
-                                    activeTrackColor = theme.accentColor,
-                                    inactiveTrackColor = theme.headerBorder
-                                ),
-                                modifier = Modifier
-                                    .height(130.dp)
-                                    .width(130.dp)
-                                    .offset(y = 48.dp)
-                                    .rotate(-90f)
+                                enabled = currentSettings.enabled,
+                                accentColor = theme.accentColor,
+                                trackColor = theme.headerBorder,
+                                modifier = Modifier.testTag("eq_fader_$freq")
                             )
 
-                            Spacer(modifier = Modifier.height(68.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
 
                             Text(
                                 text = label,
@@ -350,6 +347,137 @@ private fun AudioFxSlider(
                 inactiveTrackColor = theme.headerBorder
             )
         )
+    }
+}
+
+@Composable
+private fun VerticalEqFader(
+    gain: Int, // between -12 and +12
+    onGainChange: (Int) -> Unit,
+    enabled: Boolean,
+    accentColor: Color,
+    trackColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val faderHeight = 150.dp
+    val faderWidth = 44.dp
+    val thumbWidth = 32.dp
+    val thumbHeight = 10.dp
+
+    Box(
+        modifier = modifier
+            .width(faderWidth)
+            .height(faderHeight)
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val hPx = size.height.toFloat()
+                    val thumbHPx = thumbHeight.toPx()
+                    val travel = (hPx - thumbHPx).coerceAtLeast(1f)
+
+                    val update = { yPos: Float ->
+                        val clampedY = (yPos - thumbHPx / 2f).coerceIn(0f, travel)
+                        val fraction = 1f - (clampedY / travel) // 1.0f at top (+12), 0.0f at bottom (-12)
+                        val newGain = ((fraction * 24f) - 12f).roundToInt().coerceIn(-12, 12)
+                        onGainChange(newGain)
+                    }
+
+                    update(down.position.y)
+                    down.consume()
+
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+                        if (!change.pressed) break
+                        change.consume()
+                        update(change.position.y)
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val centerX = w / 2f
+            val thumbHPx = thumbHeight.toPx()
+            val thumbWPx = thumbWidth.toPx()
+            val travel = (h - thumbHPx).coerceAtLeast(1f)
+
+            // Calculate thumb center Y from gain
+            // gain = +12 => fraction = 1f => thumbCenterY = thumbHPx / 2 (very top / upper)
+            // gain = 0   => fraction = 0.5f => thumbCenterY = h / 2 (center)
+            // gain = -12 => fraction = 0f => thumbCenterY = h - thumbHPx / 2 (very bottom / footer)
+            val fraction = (gain + 12f) / 24f
+            val thumbCenterY = thumbHPx / 2f + (1f - fraction) * travel
+            val centerY = h / 2f
+
+            // 1. Background vertical groove track
+            val trackWidth = 4.dp.toPx()
+            val trackCorner = 2.dp.toPx()
+            drawRoundRect(
+                color = trackColor.copy(alpha = 0.5f),
+                topLeft = Offset(centerX - trackWidth / 2f, thumbHPx / 2f),
+                size = Size(trackWidth, travel),
+                cornerRadius = CornerRadius(trackCorner, trackCorner)
+            )
+
+            // 2. Active colored fill track from 0dB center to thumb
+            if (gain != 0 && enabled) {
+                val fillTop = minOf(centerY, thumbCenterY)
+                val fillBottom = maxOf(centerY, thumbCenterY)
+                drawRoundRect(
+                    color = accentColor,
+                    topLeft = Offset(centerX - trackWidth / 2f, fillTop),
+                    size = Size(trackWidth, (fillBottom - fillTop).coerceAtLeast(1f)),
+                    cornerRadius = CornerRadius(trackCorner, trackCorner)
+                )
+            }
+
+            // 3. Center 0dB horizontal tick mark
+            val tickWidth = 16.dp.toPx()
+            val tickHeight = 1.5.dp.toPx()
+            drawLine(
+                color = if (gain == 0 && enabled) accentColor else Color.White.copy(alpha = 0.25f),
+                start = Offset(centerX - tickWidth / 2f, centerY),
+                end = Offset(centerX + tickWidth / 2f, centerY),
+                strokeWidth = tickHeight
+            )
+
+            // 4. Studio Fader Thumb Handle (the horizontal line)
+            val thumbTop = thumbCenterY - thumbHPx / 2f
+            val thumbLeft = centerX - thumbWPx / 2f
+            val thumbRadius = 3.dp.toPx()
+
+            // Subtle outer glow/halo when enabled
+            if (enabled) {
+                drawRoundRect(
+                    color = accentColor.copy(alpha = 0.35f),
+                    topLeft = Offset(thumbLeft - 2.dp.toPx(), thumbTop - 1.dp.toPx()),
+                    size = Size(thumbWPx + 4.dp.toPx(), thumbHPx + 2.dp.toPx()),
+                    cornerRadius = CornerRadius(thumbRadius + 1.dp.toPx(), thumbRadius + 1.dp.toPx())
+                )
+            }
+
+            // Fader Handle Body (horizontal bar)
+            drawRoundRect(
+                color = if (enabled) accentColor else Color(0xFF52525B),
+                topLeft = Offset(thumbLeft, thumbTop),
+                size = Size(thumbWPx, thumbHPx),
+                cornerRadius = CornerRadius(thumbRadius, thumbRadius)
+            )
+
+            // Inner horizontal groove line for studio hardware look
+            val innerLineWidth = 18.dp.toPx()
+            val innerLineHeight = 2.dp.toPx()
+            drawRoundRect(
+                color = Color.Black.copy(alpha = 0.60f),
+                topLeft = Offset(centerX - innerLineWidth / 2f, thumbCenterY - innerLineHeight / 2f),
+                size = Size(innerLineWidth, innerLineHeight),
+                cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+            )
+        }
     }
 }
 
