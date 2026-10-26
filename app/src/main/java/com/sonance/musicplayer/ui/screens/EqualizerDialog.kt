@@ -11,8 +11,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -47,6 +52,7 @@ fun EqualizerDialog(
     if (!isOpen) return
 
     var currentSettings by remember(settings) { mutableStateOf(settings) }
+    var isSmoothCurve by remember { mutableStateOf(false) }
 
     val presetGains = mapOf(
         EqPreset.FLAT to listOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
@@ -191,14 +197,49 @@ fun EqualizerDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // 10 EQ Frequency Bands Sliders
-                Text(
-                    text = "FREQUENCY RESPONSE (-12dB to +12dB)",
-                    color = theme.textSecondary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
+                // 10 EQ Frequency Bands Sliders with Linked Curve option
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "FREQUENCY RESPONSE (-12dB to +12dB)",
+                        color = theme.textSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+
+                    Surface(
+                        onClick = { isSmoothCurve = !isSmoothCurve },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isSmoothCurve) theme.accentColor.copy(alpha = 0.2f) else theme.headerBg,
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isSmoothCurve) theme.accentColor else theme.headerBorder
+                        )
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GraphicEq,
+                                contentDescription = null,
+                                tint = if (isSmoothCurve) theme.accentColor else theme.textSecondary,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isSmoothCurve) "Linked Curve ON" else "Linked Curve",
+                                color = if (isSmoothCurve) theme.accentColor else theme.textSecondary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -208,7 +249,7 @@ fun EqualizerDialog(
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    freqLabels.forEach { (freq, label) ->
+                    freqLabels.forEachIndexed { idx, (freq, label) ->
                         val gain = currentSettings.bands[freq] ?: 0
 
                         Column(
@@ -227,13 +268,31 @@ fun EqualizerDialog(
                             VerticalEqFader(
                                 gain = gain,
                                 onGainChange = { newVal ->
-                                    val updatedBands = currentSettings.bands.toMutableMap().apply {
-                                        put(freq, newVal)
+                                    val currentBands = currentSettings.bands.toMutableMap()
+                                    val oldVal = currentBands[freq] ?: 0
+                                    val delta = newVal - oldVal
+
+                                    if (isSmoothCurve && delta != 0) {
+                                        // Linked Curve: other bands automatically scroll up or down along a natural bell curve!
+                                        freqLabels.forEachIndexed { otherIdx, (otherFreq, _) ->
+                                            if (otherFreq == freq) {
+                                                currentBands[freq] = newVal
+                                            } else {
+                                                val dist = kotlin.math.abs(idx - otherIdx)
+                                                val factor = kotlin.math.exp(-0.5 * (dist.toDouble() / 1.4).let { it * it }).toFloat()
+                                                val otherOld = currentSettings.bands[otherFreq] ?: 0
+                                                val otherNew = (otherOld + (delta * factor).roundToInt()).coerceIn(-12, 12)
+                                                currentBands[otherFreq] = otherNew
+                                            }
+                                        }
+                                    } else {
+                                        currentBands[freq] = newVal
                                     }
+
                                     val updated = currentSettings.copy(
                                         enabled = true,
                                         preset = EqPreset.CUSTOM,
-                                        bands = updatedBands
+                                        bands = currentBands
                                     )
                                     currentSettings = updated
                                     onApplySettings(updated)
@@ -364,6 +423,16 @@ private fun VerticalEqFader(
     val thumbWidth = 32.dp
     val thumbHeight = 10.dp
 
+    var isDragging by remember { mutableStateOf(false) }
+
+    // Smooth studio fader glide animation when presets are selected or when other bands move,
+    // while snapping instantly under active touch dragging.
+    val animatedGain by animateFloatAsState(
+        targetValue = gain.toFloat(),
+        animationSpec = if (isDragging) snap() else tween(durationMillis = 380, easing = FastOutSlowInEasing),
+        label = "eq_fader_anim"
+    )
+
     Box(
         modifier = modifier
             .width(faderWidth)
@@ -372,6 +441,7 @@ private fun VerticalEqFader(
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    isDragging = true
                     val hPx = size.height.toFloat()
                     val thumbHPx = thumbHeight.toPx()
                     val travel = (hPx - thumbHPx).coerceAtLeast(1f)
@@ -386,12 +456,16 @@ private fun VerticalEqFader(
                     update(down.position.y)
                     down.consume()
 
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull() ?: break
-                        if (!change.pressed) break
-                        change.consume()
-                        update(change.position.y)
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull() ?: break
+                            if (!change.pressed) break
+                            change.consume()
+                            update(change.position.y)
+                        }
+                    } finally {
+                        isDragging = false
                     }
                 }
             },
@@ -405,11 +479,8 @@ private fun VerticalEqFader(
             val thumbWPx = thumbWidth.toPx()
             val travel = (h - thumbHPx).coerceAtLeast(1f)
 
-            // Calculate thumb center Y from gain
-            // gain = +12 => fraction = 1f => thumbCenterY = thumbHPx / 2 (very top / upper)
-            // gain = 0   => fraction = 0.5f => thumbCenterY = h / 2 (center)
-            // gain = -12 => fraction = 0f => thumbCenterY = h - thumbHPx / 2 (very bottom / footer)
-            val fraction = (gain + 12f) / 24f
+            // Calculate thumb center Y from animatedGain
+            val fraction = (animatedGain + 12f) / 24f
             val thumbCenterY = thumbHPx / 2f + (1f - fraction) * travel
             val centerY = h / 2f
 
@@ -424,7 +495,7 @@ private fun VerticalEqFader(
             )
 
             // 2. Active colored fill track from 0dB center to thumb
-            if (gain != 0 && enabled) {
+            if (kotlin.math.abs(animatedGain) > 0.05f && enabled) {
                 val fillTop = minOf(centerY, thumbCenterY)
                 val fillBottom = maxOf(centerY, thumbCenterY)
                 drawRoundRect(

@@ -589,6 +589,13 @@ fun ProUpgradeDialog(
                         Button(
                             onClick = {
                                 if (isProcessing) return@Button
+
+                                // Verify user network connection (data or Wi-Fi) before calling Google Billing
+                                if (!com.sonance.musicplayer.util.NetworkHelper.isNetworkAvailable(context)) {
+                                    Toast.makeText(context, "No internet connection. Please turn on Wi-Fi or mobile data to proceed with payment.", Toast.LENGTH_LONG).show()
+                                    return@Button
+                                }
+
                                 isProcessing = true
                                 val selectedPlan = if (selectedPlanIndex == 0) "yearly" else "lifetime"
 
@@ -597,15 +604,7 @@ fun ProUpgradeDialog(
                                     billingManager.launchPurchaseFlow(
                                         activity = activity,
                                         plan = selectedPlan,
-                                        onFallbackSimulation = {
-                                            isProcessing = false
-                                            val price = if (selectedPlan == "yearly") yearlyPrice else oneTimePrice
-                                            val orderId = "GPA.SONANCE.${System.currentTimeMillis()}"
-                                            val token = "token_pro_${System.currentTimeMillis()}"
-                                            billingManager.onPurchaseCompleted?.invoke(selectedPlan, price, orderId, token)
-                                            Toast.makeText(context, "Upgraded to Sonance Pro successfully!", Toast.LENGTH_SHORT).show()
-                                            onClose()
-                                        }
+                                        onFallbackSimulation = null
                                     )
                                 } else {
                                     isProcessing = false

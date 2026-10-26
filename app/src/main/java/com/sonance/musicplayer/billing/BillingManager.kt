@@ -105,7 +105,18 @@ class BillingManager private constructor(private val context: Context) : Purchas
                 .enableAutoServiceReconnection()
                 .build()
 
-            startConnection()
+            // Automatically connect whenever device is connected to internet
+            coroutineScope.launch {
+                com.sonance.musicplayer.util.NetworkHelper.observeNetwork(context).collect { isOnline ->
+                    if (isOnline) {
+                        Log.i(TAG, "Network connection detected. Connecting to BillingClient...")
+                        startConnection()
+                    } else {
+                        _isConnected.value = false
+                        _statusMessage.value = "Offline: Waiting for internet connection"
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing BillingClient", e)
             _statusMessage.value = "Billing initialization error: ${e.message}"
@@ -119,6 +130,14 @@ class BillingManager private constructor(private val context: Context) : Purchas
             queryProductDetails()
             queryPurchases()
             onConnected?.invoke()
+            return
+        }
+
+        // Verify network connection before connecting
+        if (!com.sonance.musicplayer.util.NetworkHelper.isNetworkAvailable(context)) {
+            Log.i(TAG, "Cannot connect BillingClient: No network connection available.")
+            _isConnected.value = false
+            _statusMessage.value = "Offline: Waiting for internet connection"
             return
         }
 
@@ -223,6 +242,14 @@ class BillingManager private constructor(private val context: Context) : Purchas
         productIdOrPlan: String,
         onFallbackSimulation: (() -> Unit)? = null
     ) {
+        if (!com.sonance.musicplayer.util.NetworkHelper.isNetworkAvailable(context)) {
+            Log.w(TAG, "Cannot launch purchase flow: No network available.")
+            activity.runOnUiThread {
+                onPurchaseFailed?.invoke("No internet connection. Please turn on Wi-Fi or mobile data to proceed with payment.")
+            }
+            return
+        }
+
         val client = billingClient
         if (client == null || !client.isReady) {
             Log.w(TAG, "BillingClient not ready. Reconnecting...")

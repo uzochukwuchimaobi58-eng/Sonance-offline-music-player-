@@ -105,7 +105,19 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                 .enableAutoServiceReconnection()
                 .build()
 
-            startConnection()
+            // Automatically attempt connection whenever an active network (Wi-Fi or Mobile Data) is available
+            coroutineScope.launch {
+                com.sonance.musicplayer.util.NetworkHelper.observeNetwork(context).collect { isOnline ->
+                    if (isOnline) {
+                        Log.i(TAG, "Network connection detected. Connecting to Google Play Billing...")
+                        startConnection()
+                    } else {
+                        Log.i(TAG, "Device is offline. Google Play Billing postponed.")
+                        _isConnected.value = false
+                        _statusMessage.value = "Offline: Connect to Wi-Fi or mobile data for Google Play"
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error creating BillingClient", e)
             _statusMessage.value = "Billing Init Error: ${e.message}"
@@ -117,6 +129,14 @@ class GooglePlayBillingManager private constructor(private val context: Context)
         if (client.isReady) {
             _isConnected.value = true
             queryProducts()
+            return
+        }
+
+        // Check network connection before connecting to Google Play
+        if (!com.sonance.musicplayer.util.NetworkHelper.isNetworkAvailable(context)) {
+            Log.i(TAG, "Cannot start Google Play connection: No internet connection.")
+            _isConnected.value = false
+            _statusMessage.value = "Offline: Waiting for internet connection"
             return
         }
 
@@ -221,6 +241,15 @@ class GooglePlayBillingManager private constructor(private val context: Context)
         plan: String = "yearly",
         onFallbackSimulation: (() -> Unit)? = null
     ) {
+        // 1. Verify user network connectivity (Wi-Fi or Mobile Data) before calling Google Billing
+        if (!com.sonance.musicplayer.util.NetworkHelper.isNetworkAvailable(context)) {
+            Log.w(TAG, "Cannot initiate payment: No network connection.")
+            activity.runOnUiThread {
+                onPurchaseFailed?.invoke("No internet connection. Please turn on Wi-Fi or mobile data to proceed with payment.")
+            }
+            return
+        }
+
         val client = billingClient
         val isSubscription = plan.lowercase() == "monthly" || plan.lowercase() == "yearly"
         val targetProductId = when (plan.lowercase()) {
@@ -260,28 +289,14 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                 val result = client.launchBillingFlow(activity, flowParams)
                 if (result.responseCode != BillingClient.BillingResponseCode.OK) {
                     Log.w(TAG, "launchBillingFlow returned code: ${result.responseCode}, ${result.debugMessage}")
-                    if (onFallbackSimulation != null) {
-                        onFallbackSimulation()
-                    } else {
-                        coroutineScope.launch(Dispatchers.Main) {
-                            val defaultPrice = if (isSubscription) "$5.00/yr" else "$10.00"
-                            val orderId = "GPA.TEST.${System.currentTimeMillis()}"
-                            val token = "token_sim_${System.currentTimeMillis()}"
-                            onPurchaseCompleted?.invoke(plan, defaultPrice, orderId, token)
-                        }
+                    activity.runOnUiThread {
+                        onPurchaseFailed?.invoke("Google Play error: ${result.debugMessage.ifBlank { "Code ${result.responseCode}" }}")
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Exception launching billing flow", e)
-                if (onFallbackSimulation != null) {
-                    onFallbackSimulation()
-                } else {
-                    coroutineScope.launch(Dispatchers.Main) {
-                        val defaultPrice = if (isSubscription) "$5.00/yr" else "$10.00"
-                        val orderId = "GPA.TEST.${System.currentTimeMillis()}"
-                        val token = "token_sim_${System.currentTimeMillis()}"
-                        onPurchaseCompleted?.invoke(plan, defaultPrice, orderId, token)
-                    }
+                activity.runOnUiThread {
+                    onPurchaseFailed?.invoke("Payment error: ${e.message}")
                 }
             }
         } else if (client != null && client.isReady) {
@@ -306,36 +321,18 @@ class GooglePlayBillingManager private constructor(private val context: Context)
                             launchPurchaseFlow(activity, plan, onFallbackSimulation)
                         }
                     } else {
-                        Log.w(TAG, "Google Play product not found in console on-demand (${res.debugMessage}), falling back")
-                        if (onFallbackSimulation != null) {
-                            activity.runOnUiThread { onFallbackSimulation() }
-                        } else {
-                            coroutineScope.launch(Dispatchers.Main) {
-                                val defaultPrice = if (isSubscription) "$5.00/yr" else "$10.00"
-                                val orderId = "GPA.TEST.${System.currentTimeMillis()}"
-                                val token = "token_sim_${System.currentTimeMillis()}"
-                                onPurchaseCompleted?.invoke(plan, defaultPrice, orderId, token)
-                            }
+                        Log.w(TAG, "Google Play product not found in console on-demand (${res.debugMessage})")
+                        activity.runOnUiThread {
+                            onPurchaseFailed?.invoke("Product unavailable on Google Play Console (${res.debugMessage.ifBlank { "code ${res.responseCode}" }}). Please check Play Store configuration.")
                         }
                     }
                 }
             }
         } else {
-            // Re-trigger product query in background in case client was reconnecting
-            if (client != null && !client.isReady) {
-                startConnection()
-            } else {
-                queryProducts()
-            }
-            if (onFallbackSimulation != null) {
-                onFallbackSimulation()
-            } else {
-                coroutineScope.launch(Dispatchers.Main) {
-                    val defaultPrice = if (isSubscription) "$5.00/yr" else "$10.00"
-                    val orderId = "GPA.TEST.${System.currentTimeMillis()}"
-                    val token = "token_sim_${System.currentTimeMillis()}"
-                    onPurchaseCompleted?.invoke(plan, defaultPrice, orderId, token)
-                }
+            // Billing client reconnecting
+            startConnection()
+            activity.runOnUiThread {
+                onPurchaseFailed?.invoke("Connecting to Google Play. Please ensure internet is active and try again.")
             }
         }
     }
