@@ -29,6 +29,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -52,7 +53,8 @@ fun EqualizerDialog(
     if (!isOpen) return
 
     var currentSettings by remember(settings) { mutableStateOf(settings) }
-    var isSmoothCurve by remember { mutableStateOf(false) }
+    var isSmoothCurve by remember { mutableStateOf(true) }
+    var isAnyDragging by remember { mutableStateOf(false) }
 
     val presetGains = mapOf(
         EqPreset.FLAT to listOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
@@ -232,7 +234,7 @@ fun EqualizerDialog(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = if (isSmoothCurve) "Linked Curve ON" else "Linked Curve",
+                                text = if (isSmoothCurve) "Auto-Curve ON" else "Auto-Curve OFF",
                                 color = if (isSmoothCurve) theme.accentColor else theme.textSecondary,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
@@ -260,7 +262,38 @@ fun EqualizerDialog(
                                 text = if (gain > 0) "+$gain" else "$gain",
                                 color = if (gain != 0 && currentSettings.enabled) theme.accentColor else theme.textSecondary,
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable {
+                                    // Quick tap on number toggles between +12 (upper) and 0 (center)
+                                    val targetGain = if (gain != 0) 0 else 12
+                                    val currentBands = currentSettings.bands.toMutableMap()
+                                    val oldVal = currentSettings.bands[freq] ?: 0
+                                    val delta = targetGain - oldVal
+
+                                    if (isSmoothCurve && delta != 0) {
+                                        freqLabels.forEachIndexed { otherIdx, (otherFreq, _) ->
+                                            if (otherFreq == freq) {
+                                                currentBands[freq] = targetGain
+                                            } else {
+                                                val dist = kotlin.math.abs(idx - otherIdx)
+                                                val factor = kotlin.math.exp(-0.5 * (dist.toDouble() / 1.5).let { it * it }).toFloat()
+                                                val otherOld = currentSettings.bands[otherFreq] ?: 0
+                                                val otherNew = (otherOld + (delta * factor).roundToInt()).coerceIn(-12, 12)
+                                                currentBands[otherFreq] = otherNew
+                                            }
+                                        }
+                                    } else {
+                                        currentBands[freq] = targetGain
+                                    }
+
+                                    val updated = currentSettings.copy(
+                                        enabled = true,
+                                        preset = EqPreset.CUSTOM,
+                                        bands = currentBands
+                                    )
+                                    currentSettings = updated
+                                    onApplySettings(updated)
+                                }
                             )
 
                             Spacer(modifier = Modifier.height(8.dp))
@@ -279,7 +312,7 @@ fun EqualizerDialog(
                                                 currentBands[freq] = newVal
                                             } else {
                                                 val dist = kotlin.math.abs(idx - otherIdx)
-                                                val factor = kotlin.math.exp(-0.5 * (dist.toDouble() / 1.4).let { it * it }).toFloat()
+                                                val factor = kotlin.math.exp(-0.5 * (dist.toDouble() / 1.5).let { it * it }).toFloat()
                                                 val otherOld = currentSettings.bands[otherFreq] ?: 0
                                                 val otherNew = (otherOld + (delta * factor).roundToInt()).coerceIn(-12, 12)
                                                 currentBands[otherFreq] = otherNew
@@ -297,6 +330,8 @@ fun EqualizerDialog(
                                     currentSettings = updated
                                     onApplySettings(updated)
                                 },
+                                onDragActiveChange = { isAnyDragging = it },
+                                isAnyDragging = isAnyDragging,
                                 enabled = currentSettings.enabled,
                                 accentColor = theme.accentColor,
                                 trackColor = theme.headerBorder,
@@ -413,23 +448,24 @@ private fun AudioFxSlider(
 private fun VerticalEqFader(
     gain: Int, // between -12 and +12
     onGainChange: (Int) -> Unit,
+    onDragActiveChange: (Boolean) -> Unit,
+    isAnyDragging: Boolean,
     enabled: Boolean,
     accentColor: Color,
     trackColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val faderHeight = 150.dp
+    val faderHeight = 160.dp
     val faderWidth = 44.dp
-    val thumbWidth = 32.dp
-    val thumbHeight = 10.dp
+    val thumbWidth = 38.dp
+    val thumbHeight = 6.dp
 
-    var isDragging by remember { mutableStateOf(false) }
+    var isDraggingThis by remember { mutableStateOf(false) }
 
-    // Smooth studio fader glide animation when presets are selected or when other bands move,
-    // while snapping instantly under active touch dragging.
+    // Instant snapping while dragging any fader; smooth glide when presets change
     val animatedGain by animateFloatAsState(
         targetValue = gain.toFloat(),
-        animationSpec = if (isDragging) snap() else tween(durationMillis = 380, easing = FastOutSlowInEasing),
+        animationSpec = if (isDraggingThis || isAnyDragging) snap() else tween(durationMillis = 240, easing = FastOutSlowInEasing),
         label = "eq_fader_anim"
     )
 
@@ -440,13 +476,17 @@ private fun VerticalEqFader(
             .pointerInput(enabled) {
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    isDragging = true
+                    val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+                    isDraggingThis = true
+                    onDragActiveChange(true)
+                    down.consume()
+
                     val hPx = size.height.toFloat()
                     val thumbHPx = thumbHeight.toPx()
                     val travel = (hPx - thumbHPx).coerceAtLeast(1f)
 
                     val update = { yPos: Float ->
+                        // 0 at top (+12 upper), travel at bottom (-12 footer)
                         val clampedY = (yPos - thumbHPx / 2f).coerceIn(0f, travel)
                         val fraction = 1f - (clampedY / travel) // 1.0f at top (+12), 0.0f at bottom (-12)
                         val newGain = ((fraction * 24f) - 12f).roundToInt().coerceIn(-12, 12)
@@ -454,18 +494,18 @@ private fun VerticalEqFader(
                     }
 
                     update(down.position.y)
-                    down.consume()
 
                     try {
                         while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull() ?: break
+                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) break
                             change.consume()
                             update(change.position.y)
                         }
                     } finally {
-                        isDragging = false
+                        isDraggingThis = false
+                        onDragActiveChange(false)
                     }
                 }
             },
@@ -479,23 +519,26 @@ private fun VerticalEqFader(
             val thumbWPx = thumbWidth.toPx()
             val travel = (h - thumbHPx).coerceAtLeast(1f)
 
-            // Calculate thumb center Y from animatedGain
-            val fraction = (animatedGain + 12f) / 24f
+            // Calculate thumb center Y from animatedGain:
+            // At +12dB (upper): fraction = 1f -> thumbCenterY = thumbHPx / 2f -> thumbTop = 0 (topmost)
+            // At -12dB (footer): fraction = 0f -> thumbCenterY = h - thumbHPx / 2f -> thumbTop = travel = h - thumbHPx (bottommost)
+            // At 0dB (middle): fraction = 0.5f -> thumbCenterY = h / 2f
+            val fraction = ((animatedGain + 12f) / 24f).coerceIn(0f, 1f)
             val thumbCenterY = thumbHPx / 2f + (1f - fraction) * travel
             val centerY = h / 2f
 
             // 1. Background vertical groove track
-            val trackWidth = 4.dp.toPx()
-            val trackCorner = 2.dp.toPx()
+            val trackWidth = 3.dp.toPx()
+            val trackCorner = 1.5.dp.toPx()
             drawRoundRect(
-                color = trackColor.copy(alpha = 0.5f),
+                color = trackColor.copy(alpha = 0.45f),
                 topLeft = Offset(centerX - trackWidth / 2f, thumbHPx / 2f),
                 size = Size(trackWidth, travel),
                 cornerRadius = CornerRadius(trackCorner, trackCorner)
             )
 
-            // 2. Active colored fill track from 0dB center to thumb
-            if (kotlin.math.abs(animatedGain) > 0.05f && enabled) {
+            // 2. Active colored fill track from 0dB center to current thumb level
+            if (kotlin.math.abs(animatedGain) > 0.1f && enabled) {
                 val fillTop = minOf(centerY, thumbCenterY)
                 val fillBottom = maxOf(centerY, thumbCenterY)
                 drawRoundRect(
@@ -507,10 +550,10 @@ private fun VerticalEqFader(
             }
 
             // 3. Center 0dB horizontal tick mark
-            val tickWidth = 16.dp.toPx()
+            val tickWidth = 20.dp.toPx()
             val tickHeight = 1.5.dp.toPx()
             drawLine(
-                color = if (gain == 0 && enabled) accentColor else Color.White.copy(alpha = 0.25f),
+                color = if (gain == 0 && enabled) accentColor.copy(alpha = 0.85f) else Color.White.copy(alpha = 0.22f),
                 start = Offset(centerX - tickWidth / 2f, centerY),
                 end = Offset(centerX + tickWidth / 2f, centerY),
                 strokeWidth = tickHeight
@@ -521,17 +564,17 @@ private fun VerticalEqFader(
             val thumbLeft = centerX - thumbWPx / 2f
             val thumbRadius = 3.dp.toPx()
 
-            // Subtle outer glow/halo when enabled
+            // Outer glow when enabled
             if (enabled) {
                 drawRoundRect(
-                    color = accentColor.copy(alpha = 0.35f),
+                    color = accentColor.copy(alpha = 0.40f),
                     topLeft = Offset(thumbLeft - 2.dp.toPx(), thumbTop - 1.dp.toPx()),
                     size = Size(thumbWPx + 4.dp.toPx(), thumbHPx + 2.dp.toPx()),
                     cornerRadius = CornerRadius(thumbRadius + 1.dp.toPx(), thumbRadius + 1.dp.toPx())
                 )
             }
 
-            // Fader Handle Body (horizontal bar)
+            // Horizontal Line Body
             drawRoundRect(
                 color = if (enabled) accentColor else Color(0xFF52525B),
                 topLeft = Offset(thumbLeft, thumbTop),
@@ -539,11 +582,11 @@ private fun VerticalEqFader(
                 cornerRadius = CornerRadius(thumbRadius, thumbRadius)
             )
 
-            // Inner horizontal groove line for studio hardware look
+            // Inner center line for hardware look
             val innerLineWidth = 18.dp.toPx()
-            val innerLineHeight = 2.dp.toPx()
+            val innerLineHeight = 1.5.dp.toPx()
             drawRoundRect(
-                color = Color.Black.copy(alpha = 0.60f),
+                color = Color.Black.copy(alpha = 0.50f),
                 topLeft = Offset(centerX - innerLineWidth / 2f, thumbCenterY - innerLineHeight / 2f),
                 size = Size(innerLineWidth, innerLineHeight),
                 cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
