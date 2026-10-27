@@ -95,6 +95,7 @@ fun SettingsDialog(
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var showFaqDialog by remember { mutableStateOf(false) }
     var showFeedbackDialog by remember { mutableStateOf(false) }
+    var showRatingDialog by remember { mutableStateOf(false) }
 
     // Battery optimization status check
     val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? PowerManager }
@@ -680,6 +681,13 @@ fun SettingsDialog(
                         title = "Feedback",
                         subtitle = "Send suggestions or report bugs",
                         onClick = { showFeedbackDialog = true },
+                        theme = theme
+                    )
+
+                    SettingActionItem(
+                        title = "Rate for us",
+                        subtitle = "Support Sonance with a 5-star rating on Google Play",
+                        onClick = { showRatingDialog = true },
                         theme = theme
                     )
 
@@ -1412,6 +1420,15 @@ fun SettingsDialog(
                     Text("Cancel", color = theme.textSecondary)
                 }
             }
+        )
+    }
+
+    if (showRatingDialog) {
+        com.sonance.musicplayer.ui.components.RatingDialog(
+            isOpen = true,
+            onClose = { showRatingDialog = false },
+            theme = theme,
+            source = "settings"
         )
     }
 }

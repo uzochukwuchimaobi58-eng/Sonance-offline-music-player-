@@ -2,6 +2,7 @@ package com.sonance.musicplayer
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -27,6 +28,7 @@ import androidx.core.content.ContextCompat
 import com.sonance.musicplayer.data.MusicRepository
 import com.sonance.musicplayer.model.*
 import com.sonance.musicplayer.player.PlaybackManager
+import com.sonance.musicplayer.rating.InAppRatingManager
 import com.sonance.musicplayer.ui.components.*
 import com.sonance.musicplayer.ui.screens.*
 import com.sonance.musicplayer.ui.theme.SonanceTheme
@@ -135,6 +137,14 @@ class MainActivity : ComponentActivity() {
             var isMusicBassOpen by remember { mutableStateOf(false) }
             var isInterstitialAdOpen by remember { mutableStateOf(false) }
             var pendingPostAdAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+            var isRatingDialogOpen by remember { mutableStateOf(false) }
+
+            val triggerStudioToolExitRating: () -> Unit = {
+                val shouldShow = InAppRatingManager.getInstance(applicationContext).onStudioToolExited()
+                if (shouldShow) {
+                    isRatingDialogOpen = true
+                }
+            }
 
             // Double tap back to exit on Home screen
             var lastBackPressTime by remember { mutableLongStateOf(0L) }
@@ -146,10 +156,22 @@ class MainActivity : ComponentActivity() {
                         pendingPostAdAction = null
                     }
                     isProUpgradeOpen -> isProUpgradeOpen = false
-                    trimmingTrack != null -> trimmingTrack = null
-                    isKaraokeStudioOpen -> isKaraokeStudioOpen = false
-                    isMusicBassOpen -> isMusicBassOpen = false
-                    isEqualizerOpen -> isEqualizerOpen = false
+                    trimmingTrack != null -> {
+                        trimmingTrack = null
+                        triggerStudioToolExitRating()
+                    }
+                    isKaraokeStudioOpen -> {
+                        isKaraokeStudioOpen = false
+                        triggerStudioToolExitRating()
+                    }
+                    isMusicBassOpen -> {
+                        isMusicBassOpen = false
+                        triggerStudioToolExitRating()
+                    }
+                    isEqualizerOpen -> {
+                        isEqualizerOpen = false
+                        triggerStudioToolExitRating()
+                    }
                     isSettingsOpen -> isSettingsOpen = false
                     isThemePickerOpen -> isThemePickerOpen = false
                     isSleepTimerOpen -> isSleepTimerOpen = false
@@ -827,7 +849,10 @@ class MainActivity : ComponentActivity() {
                 // Equalizer Dialog
                 EqualizerDialog(
                     isOpen = isEqualizerOpen,
-                    onClose = { isEqualizerOpen = false },
+                    onClose = {
+                        isEqualizerOpen = false
+                        triggerStudioToolExitRating()
+                    },
                     settings = eqSettings,
                     onApplySettings = { newSettings ->
                         repository.saveEqualizer(newSettings)
@@ -839,7 +864,10 @@ class MainActivity : ComponentActivity() {
                 // Ringtone Trimmer Dialog
                 RingtoneTrimmerDialog(
                     isOpen = trimmingTrack != null,
-                    onClose = { trimmingTrack = null },
+                    onClose = {
+                        trimmingTrack = null
+                        triggerStudioToolExitRating()
+                    },
                     track = trimmingTrack,
                     theme = theme,
                     playbackManager = playbackManager,
@@ -849,7 +877,10 @@ class MainActivity : ComponentActivity() {
                 // Karaoke Studio Dialog
                 KaraokeStudioDialog(
                     isOpen = isKaraokeStudioOpen,
-                    onClose = { isKaraokeStudioOpen = false },
+                    onClose = {
+                        isKaraokeStudioOpen = false
+                        triggerStudioToolExitRating()
+                    },
                     track = currentTrack,
                     isKaraokeActive = isKaraokeMode,
                     onToggleKaraoke = {
@@ -877,7 +908,10 @@ class MainActivity : ComponentActivity() {
                 // Music Bass Dialog
                 MusicBassDialog(
                     isOpen = isMusicBassOpen,
-                    onClose = { isMusicBassOpen = false },
+                    onClose = {
+                        isMusicBassOpen = false
+                        triggerStudioToolExitRating()
+                    },
                     track = currentTrack,
                     theme = theme,
                     playbackManager = playbackManager,
@@ -986,6 +1020,14 @@ class MainActivity : ComponentActivity() {
                         isProUpgradeOpen = true
                     },
                     theme = theme
+                )
+
+                // Rating Dialog (triggered on Studio Tool exit or Settings)
+                RatingDialog(
+                    isOpen = isRatingDialogOpen,
+                    onClose = { isRatingDialogOpen = false },
+                    theme = theme,
+                    source = "studio_tool"
                 )
             }
         }
