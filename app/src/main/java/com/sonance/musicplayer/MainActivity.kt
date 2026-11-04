@@ -858,7 +858,8 @@ class MainActivity : ComponentActivity() {
                         repository.saveEqualizer(newSettings)
                         playbackManager.applyEqualizerSettings(newSettings)
                     },
-                    theme = theme
+                    theme = theme,
+                    track = currentTrack
                 )
 
                 // Ringtone Trimmer Dialog

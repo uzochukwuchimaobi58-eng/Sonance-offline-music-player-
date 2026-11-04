@@ -153,7 +153,12 @@ data class MusicBassSettings(
     val subBassRumble: Int = 80, // 0..100%
     val punchKick: Int = 75,     // 0..100%
     val clarityHighs: Int = 50,  // 0..100%
-    val presetName: String = "Deep Bass"
+    val presetName: String = "Deep Bass",
+    val virtualizerEnabled: Boolean = false,
+    val virtualizerStrength: Int = 75, // 0..100%
+    val soundBalanceEnabled: Boolean = false,
+    val soundBalanceLeft: Float = 100f, // 0..100%
+    val soundBalanceRight: Float = 100f // 0..100%
 )
 
 @Serializable

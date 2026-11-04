@@ -687,7 +687,14 @@ fun SettingsDialog(
                     SettingActionItem(
                         title = "Rate for us",
                         subtitle = "Support Sonance with a 5-star rating on Google Play",
-                        onClick = { showRatingDialog = true },
+                        onClick = {
+                            val activity = context as? android.app.Activity
+                            if (activity != null) {
+                                com.sonance.musicplayer.rating.InAppRatingManager.getInstance(context).launchReviewFlow(activity)
+                            }
+                            com.sonance.musicplayer.rating.InAppRatingManager.getInstance(context).openPlayStoreListing(context)
+                            showRatingDialog = true
+                        },
                         theme = theme
                     )
 

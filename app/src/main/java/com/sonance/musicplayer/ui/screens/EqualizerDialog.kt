@@ -1,5 +1,10 @@
 package com.sonance.musicplayer.ui.screens
 
+import android.net.Uri
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,16 +14,16 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,18 +33,28 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.roundToInt
+import coil.compose.AsyncImage
 import com.sonance.musicplayer.model.EqPreset
 import com.sonance.musicplayer.model.EqualizerSettings
 import com.sonance.musicplayer.model.ThemeConfig
+import com.sonance.musicplayer.model.Track
+import kotlin.math.cos
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,13 +63,12 @@ fun EqualizerDialog(
     onClose: () -> Unit,
     settings: EqualizerSettings,
     onApplySettings: (EqualizerSettings) -> Unit,
-    theme: ThemeConfig
+    theme: ThemeConfig,
+    track: Track? = null
 ) {
     if (!isOpen) return
 
     var currentSettings by remember(settings) { mutableStateOf(settings) }
-    var isSmoothCurve by remember { mutableStateOf(true) }
-    var isAnyDragging by remember { mutableStateOf(false) }
 
     val presetGains = mapOf(
         EqPreset.FLAT to listOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
@@ -67,22 +81,29 @@ fun EqualizerDialog(
         EqPreset.HIFI_MASTER to listOf(5, 4, 2, 1, 1, 2, 3, 5, 6, 7)
     )
 
-    val freqLabels = listOf(
-        60 to "60Hz",
-        170 to "170Hz",
-        310 to "310Hz",
-        600 to "600Hz",
-        1000 to "1kHz",
-        3000 to "3kHz",
-        6000 to "6kHz",
-        12000 to "12kHz",
-        14000 to "14kHz",
-        16000 to "16kHz"
+    // 10 bands matching Image 1: 32, 64, 125, 250, 500, 1k, 2k, 4k, 8k, 16k
+    val freqBands = listOf(
+        Triple(60, "32", false),      // Cyan
+        Triple(170, "64", false),     // Cyan
+        Triple(310, "125", false),    // Cyan
+        Triple(600, "250", true),     // Warm Amber/Orange
+        Triple(1000, "500", true),    // Warm Amber/Orange
+        Triple(3000, "1k", true),     // Warm Amber/Orange
+        Triple(6000, "2k", true),     // Warm Amber/Orange
+        Triple(12000, "4k", false),   // Cyan
+        Triple(14000, "8k", false),   // Cyan
+        Triple(16000, "16k", false)   // Cyan
     )
+
+    val neonCyan = Color(0xFF00E5FF)
+    val neonOrange = Color(0xFFFF9100)
+    val surfaceDark = Color(0xFF0B0F17)
+    val cardDark = Color(0xFF111827)
 
     ModalBottomSheet(
         onDismissRequest = onClose,
-        containerColor = theme.bgCanvas,
+        containerColor = surfaceDark,
+        dragHandle = null,
         modifier = Modifier.testTag("equalizer_dialog")
     ) {
         Column(
@@ -90,403 +111,463 @@ fun EqualizerDialog(
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            // Header
+            // Drag handle pill
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color.White.copy(alpha = 0.2f))
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // TOP LOSSLESS HEADER (Exact Image 1 Design)
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Tune,
-                        contentDescription = null,
-                        tint = theme.accentColor,
-                        modifier = Modifier.size(24.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                Color(0xFF131D2D).copy(alpha = 0.85f),
+                                Color(0xFF0A0F19).copy(alpha = 0.95f)
+                            )
+                        )
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "10-Band Equalizer & FX",
-                        color = theme.textPrimary,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Album Art Card
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF1E293B))
+                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!track?.coverArt.isNullOrBlank()) {
+                        AsyncImage(
+                            model = Uri.parse(track?.coverArt),
+                            contentDescription = "Album Art",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = neonCyan,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    // Glass reflection overlay
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(26.dp)
+                            .align(Alignment.TopCenter)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color.White.copy(alpha = 0.22f), Color.Transparent)
+                                )
+                            )
                     )
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Artist, Track and LOSSLESS Badge
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (currentSettings.enabled) "ON" else "OFF",
-                        color = if (currentSettings.enabled) theme.accentColor else theme.textSecondary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
+                        text = "ARTIST: ${(track?.artist ?: "ARCTIC VOIDS").uppercase()} | TRACK: ${(track?.title ?: "ECLIPSE (FLAC)").uppercase()}",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Switch(
-                        checked = currentSettings.enabled,
-                        onCheckedChange = { isChecked ->
-                            val updated = currentSettings.copy(enabled = isChecked)
-                            currentSettings = updated
-                            onApplySettings(updated)
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = theme.accentColor,
-                            checkedTrackColor = theme.accentColor.copy(alpha = 0.5f),
-                            uncheckedThumbColor = Color(0xFF71717A),
-                            uncheckedTrackColor = Color(0xFF27272A)
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    Text(
+                        text = "LOSSLESS",
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 2.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Green Pill Badge: FLAC | 24-bit/96kHz
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF10B981).copy(alpha = 0.14f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.65f))
+                    ) {
+                        Text(
+                            text = "FLAC | 24-bit/96kHz",
+                            color = Color(0xFF34D399),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
                         )
+                    }
+                }
+
+                // Power Toggle Button
+                IconButton(
+                    onClick = {
+                        val updated = currentSettings.copy(enabled = !currentSettings.enabled)
+                        currentSettings = updated
+                        onApplySettings(updated)
+                    },
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(if (currentSettings.enabled) neonCyan.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.05f))
+                        .border(
+                            1.dp,
+                            if (currentSettings.enabled) neonCyan else Color.White.copy(alpha = 0.15f),
+                            CircleShape
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PowerSettingsNew,
+                        contentDescription = "Toggle Equalizer",
+                        tint = if (currentSettings.enabled) neonCyan else Color(0xFF64748B),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            Column(
+            // PRESETS ROW
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .alpha(if (currentSettings.enabled) 1f else 0.45f)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Presets Horizontal Scroller
+                EqPreset.entries.forEach { preset ->
+                    val isSelected = currentSettings.preset == preset
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
+                                if (isSelected) neonCyan.copy(alpha = 0.20f)
+                                else Color.White.copy(alpha = 0.05f)
+                            )
+                            .border(
+                                1.dp,
+                                if (isSelected) neonCyan else Color.White.copy(alpha = 0.12f),
+                                RoundedCornerShape(14.dp)
+                            )
+                            .clickable {
+                                val gains = presetGains[preset]
+                                val newBands = if (gains != null) {
+                                    freqBands.mapIndexed { idx, (freq, _, _) -> freq to gains[idx] }.toMap()
+                                } else {
+                                    currentSettings.bands
+                                }
+                                val updated = currentSettings.copy(enabled = true, preset = preset, bands = newBands)
+                                currentSettings = updated
+                                onApplySettings(updated)
+                            }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = preset.displayName,
+                            color = if (isSelected) neonCyan else Color(0xFFCBD5E1),
+                            fontSize = 11.5.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // 10-BAND GRAPHIC EQUALIZER FADERS SECTION (Image 1 Style)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = "PRESETS",
-                    color = theme.textSecondary,
+                    text = "FREQUENCY RESPONSE (-12dB to +12dB)",
+                    color = Color(0xFF94A3B8),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.sp
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "RESET FLAT",
+                    color = neonCyan,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clickable {
+                            val flatBands = freqBands.associate { it.first to 0 }
+                            val updated = currentSettings.copy(
+                                enabled = true,
+                                preset = EqPreset.FLAT,
+                                bands = flatBands
+                            )
+                            currentSettings = updated
+                            onApplySettings(updated)
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Faders Card Container with Glowing Rails
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = cardDark.copy(alpha = 0.85f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    EqPreset.entries.forEach { preset ->
-                        val isSelected = currentSettings.preset == preset
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(if (isSelected) theme.accentColor else theme.headerBg)
-                                .border(
-                                    1.dp,
-                                    if (isSelected) theme.accentColor else theme.headerBorder,
-                                    RoundedCornerShape(16.dp)
-                                )
-                                .clickable {
-                                    val gains = presetGains[preset]
-                                    val newBands = if (gains != null) {
-                                        freqLabels.mapIndexed { idx, (freq, _) -> freq to gains[idx] }.toMap()
-                                    } else {
-                                        currentSettings.bands
-                                    }
-                                    val updated = currentSettings.copy(enabled = true, preset = preset, bands = newBands)
-                                    currentSettings = updated
-                                    onApplySettings(updated)
-                                }
-                                .padding(horizontal = 14.dp, vertical = 7.dp)
-                        ) {
-                            Text(
-                                text = preset.displayName,
-                                color = if (isSelected) Color.Black else theme.textPrimary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // 10 EQ Frequency Bands Sliders with Linked Curve option
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
+                        .padding(vertical = 14.dp, horizontal = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "FREQUENCY RESPONSE (-12dB to +12dB)",
-                        color = theme.textSecondary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
+                    freqBands.forEachIndexed { idx, (freq, label, isAmber) ->
+                        key(freq) {
+                            val gain = currentSettings.bands[freq] ?: 0
+                            val bandColor = if (isAmber) neonOrange else neonCyan
 
-                    Surface(
-                        onClick = { isSmoothCurve = !isSmoothCurve },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isSmoothCurve) theme.accentColor.copy(alpha = 0.2f) else theme.headerBg,
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            if (isSmoothCurve) theme.accentColor else theme.headerBorder
-                        )
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.GraphicEq,
-                                contentDescription = null,
-                                tint = if (isSmoothCurve) theme.accentColor else theme.textSecondary,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (isSmoothCurve) "Auto-Curve ON" else "Auto-Curve OFF",
-                                color = if (isSmoothCurve) theme.accentColor else theme.textSecondary,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    freqLabels.forEachIndexed { idx, (freq, label) ->
-                        val gain = currentSettings.bands[freq] ?: 0
-
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.width(44.dp)
-                        ) {
-                            Text(
-                                text = if (gain > 0) "+$gain" else "$gain",
-                                color = if (gain != 0 && currentSettings.enabled) theme.accentColor else theme.textSecondary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.clickable {
-                                    // Quick tap on number toggles between +12 (upper) and 0 (center)
-                                    val targetGain = if (gain != 0) 0 else 12
-                                    val currentBands = currentSettings.bands.toMutableMap()
-                                    val oldVal = currentSettings.bands[freq] ?: 0
-                                    val delta = targetGain - oldVal
-
-                                    if (isSmoothCurve && delta != 0) {
-                                        freqLabels.forEachIndexed { otherIdx, (otherFreq, _) ->
-                                            if (otherFreq == freq) {
-                                                currentBands[freq] = targetGain
-                                            } else {
-                                                val dist = kotlin.math.abs(idx - otherIdx)
-                                                val factor = kotlin.math.exp(-0.5 * (dist.toDouble() / 1.5).let { it * it }).toFloat()
-                                                val otherOld = currentSettings.bands[otherFreq] ?: 0
-                                                val otherNew = (otherOld + (delta * factor).roundToInt()).coerceIn(-12, 12)
-                                                currentBands[otherFreq] = otherNew
-                                            }
-                                        }
-                                    } else {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                // Top dB text (Click toggles only this single band)
+                                Text(
+                                    text = if (gain > 0) "+$gain" else "$gain",
+                                    color = if (gain != 0 && currentSettings.enabled) bandColor else Color(0xFF64748B),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black,
+                                    maxLines = 1,
+                                    modifier = Modifier.clickable {
+                                        val targetGain = if (gain != 0) 0 else 12
+                                        val currentBands = currentSettings.bands.toMutableMap()
                                         currentBands[freq] = targetGain
+
+                                        val updated = currentSettings.copy(
+                                            enabled = true,
+                                            preset = EqPreset.CUSTOM,
+                                            bands = currentBands
+                                        )
+                                        currentSettings = updated
+                                        onApplySettings(updated)
                                     }
+                                )
 
-                                    val updated = currentSettings.copy(
-                                        enabled = true,
-                                        preset = EqPreset.CUSTOM,
-                                        bands = currentBands
-                                    )
-                                    currentSettings = updated
-                                    onApplySettings(updated)
-                                }
-                            )
+                                Spacer(modifier = Modifier.height(6.dp))
 
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            VerticalEqFader(
-                                gain = gain,
-                                onGainChange = { newVal ->
-                                    val currentBands = currentSettings.bands.toMutableMap()
-                                    val oldVal = currentBands[freq] ?: 0
-                                    val delta = newVal - oldVal
-
-                                    if (isSmoothCurve && delta != 0) {
-                                        // Linked Curve: other bands automatically scroll up or down along a natural bell curve!
-                                        freqLabels.forEachIndexed { otherIdx, (otherFreq, _) ->
-                                            if (otherFreq == freq) {
-                                                currentBands[freq] = newVal
-                                            } else {
-                                                val dist = kotlin.math.abs(idx - otherIdx)
-                                                val factor = kotlin.math.exp(-0.5 * (dist.toDouble() / 1.5).let { it * it }).toFloat()
-                                                val otherOld = currentSettings.bands[otherFreq] ?: 0
-                                                val otherNew = (otherOld + (delta * factor).roundToInt()).coerceIn(-12, 12)
-                                                currentBands[otherFreq] = otherNew
-                                            }
-                                        }
-                                    } else {
+                                // Neon Fader - Strictly moves only this individual line/band
+                                NeonGlowingEqFader(
+                                    freq = freq,
+                                    gain = gain,
+                                    onGainChange = { newVal ->
+                                        val currentBands = currentSettings.bands.toMutableMap()
                                         currentBands[freq] = newVal
-                                    }
 
-                                    val updated = currentSettings.copy(
-                                        enabled = true,
-                                        preset = EqPreset.CUSTOM,
-                                        bands = currentBands
-                                    )
-                                    currentSettings = updated
-                                    onApplySettings(updated)
-                                },
-                                onDragActiveChange = { isAnyDragging = it },
-                                isAnyDragging = isAnyDragging,
-                                enabled = currentSettings.enabled,
-                                accentColor = theme.accentColor,
-                                trackColor = theme.headerBorder,
-                                modifier = Modifier.testTag("eq_fader_$freq")
-                            )
+                                        val updated = currentSettings.copy(
+                                            enabled = true,
+                                            preset = EqPreset.CUSTOM,
+                                            bands = currentBands
+                                        )
+                                        currentSettings = updated
+                                        onApplySettings(updated)
+                                    },
+                                    onTurnOn = {
+                                        if (!currentSettings.enabled) {
+                                            val updated = currentSettings.copy(enabled = true)
+                                            currentSettings = updated
+                                            onApplySettings(updated)
+                                        }
+                                    },
+                                    enabled = currentSettings.enabled,
+                                    neonColor = bandColor,
+                                    modifier = Modifier.testTag("eq_fader_$freq")
+                                )
 
-                            Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
 
-                            Text(
-                                text = label,
-                                color = theme.textSecondary,
-                                fontSize = 10.sp,
-                                textAlign = TextAlign.Center
-                            )
+                                // Bottom Frequency Label (32, 64, 125, etc.)
+                                Text(
+                                    text = label,
+                                    color = if (gain != 0 && currentSettings.enabled) Color.White else Color(0xFF94A3B8),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(22.dp))
 
-                // Sound FX Knobs / Sliders: Bass Boost, 3D Reverb, Treble
-                Text(
-                    text = "AUDIO ENHANCEMENTS",
-                    color = theme.textSecondary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
+            // 2 BIG ROUND WORKING ROTARY KNOBS (Image 1 Style)
+            // "make it to display 2 big button and should working"
+            Text(
+                text = "STUDIO ROTARY ENHANCERS",
+                color = Color(0xFF94A3B8),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
 
-                Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-                // Bass Boost Slider
-                AudioFxSlider(
-                    title = "Bass Boost",
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Knob 1: BASS BOOST
+                MetallicStudioKnob(
+                    title = "BASS BOOST",
                     value = currentSettings.bassBoost,
-                    onValueChange = {
-                        val updated = currentSettings.copy(enabled = true, bassBoost = it)
+                    onValueChange = { newVal ->
+                        val updated = currentSettings.copy(enabled = true, bassBoost = newVal)
                         currentSettings = updated
                         onApplySettings(updated)
                     },
-                    theme = theme
+                    onTurnOn = {
+                        if (!currentSettings.enabled) {
+                            val updated = currentSettings.copy(enabled = true)
+                            currentSettings = updated
+                            onApplySettings(updated)
+                        }
+                    },
+                    accentColor = neonCyan,
+                    enabled = currentSettings.enabled,
+                    modifier = Modifier.testTag("knob_bass_boost")
                 )
 
-                // 3D Spatial Reverb Slider
-                AudioFxSlider(
-                    title = "3D Spatial Reverb",
+                // Knob 2: 3D SURROUND / VIRTUALIZER
+                MetallicStudioKnob(
+                    title = "3D SURROUND",
                     value = currentSettings.spatialReverb,
-                    onValueChange = {
-                        val updated = currentSettings.copy(enabled = true, spatialReverb = it)
+                    onValueChange = { newVal ->
+                        val updated = currentSettings.copy(enabled = true, spatialReverb = newVal)
                         currentSettings = updated
                         onApplySettings(updated)
                     },
-                    theme = theme
-                )
-
-                // Treble Boost Slider
-                AudioFxSlider(
-                    title = "Treble Clarity",
-                    value = currentSettings.trebleBoost,
-                    onValueChange = {
-                        val updated = currentSettings.copy(enabled = true, trebleBoost = it)
-                        currentSettings = updated
-                        onApplySettings(updated)
+                    onTurnOn = {
+                        if (!currentSettings.enabled) {
+                            val updated = currentSettings.copy(enabled = true)
+                            currentSettings = updated
+                            onApplySettings(updated)
+                        }
                     },
-                    theme = theme
+                    accentColor = neonCyan,
+                    enabled = currentSettings.enabled,
+                    modifier = Modifier.testTag("knob_3d_surround")
                 )
             }
 
             Spacer(modifier = Modifier.height(20.dp))
 
+            // Done Button
             Button(
                 onClick = onClose,
-                colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
+                colors = ButtonDefaults.buttonColors(containerColor = neonCyan),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
+                    .height(48.dp),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                Text("Done", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(
+                    text = "Done",
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
             }
         }
     }
 }
 
+/**
+ * High-fidelity Neon Glowing Graphic Equalizer Fader matching Image 1:
+ * - Glowing Ice Cyan or Warm Sunset Amber neon track
+ * - Metallic capsule fader thumb with glowing center slit
+ * - Fully unconstrained dragging from +12dB to -12dB
+ */
 @Composable
-private fun AudioFxSlider(
-    title: String,
-    value: Int,
-    onValueChange: (Int) -> Unit,
-    theme: ThemeConfig
-) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = title, color = theme.textPrimary, fontSize = 13.sp)
-            Text(text = "$value%", color = theme.accentColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        }
-        Slider(
-            value = value.toFloat(),
-            onValueChange = { onValueChange(it.toInt()) },
-            valueRange = 0f..100f,
-            colors = SliderDefaults.colors(
-                thumbColor = theme.accentColor,
-                activeTrackColor = theme.accentColor,
-                inactiveTrackColor = theme.headerBorder
-            )
-        )
-    }
-}
-
-@Composable
-private fun VerticalEqFader(
+private fun NeonGlowingEqFader(
+    freq: Int,
     gain: Int, // between -12 and +12
     onGainChange: (Int) -> Unit,
-    onDragActiveChange: (Boolean) -> Unit,
-    isAnyDragging: Boolean,
+    onTurnOn: (() -> Unit)? = null,
     enabled: Boolean,
-    accentColor: Color,
-    trackColor: Color,
+    neonColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val faderHeight = 160.dp
-    val faderWidth = 44.dp
-    val thumbWidth = 38.dp
-    val thumbHeight = 6.dp
+    val faderHeight = 155.dp
+    val thumbWidth = 24.dp
+    val thumbHeight = 14.dp
 
     var isDraggingThis by remember { mutableStateOf(false) }
 
-    // Instant snapping while dragging any fader; smooth glide when presets change
     val animatedGain by animateFloatAsState(
         targetValue = gain.toFloat(),
-        animationSpec = if (isDraggingThis || isAnyDragging) snap() else tween(durationMillis = 240, easing = FastOutSlowInEasing),
-        label = "eq_fader_anim"
+        animationSpec = if (isDraggingThis) snap() else tween(durationMillis = 240, easing = FastOutSlowInEasing),
+        label = "neon_fader_anim"
     )
 
     Box(
         modifier = modifier
-            .width(faderWidth)
+            .fillMaxWidth()
             .height(faderHeight)
-            .pointerInput(enabled) {
-                if (!enabled) return@pointerInput
+            .pointerInput(freq) {
                 awaitEachGesture {
-                    val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+                    val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = true)
                     isDraggingThis = true
-                    onDragActiveChange(true)
                     down.consume()
+                    onTurnOn?.invoke()
 
                     val hPx = size.height.toFloat()
                     val thumbHPx = thumbHeight.toPx()
                     val travel = (hPx - thumbHPx).coerceAtLeast(1f)
 
                     val update = { yPos: Float ->
-                        // 0 at top (+12 upper), travel at bottom (-12 footer)
                         val clampedY = (yPos - thumbHPx / 2f).coerceIn(0f, travel)
                         val fraction = 1f - (clampedY / travel) // 1.0f at top (+12), 0.0f at bottom (-12)
                         val newGain = ((fraction * 24f) - 12f).roundToInt().coerceIn(-12, 12)
@@ -505,7 +586,6 @@ private fun VerticalEqFader(
                         }
                     } finally {
                         isDraggingThis = false
-                        onDragActiveChange(false)
                     }
                 }
             },
@@ -519,79 +599,348 @@ private fun VerticalEqFader(
             val thumbWPx = thumbWidth.toPx()
             val travel = (h - thumbHPx).coerceAtLeast(1f)
 
-            // Calculate thumb center Y from animatedGain:
-            // At +12dB (upper): fraction = 1f -> thumbCenterY = thumbHPx / 2f -> thumbTop = 0 (topmost)
-            // At -12dB (footer): fraction = 0f -> thumbCenterY = h - thumbHPx / 2f -> thumbTop = travel = h - thumbHPx (bottommost)
-            // At 0dB (middle): fraction = 0.5f -> thumbCenterY = h / 2f
+            // Current thumb position
             val fraction = ((animatedGain + 12f) / 24f).coerceIn(0f, 1f)
             val thumbCenterY = thumbHPx / 2f + (1f - fraction) * travel
             val centerY = h / 2f
 
-            // 1. Background vertical groove track
-            val trackWidth = 3.dp.toPx()
-            val trackCorner = 1.5.dp.toPx()
+            // 1. Dark Recessed Slot Channel Track
+            val trackWidth = 5.dp.toPx()
+            val trackCorner = 2.5.dp.toPx()
             drawRoundRect(
-                color = trackColor.copy(alpha = 0.45f),
+                color = Color(0xFF030712),
                 topLeft = Offset(centerX - trackWidth / 2f, thumbHPx / 2f),
                 size = Size(trackWidth, travel),
                 cornerRadius = CornerRadius(trackCorner, trackCorner)
             )
 
-            // 2. Active colored fill track from 0dB center to current thumb level
-            if (kotlin.math.abs(animatedGain) > 0.1f && enabled) {
-                val fillTop = minOf(centerY, thumbCenterY)
-                val fillBottom = maxOf(centerY, thumbCenterY)
-                drawRoundRect(
-                    color = accentColor,
-                    topLeft = Offset(centerX - trackWidth / 2f, fillTop),
-                    size = Size(trackWidth, (fillBottom - fillTop).coerceAtLeast(1f)),
-                    cornerRadius = CornerRadius(trackCorner, trackCorner)
-                )
+            // 2. Glowing Neon Rail (from thumb down to bottom / 0dB)
+            if (enabled) {
+                // Wide ambient neon blur aura
+                val glowTop = thumbCenterY
+                val glowBottom = h - thumbHPx / 2f
+                if (glowBottom > glowTop) {
+                    drawRoundRect(
+                        color = neonColor.copy(alpha = 0.28f),
+                        topLeft = Offset(centerX - 5.dp.toPx(), glowTop),
+                        size = Size(10.dp.toPx(), (glowBottom - glowTop).coerceAtLeast(1f)),
+                        cornerRadius = CornerRadius(5.dp.toPx(), 5.dp.toPx())
+                    )
+                    // Sharp bright neon core line
+                    drawRoundRect(
+                        color = neonColor,
+                        topLeft = Offset(centerX - 1.5.dp.toPx(), glowTop),
+                        size = Size(3.dp.toPx(), (glowBottom - glowTop).coerceAtLeast(1f)),
+                        cornerRadius = CornerRadius(1.5.dp.toPx(), 1.5.dp.toPx())
+                    )
+                }
             }
 
-            // 3. Center 0dB horizontal tick mark
-            val tickWidth = 20.dp.toPx()
-            val tickHeight = 1.5.dp.toPx()
+            // 3. 0dB Center Reference Line
             drawLine(
-                color = if (gain == 0 && enabled) accentColor.copy(alpha = 0.85f) else Color.White.copy(alpha = 0.22f),
-                start = Offset(centerX - tickWidth / 2f, centerY),
-                end = Offset(centerX + tickWidth / 2f, centerY),
-                strokeWidth = tickHeight
+                color = Color.White.copy(alpha = 0.18f),
+                start = Offset(centerX - 12.dp.toPx(), centerY),
+                end = Offset(centerX + 12.dp.toPx(), centerY),
+                strokeWidth = 1.dp.toPx()
             )
 
-            // 4. Studio Fader Thumb Handle (the horizontal line)
+            // 4. Metallic Pill Fader Cap
             val thumbTop = thumbCenterY - thumbHPx / 2f
             val thumbLeft = centerX - thumbWPx / 2f
-            val thumbRadius = 3.dp.toPx()
+            val thumbRadius = 6.dp.toPx()
 
-            // Outer glow when enabled
+            // Outer capsule glow when enabled
             if (enabled) {
                 drawRoundRect(
-                    color = accentColor.copy(alpha = 0.40f),
-                    topLeft = Offset(thumbLeft - 2.dp.toPx(), thumbTop - 1.dp.toPx()),
-                    size = Size(thumbWPx + 4.dp.toPx(), thumbHPx + 2.dp.toPx()),
-                    cornerRadius = CornerRadius(thumbRadius + 1.dp.toPx(), thumbRadius + 1.dp.toPx())
+                    color = neonColor.copy(alpha = 0.35f),
+                    topLeft = Offset(thumbLeft - 2.dp.toPx(), thumbTop - 2.dp.toPx()),
+                    size = Size(thumbWPx + 4.dp.toPx(), thumbHPx + 4.dp.toPx()),
+                    cornerRadius = CornerRadius(thumbRadius + 2.dp.toPx(), thumbRadius + 2.dp.toPx())
                 )
             }
 
-            // Horizontal Line Body
+            // Metallic body with gradient (brushed chrome / dark titanium)
             drawRoundRect(
-                color = if (enabled) accentColor else Color(0xFF52525B),
+                brush = Brush.verticalGradient(
+                    listOf(
+                        Color(0xFF64748B),
+                        Color(0xFF1E293B),
+                        Color(0xFF0F172A)
+                    ),
+                    startY = thumbTop,
+                    endY = thumbTop + thumbHPx
+                ),
                 topLeft = Offset(thumbLeft, thumbTop),
                 size = Size(thumbWPx, thumbHPx),
                 cornerRadius = CornerRadius(thumbRadius, thumbRadius)
             )
 
-            // Inner center line for hardware look
-            val innerLineWidth = 18.dp.toPx()
-            val innerLineHeight = 1.5.dp.toPx()
+            // Subtle metallic chamfer border
             drawRoundRect(
-                color = Color.Black.copy(alpha = 0.50f),
-                topLeft = Offset(centerX - innerLineWidth / 2f, thumbCenterY - innerLineHeight / 2f),
-                size = Size(innerLineWidth, innerLineHeight),
-                cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+                color = Color.White.copy(alpha = 0.35f),
+                topLeft = Offset(thumbLeft, thumbTop),
+                size = Size(thumbWPx, thumbHPx),
+                cornerRadius = CornerRadius(thumbRadius, thumbRadius),
+                style = Stroke(width = 1.dp.toPx())
+            )
+
+            // Center Glowing Neon Indicator Slit
+            val slitWidth = 16.dp.toPx()
+            val slitHeight = 3.dp.toPx()
+            drawRoundRect(
+                color = if (enabled) neonColor else Color(0xFF94A3B8),
+                topLeft = Offset(centerX - slitWidth / 2f, thumbCenterY - slitHeight / 2f),
+                size = Size(slitWidth, slitHeight),
+                cornerRadius = CornerRadius(1.5.dp.toPx(), 1.5.dp.toPx())
             )
         }
     }
 }
 
+/**
+ * Large Brushed Aluminum Metallic Rotary Knob matching Image 1:
+ * - Concentric brushed metal radial gradient dial
+ * - Surrounding illuminated neon arc gauge
+ * - Draggable / rotatable to change percentage from 0% to 100%
+ */
+@Composable
+private fun MetallicStudioKnob(
+    title: String,
+    value: Int, // 0..100
+    onValueChange: (Int) -> Unit,
+    accentColor: Color,
+    enabled: Boolean,
+    onTurnOn: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    val knobSize = 118.dp
+    var isDragging by remember { mutableStateOf(false) }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+    ) {
+        Box(
+            modifier = Modifier
+                .size(knobSize)
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+                        isDragging = true
+                        down.consume()
+                        onTurnOn?.invoke()
+
+                        val centerX = size.width / 2f
+                        val centerY = size.height / 2f
+                        var lastPos = down.position
+                        var accum = value.toFloat()
+
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) break
+                                change.consume()
+
+                                val currPos = change.position
+                                val dy = currPos.y - lastPos.y
+                                val dx = currPos.x - lastPos.x
+
+                                // 1. Circular / angular delta around knob center (clockwise = positive)
+                                val prevAngle = kotlin.math.atan2(lastPos.y - centerY, lastPos.x - centerX)
+                                val currAngle = kotlin.math.atan2(currPos.y - centerY, currPos.x - centerX)
+                                var deltaAngle = currAngle - prevAngle
+                                if (deltaAngle > Math.PI) deltaAngle -= (2.0 * Math.PI).toFloat()
+                                else if (deltaAngle < -Math.PI) deltaAngle += (2.0 * Math.PI).toFloat()
+                                val deltaDeg = Math.toDegrees(deltaAngle.toDouble()).toFloat()
+
+                                // 2. Linear displacement: dragging up (-dy) or right (+dx) increases
+                                val linearDelta = (-dy * 1.0f) + (dx * 0.35f)
+
+                                // 3. True rolling gesture:
+                                val r = kotlin.math.hypot(currPos.x - centerX, currPos.y - centerY)
+                                val isNearCenter = r < 18.dp.toPx()
+
+                                val delta = if (!isNearCenter && kotlin.math.abs(deltaDeg) >= 0.35f) {
+                                    (deltaDeg / 270f) * 100f * 1.45f
+                                } else {
+                                    linearDelta
+                                }
+
+                                accum = (accum + delta).coerceIn(0f, 100f)
+                                onValueChange(accum.roundToInt())
+
+                                lastPos = currPos
+                            }
+                        } finally {
+                            isDragging = false
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val center = Offset(size.width / 2f, size.height / 2f)
+                val outerRadius = size.width / 2f - 4.dp.toPx()
+                val knobRadius = outerRadius * 0.72f
+
+                // Outer Scale Arc Range: 135 deg to 405 deg (270 deg sweep)
+                val startAngle = 135f
+                val sweepAngle = 270f
+                val currentFraction = (value / 100f).coerceIn(0f, 1f)
+
+                // 1. Background Inactive Arc Track
+                drawArc(
+                    color = Color.White.copy(alpha = 0.10f),
+                    startAngle = startAngle,
+                    sweepAngle = sweepAngle,
+                    useCenter = false,
+                    topLeft = Offset(center.x - outerRadius, center.y - outerRadius),
+                    size = Size(outerRadius * 2, outerRadius * 2),
+                    style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
+                )
+
+                // 2. Active Glowing Neon Arc
+                if (currentFraction > 0.01f && enabled) {
+                    // Outer soft glow
+                    drawArc(
+                        color = accentColor.copy(alpha = 0.35f),
+                        startAngle = startAngle,
+                        sweepAngle = sweepAngle * currentFraction,
+                        useCenter = false,
+                        topLeft = Offset(center.x - outerRadius, center.y - outerRadius),
+                        size = Size(outerRadius * 2, outerRadius * 2),
+                        style = Stroke(width = 9.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                    // Sharp neon line
+                    drawArc(
+                        color = accentColor,
+                        startAngle = startAngle,
+                        sweepAngle = sweepAngle * currentFraction,
+                        useCenter = false,
+                        topLeft = Offset(center.x - outerRadius, center.y - outerRadius),
+                        size = Size(outerRadius * 2, outerRadius * 2),
+                        style = Stroke(width = 4.5.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                }
+
+                // 3. Tick Marks Around Perimeter
+                val tickCount = 18
+                for (i in 0..tickCount) {
+                    val tAngle = startAngle + (i.toFloat() / tickCount) * sweepAngle
+                    val tRad = Math.toRadians(tAngle.toDouble())
+                    val r1 = outerRadius + 1.dp.toPx()
+                    val r2 = outerRadius + 4.dp.toPx()
+                    val p1 = Offset((center.x + r1 * cos(tRad)).toFloat(), (center.y + r1 * sin(tRad)).toFloat())
+                    val p2 = Offset((center.x + r2 * cos(tRad)).toFloat(), (center.y + r2 * sin(tRad)).toFloat())
+                    val isPastActive = (i.toFloat() / tickCount) <= currentFraction && enabled
+                    drawLine(
+                        color = if (isPastActive) accentColor.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.15f),
+                        start = p1,
+                        end = p2,
+                        strokeWidth = 1.2.dp.toPx()
+                    )
+                }
+
+                // 4. Large Brushed Concentric Metallic Dial Body
+                // Deep drop shadow
+                drawCircle(
+                    color = Color.Black.copy(alpha = 0.65f),
+                    radius = knobRadius + 3.dp.toPx(),
+                    center = center
+                )
+
+                // Concentric metallic gradients
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF94A3B8),
+                            Color(0xFF334155),
+                            Color(0xFF0F172A)
+                        ),
+                        center = center,
+                        radius = knobRadius
+                    ),
+                    radius = knobRadius,
+                    center = center
+                )
+
+                // Metallic Beveled Rim
+                drawCircle(
+                    brush = Brush.sweepGradient(
+                        colors = listOf(
+                            Color(0xFFCBD5E1),
+                            Color(0xFF475569),
+                            Color(0xFFE2E8F0),
+                            Color(0xFF334155),
+                            Color(0xFFCBD5E1)
+                        ),
+                        center = center
+                    ),
+                    radius = knobRadius,
+                    center = center,
+                    style = Stroke(width = 2.dp.toPx())
+                )
+
+                // 5. Radial Pointer Notch on the Dial Face
+                val pointerAngleDeg = startAngle + sweepAngle * currentFraction
+                val pointerRad = Math.toRadians(pointerAngleDeg.toDouble())
+                val n1 = knobRadius * 0.32f
+                val n2 = knobRadius * 0.88f
+                val notchStart = Offset((center.x + n1 * cos(pointerRad)).toFloat(), (center.y + n1 * sin(pointerRad)).toFloat())
+                val notchEnd = Offset((center.x + n2 * cos(pointerRad)).toFloat(), (center.y + n2 * sin(pointerRad)).toFloat())
+
+                // Glow behind notch
+                if (enabled) {
+                    drawLine(
+                        color = accentColor.copy(alpha = 0.45f),
+                        start = notchStart,
+                        end = notchEnd,
+                        strokeWidth = 5.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+                }
+                drawLine(
+                    color = if (enabled) accentColor else Color.White,
+                    start = notchStart,
+                    end = notchEnd,
+                    strokeWidth = 2.8.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+
+                // Center Cap
+                drawCircle(
+                    color = Color(0xFF0F172A),
+                    radius = knobRadius * 0.22f,
+                    center = center
+                )
+                drawCircle(
+                    color = if (enabled) accentColor.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.2f),
+                    radius = knobRadius * 0.22f,
+                    center = center,
+                    style = Stroke(width = 1.dp.toPx())
+                )
+            }
+
+            // Value text in center or under
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Title and Value Label
+        Text(
+            text = title,
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 1.sp
+        )
+
+        Text(
+            text = if (value == 0) "OFF" else if (value >= 100) "MAX" else "$value%",
+            color = if (value > 0 && enabled) accentColor else Color(0xFF94A3B8),
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}

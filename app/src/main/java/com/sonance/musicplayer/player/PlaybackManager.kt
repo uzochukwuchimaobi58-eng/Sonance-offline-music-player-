@@ -92,7 +92,8 @@ class PlaybackManager(
 
     private val _isKaraokeMode = MutableStateFlow(false)
     val isKaraokeMode: StateFlow<Boolean> = _isKaraokeMode.asStateFlow()
-    private var karaokeVocalReduction: Float = 85f
+    private var karaokeVocalReduction: Float = 69f
+    private var karaokeHighAir: Float = 69f
 
     private val _musicBassSettings = MutableStateFlow(MusicBassSettings())
     val musicBassSettings: StateFlow<MusicBassSettings> = _musicBassSettings.asStateFlow()
@@ -233,19 +234,31 @@ class PlaybackManager(
         val savedPunchKick = audioPrefs.getInt("bass_punch_kick", 75)
         val savedClarity = audioPrefs.getInt("bass_clarity", 50)
         val savedPreset = audioPrefs.getString("bass_preset", "Deep Bass") ?: "Deep Bass"
+        val savedVirtEnabled = audioPrefs.getBoolean("bass_virt_enabled", false)
+        val savedVirtStrength = audioPrefs.getInt("bass_virt_strength", 75)
+        val savedBalEnabled = audioPrefs.getBoolean("bass_bal_enabled", false)
+        val savedBalLeft = audioPrefs.getFloat("bass_bal_left", 100f)
+        val savedBalRight = audioPrefs.getFloat("bass_bal_right", 100f)
         _musicBassSettings.value = MusicBassSettings(
             enabled = savedBassEnabled,
             bassBoost = savedBassBoost,
             subBassRumble = savedSubRumble,
             punchKick = savedPunchKick,
             clarityHighs = savedClarity,
-            presetName = savedPreset
+            presetName = savedPreset,
+            virtualizerEnabled = savedVirtEnabled,
+            virtualizerStrength = savedVirtStrength,
+            soundBalanceEnabled = savedBalEnabled,
+            soundBalanceLeft = savedBalLeft,
+            soundBalanceRight = savedBalRight
         )
 
         val savedKaraokeEnabled = audioPrefs.getBoolean("karaoke_enabled", false)
-        val savedVocalReduction = audioPrefs.getFloat("karaoke_reduction", 85f)
+        val savedVocalReduction = audioPrefs.getFloat("karaoke_reduction", 69f)
+        val savedHighAir = audioPrefs.getFloat("karaoke_high_air", 69f)
         _isKaraokeMode.value = savedKaraokeEnabled
         karaokeVocalReduction = savedVocalReduction
+        karaokeHighAir = savedHighAir
 
         startProgressTracker()
         setupHeadsetReceiver()
@@ -861,23 +874,25 @@ class PlaybackManager(
         }
     }
 
-    fun setKaraokeMode(enabled: Boolean, vocalReductionPercent: Float = 85f) {
+    fun setKaraokeMode(enabled: Boolean, vocalReductionPercent: Float = 69f, highAirPercent: Float = 69f) {
         _isKaraokeMode.value = enabled
         karaokeVocalReduction = vocalReductionPercent
+        karaokeHighAir = highAirPercent
         audioPrefs.edit()
             .putBoolean("karaoke_enabled", enabled)
             .putFloat("karaoke_reduction", vocalReductionPercent)
+            .putFloat("karaoke_high_air", highAirPercent)
             .apply()
         applyEffectiveAudioEffects()
     }
 
     fun toggleKaraoke() {
         val newState = !_isKaraokeMode.value
-        setKaraokeMode(newState, karaokeVocalReduction)
+        setKaraokeMode(newState, karaokeVocalReduction, karaokeHighAir)
     }
 
-    fun applyKaraokeProcessing(enabled: Boolean, vocalReductionPercent: Float = 85f) {
-        setKaraokeMode(enabled, vocalReductionPercent)
+    fun applyKaraokeProcessing(enabled: Boolean, vocalReductionPercent: Float = 69f, highAirPercent: Float = 69f) {
+        setKaraokeMode(enabled, vocalReductionPercent, highAirPercent)
     }
 
     fun applyMusicBass(settings: MusicBassSettings) {
@@ -889,6 +904,11 @@ class PlaybackManager(
             .putInt("bass_punch_kick", settings.punchKick)
             .putInt("bass_clarity", settings.clarityHighs)
             .putString("bass_preset", settings.presetName)
+            .putBoolean("bass_virt_enabled", settings.virtualizerEnabled)
+            .putInt("bass_virt_strength", settings.virtualizerStrength)
+            .putBoolean("bass_bal_enabled", settings.soundBalanceEnabled)
+            .putFloat("bass_bal_left", settings.soundBalanceLeft)
+            .putFloat("bass_bal_right", settings.soundBalanceRight)
             .apply()
         applyEffectiveAudioEffects()
     }
@@ -917,10 +937,14 @@ class PlaybackManager(
             }
         }
 
-        // 2. Hardware 3D Virtualizer: In Karaoke mode OR (Equalizer is enabled and spatialReverb > 0)
+        // 2. Hardware 3D Virtualizer: In Bass Virtualizer OR Karaoke mode OR (Equalizer is enabled and spatialReverb > 0)
         virtualizer?.let { vz ->
             try {
-                if (karaokeActive) {
+                if (bassSettings.virtualizerEnabled) {
+                    vz.enabled = true
+                    val strength = ((bassSettings.virtualizerStrength / 100f) * 1000).toInt().coerceIn(100, 1000).toShort()
+                    vz.setStrength(strength)
+                } else if (karaokeActive) {
                     vz.enabled = true
                     vz.setStrength(850.toShort())
                 } else if (eqEnabled && currentEqSettings.spatialReverb > 0) {
@@ -934,6 +958,9 @@ class PlaybackManager(
                 Log.w(tag, "Failed to apply virtualizer: ${e.message}")
             }
         }
+
+        // 3. Stereo Channel Sound Balance
+        mediaPlayer?.let { applyVolumeInternal(it, _volume.value) }
 
         // 3. Hardware Equalizer bands:
         // Hardware Equalizer is enabled ONLY when Equalizer toggle is ON, or Karaoke is active
@@ -975,7 +1002,10 @@ class PlaybackManager(
                         val bandLevel: Short = when {
                             centerFreqHz < 200 -> subBassBoost
                             centerFreqHz in 200..4500 -> vocalCutLevel
-                            else -> (maxLevel * 0.20f).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+                            else -> {
+                                val airRatio = (karaokeHighAir / 100f).coerceIn(0f, 1f)
+                                (maxLevel * airRatio).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+                            }
                         }
                         eq.setBandLevel(i.toShort(), bandLevel)
                     }
@@ -1134,7 +1164,14 @@ class PlaybackManager(
     }
 
     private fun applyVolumeInternal(player: MediaPlayer, vol: Float) {
-        player.setVolume(vol, vol)
+        val bassSettings = _musicBassSettings.value
+        if (bassSettings.soundBalanceEnabled) {
+            val left = (vol * (bassSettings.soundBalanceLeft / 100f)).coerceIn(0f, 1f)
+            val right = (vol * (bassSettings.soundBalanceRight / 100f)).coerceIn(0f, 1f)
+            player.setVolume(left, right)
+        } else {
+            player.setVolume(vol, vol)
+        }
     }
 
     private fun applySpeedInternal(player: MediaPlayer, speed: Float) {

@@ -174,12 +174,11 @@ fun RatingDialog(
 
                         if (activity != null) {
                             InAppRatingManager.getInstance(context).launchReviewFlow(activity) {
-                                onClose()
+                                InAppRatingManager.getInstance(context).openPlayStoreListing(context)
                             }
-                        } else {
-                            InAppRatingManager.getInstance(context).openPlayStoreListing(context)
-                            onClose()
                         }
+                        InAppRatingManager.getInstance(context).openPlayStoreListing(context)
+                        onClose()
                     },
                     modifier = Modifier
                         .fillMaxWidth()
