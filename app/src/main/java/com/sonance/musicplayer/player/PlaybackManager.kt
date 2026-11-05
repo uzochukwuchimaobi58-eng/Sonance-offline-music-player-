@@ -918,10 +918,14 @@ class PlaybackManager(
         val karaokeActive = _isKaraokeMode.value
         val eqEnabled = currentEqSettings.enabled
 
-        // 1. Hardware BassBoost Engine: Active when Music Bass is enabled OR (Equalizer is enabled and EQ bassBoost > 0)
+        // 1. Hardware BassBoost Engine: Active in Karaoke (mapped to Bass Volume), Music Bass, or EQ
         bassBoost?.let { bb ->
             try {
-                if (bassSettings.enabled) {
+                if (karaokeActive) {
+                    bb.enabled = true
+                    val str = ((karaokeHighAir / 100f) * 1000).toInt().coerceIn(0, 1000).toShort()
+                    bb.setStrength(str)
+                } else if (bassSettings.enabled) {
                     bb.enabled = true
                     val strength = ((bassSettings.bassBoost / 100f) * 1000).toInt().coerceIn(200, 1000).toShort()
                     bb.setStrength(strength)
@@ -962,7 +966,7 @@ class PlaybackManager(
         // 3. Stereo Channel Sound Balance
         mediaPlayer?.let { applyVolumeInternal(it, _volume.value) }
 
-        // 3. Hardware Equalizer bands:
+        // 4. Hardware Equalizer bands:
         // Hardware Equalizer is enabled ONLY when Equalizer toggle is ON, or Karaoke is active
         equalizer?.let { eq ->
             try {
@@ -992,19 +996,22 @@ class PlaybackManager(
                         eq.setBandLevel(i.toShort(), scaledLevel.toShort())
                     }
                 } else if (karaokeActive) {
-                    // Deep vocal cut: center frequencies of human vocal cords (200Hz - 4500Hz)
-                    val cutRatio = (karaokeVocalReduction / 100f).coerceIn(0.6f, 1.0f)
+                    // MID AIR knob: Turn music to Bass Instruments (deep vocal and mid frequency attenuation)
+                    val cutRatio = (karaokeVocalReduction / 100f).coerceIn(0.2f, 1.0f)
                     val vocalCutLevel = (minLevel * cutRatio).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
-                    val subBassBoost = (maxLevel * 0.35f).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+
+                    // HIGH AIR knob: Bass Volume (0% to 100% volume for sub-bass and bass instruments)
+                    val bassVolRatio = (karaokeHighAir / 100f).coerceIn(0f, 1f)
+                    val bassLevel = (minLevel + (maxLevel - minLevel) * bassVolRatio).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
 
                     for (i in 0 until numBands) {
                         val centerFreqHz = eq.getCenterFreq(i.toShort()) / 1000
                         val bandLevel: Short = when {
-                            centerFreqHz < 200 -> subBassBoost
-                            centerFreqHz in 200..4500 -> vocalCutLevel
+                            centerFreqHz < 250 -> bassLevel
+                            centerFreqHz in 250..4500 -> vocalCutLevel
                             else -> {
-                                val airRatio = (karaokeHighAir / 100f).coerceIn(0f, 1f)
-                                (maxLevel * airRatio).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+                                // Keep highs subdued so bass instruments dominate
+                                (minLevel * 0.4f).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
                             }
                         }
                         eq.setBandLevel(i.toShort(), bandLevel)

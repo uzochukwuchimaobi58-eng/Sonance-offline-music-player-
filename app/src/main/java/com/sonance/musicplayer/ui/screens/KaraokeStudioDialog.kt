@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -199,15 +200,21 @@ fun KaraokeStudioDialog(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Big Knob 1: MID AIR (Vocal Cut)
+                        // Big Knob 1: MID AIR (Turns music to Bass Instruments)
                         FreshAirBigKnob(
                             label = "MID AIR",
+                            subLabel = "BASS INSTRUMENT",
                             value = midAirValue.toInt(),
                             onValueChange = { newVal ->
                                 val delta = newVal - midAirValue
                                 midAirValue = newVal.toFloat()
                                 if (isLinked) {
                                     highAirValue = (highAirValue + delta).coerceIn(0f, 100f)
+                                }
+                            },
+                            onTurnOn = {
+                                if (!localIsKaraokeActive) {
+                                    localIsKaraokeActive = true
                                 }
                             },
                             isActive = localIsKaraokeActive,
@@ -245,15 +252,21 @@ fun KaraokeStudioDialog(
                             }
                         }
 
-                        // Big Knob 2: HIGH AIR (Clarity / Harmonics)
+                        // Big Knob 2: HIGH AIR (Bass Volume)
                         FreshAirBigKnob(
                             label = "HIGH AIR",
+                            subLabel = "BASS VOLUME",
                             value = highAirValue.toInt(),
                             onValueChange = { newVal ->
                                 val delta = newVal - highAirValue
                                 highAirValue = newVal.toFloat()
                                 if (isLinked) {
                                     midAirValue = (midAirValue + delta).coerceIn(0f, 100f)
+                                }
+                            },
+                            onTurnOn = {
+                                if (!localIsKaraokeActive) {
+                                    localIsKaraokeActive = true
                                 }
                             },
                             isActive = localIsKaraokeActive,
@@ -625,14 +638,20 @@ private fun FreshAirAnalogMeter(
 @Composable
 private fun FreshAirBigKnob(
     label: String,
+    subLabel: String = "",
     value: Int, // 0..100
     onValueChange: (Int) -> Unit,
     isActive: Boolean,
     cyanColor: Color,
+    onTurnOn: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val knobSize = 120.dp
     var isDragging by remember { mutableStateOf(false) }
+
+    val currentValue by rememberUpdatedState(value)
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val currentOnTurnOn by rememberUpdatedState(onTurnOn)
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -643,19 +662,22 @@ private fun FreshAirBigKnob(
                 .size(knobSize)
                 .pointerInput(Unit) {
                     awaitEachGesture {
-                        val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+                        val down = awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = true)
+                        val activePointerId = down.id
                         isDragging = true
                         down.consume()
+                        currentOnTurnOn?.invoke()
 
                         val centerX = size.width / 2f
                         val centerY = size.height / 2f
+                        val knobRadiusPx = (size.width / 2f - 4.dp.toPx()) * 0.85f
                         var lastPos = down.position
-                        var accum = value.toFloat()
+                        var accum = currentValue.toFloat()
 
                         try {
                             while (true) {
-                                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                val event = awaitPointerEvent(pass = PointerEventPass.Main)
+                                val change = event.changes.firstOrNull { it.id == activePointerId } ?: break
                                 if (!change.pressed) break
                                 change.consume()
 
@@ -663,26 +685,29 @@ private fun FreshAirBigKnob(
                                 val dy = currPos.y - lastPos.y
                                 val dx = currPos.x - lastPos.x
 
-                                val prevAngle = kotlin.math.atan2(lastPos.y - centerY, lastPos.x - centerX)
-                                val currAngle = kotlin.math.atan2(currPos.y - centerY, currPos.x - centerX)
-                                var deltaAngle = currAngle - prevAngle
-                                if (deltaAngle > Math.PI) deltaAngle -= (2.0 * Math.PI).toFloat()
-                                else if (deltaAngle < -Math.PI) deltaAngle += (2.0 * Math.PI).toFloat()
-                                val deltaDeg = Math.toDegrees(deltaAngle.toDouble()).toFloat()
+                                val rx = currPos.x - centerX
+                                val ry = currPos.y - centerY
+                                val dist = kotlin.math.hypot(rx, ry)
 
-                                val linearDelta = (-dy * 1.0f) + (dx * 0.35f)
+                                // 1. Clockwise tangential circular component
+                                val tangentialDelta = if (dist > 6f) {
+                                    (dx * (-ry / dist) + dy * (rx / dist))
+                                } else 0f
+                                val circularDelta = (tangentialDelta / (2 * Math.PI.toFloat() * dist.coerceAtLeast(knobRadiusPx * 0.5f))) * (360f / 270f) * 100f * 1.5f
 
-                                val r = kotlin.math.hypot(currPos.x - centerX, currPos.y - centerY)
-                                val isNearCenter = r < 18.dp.toPx()
+                                // 2. Vertical scroll component (up = increase, down = decrease)
+                                val verticalScrollDelta = (-dy / (size.height * 1.4f)) * 100f
 
-                                val delta = if (!isNearCenter && kotlin.math.abs(deltaDeg) >= 0.35f) {
-                                    (deltaDeg / 270f) * 100f * 1.45f
+                                val delta = if (kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.25f && kotlin.math.abs(dy) >= 1.5f) {
+                                    verticalScrollDelta
+                                } else if (kotlin.math.abs(circularDelta) >= 0.15f) {
+                                    circularDelta
                                 } else {
-                                    linearDelta
+                                    verticalScrollDelta
                                 }
 
                                 accum = (accum + delta).coerceIn(0f, 100f)
-                                onValueChange(accum.roundToInt())
+                                currentOnValueChange(accum.roundToInt())
 
                                 lastPos = currPos
                             }
@@ -701,7 +726,7 @@ private fun FreshAirBigKnob(
                 // Arc angles: 135 deg to 405 deg (270 deg sweep)
                 val startAngle = 135f
                 val sweepAngle = 270f
-                val fraction = (value / 100f).coerceIn(0f, 1f)
+                val fraction = (currentValue / 100f).coerceIn(0f, 1f)
 
                 // 1. Inactive Rim Arc Track
                 drawArc(
@@ -715,7 +740,7 @@ private fun FreshAirBigKnob(
                 )
 
                 // 2. Active Glowing Cyan Rim Arc
-                if (isActive && fraction > 0.01f) {
+                if (isActive && fraction > 0.005f) {
                     drawArc(
                         color = cyanColor.copy(alpha = 0.35f),
                         startAngle = startAngle,
@@ -736,7 +761,7 @@ private fun FreshAirBigKnob(
                     )
                 }
 
-                // 3. Tactile 3D Raised White/Silver Disc Body
+                // 3. Tactile 3D Raised White Disc Body
                 // Drop shadow
                 drawCircle(
                     color = Color(0xFF94A3B8).copy(alpha = 0.40f),
@@ -767,7 +792,7 @@ private fun FreshAirBigKnob(
                     style = Stroke(width = 1.2.dp.toPx())
                 )
 
-                // 4. Indicator Notch Line on the Rim Edge
+                // 4. Indicator Notch Line on the Rim Edge (Direct angle calculation)
                 val pointerAngleDeg = startAngle + sweepAngle * fraction
                 val pointerRad = Math.toRadians(pointerAngleDeg.toDouble())
                 val n1 = knobRadius * 0.70f
@@ -784,7 +809,7 @@ private fun FreshAirBigKnob(
                 )
             }
 
-            // Inside Center Labels: Number (69), Label ("MID AIR"), "ON"
+            // Inside Center Labels: Number (69), Label ("MID AIR"), SubLabel ("BASS INSTRUMENT"), "ON"
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
@@ -792,23 +817,33 @@ private fun FreshAirBigKnob(
                 Text(
                     text = "$value",
                     color = Color(0xFF1E293B),
-                    fontSize = 24.sp,
+                    fontSize = 23.sp,
                     fontWeight = FontWeight.Black,
-                    lineHeight = 24.sp
+                    lineHeight = 23.sp
                 )
 
                 Text(
                     text = label,
                     color = Color(0xFF475569),
-                    fontSize = 9.sp,
+                    fontSize = 8.5.sp,
                     fontWeight = FontWeight.Black,
                     letterSpacing = 0.6.sp
                 )
 
+                if (subLabel.isNotBlank()) {
+                    Text(
+                        text = subLabel,
+                        color = Color(0xFF00838F),
+                        fontSize = 7.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.4.sp
+                    )
+                }
+
                 Text(
                     text = if (isActive && value > 0) "ON" else "OFF",
                     color = if (isActive && value > 0) Color(0xFF00ACC1) else Color(0xFF94A3B8),
-                    fontSize = 8.5.sp,
+                    fontSize = 8.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.5.sp
                 )

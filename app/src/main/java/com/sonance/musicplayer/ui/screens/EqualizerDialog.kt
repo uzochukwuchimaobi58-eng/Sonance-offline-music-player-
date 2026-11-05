@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -68,32 +69,54 @@ fun EqualizerDialog(
 ) {
     if (!isOpen) return
 
+    val freqBands = remember {
+        listOf(
+            Triple(60, "32", false),      // Cyan
+            Triple(170, "64", false),     // Cyan
+            Triple(310, "125", false),    // Cyan
+            Triple(600, "250", true),     // Warm Amber/Orange
+            Triple(1000, "500", true),    // Warm Amber/Orange
+            Triple(3000, "1k", true),     // Warm Amber/Orange
+            Triple(6000, "2k", true),     // Warm Amber/Orange
+            Triple(12000, "4k", false),   // Cyan
+            Triple(14000, "8k", false),   // Cyan
+            Triple(16000, "16k", false)   // Cyan
+        )
+    }
+
     var currentSettings by remember(settings) { mutableStateOf(settings) }
+    val bandGains = remember {
+        mutableStateMapOf<Int, Int>().apply {
+            freqBands.forEach { (freq, _, _) ->
+                put(freq, settings.bands[freq] ?: 0)
+            }
+        }
+    }
 
-    val presetGains = mapOf(
-        EqPreset.FLAT to listOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-        EqPreset.BASS_BOOST to listOf(8, 7, 5, 3, 1, 0, 0, 0, 0, 0),
-        EqPreset.VOCAL_BOOSTER to listOf(-2, -1, 1, 4, 6, 6, 4, 2, 0, -1),
-        EqPreset.ROCK to listOf(6, 4, 2, 0, -1, 1, 3, 5, 6, 7),
-        EqPreset.ELECTRONIC to listOf(7, 6, 3, 0, -2, 2, 4, 5, 7, 8),
-        EqPreset.JAZZ to listOf(3, 2, 1, 2, -1, -1, 0, 2, 4, 5),
-        EqPreset.ACOUSTIC to listOf(4, 3, 2, 1, 2, 3, 4, 4, 3, 2),
-        EqPreset.HIFI_MASTER to listOf(5, 4, 2, 1, 1, 2, 3, 5, 6, 7)
-    )
+    val presetGains = remember {
+        mapOf(
+            EqPreset.FLAT to listOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+            EqPreset.BASS_BOOST to listOf(8, 7, 5, 3, 1, 0, 0, 0, 0, 0),
+            EqPreset.VOCAL_BOOSTER to listOf(-2, -1, 1, 4, 6, 6, 4, 2, 0, -1),
+            EqPreset.ROCK to listOf(6, 4, 2, 0, -1, 1, 3, 5, 6, 7),
+            EqPreset.ELECTRONIC to listOf(7, 6, 3, 0, -2, 2, 4, 5, 7, 8),
+            EqPreset.JAZZ to listOf(3, 2, 1, 2, -1, -1, 0, 2, 4, 5),
+            EqPreset.ACOUSTIC to listOf(4, 3, 2, 1, 2, 3, 4, 4, 3, 2),
+            EqPreset.HIFI_MASTER to listOf(5, 4, 2, 1, 1, 2, 3, 5, 6, 7)
+        )
+    }
 
-    // 10 bands matching Image 1: 32, 64, 125, 250, 500, 1k, 2k, 4k, 8k, 16k
-    val freqBands = listOf(
-        Triple(60, "32", false),      // Cyan
-        Triple(170, "64", false),     // Cyan
-        Triple(310, "125", false),    // Cyan
-        Triple(600, "250", true),     // Warm Amber/Orange
-        Triple(1000, "500", true),    // Warm Amber/Orange
-        Triple(3000, "1k", true),     // Warm Amber/Orange
-        Triple(6000, "2k", true),     // Warm Amber/Orange
-        Triple(12000, "4k", false),   // Cyan
-        Triple(14000, "8k", false),   // Cyan
-        Triple(16000, "16k", false)   // Cyan
-    )
+    // Only update bandGains when preset explicitly changes, never clear all bands while dragging
+    LaunchedEffect(settings.preset) {
+        val gains = presetGains[settings.preset]
+        if (gains != null) {
+            freqBands.forEachIndexed { idx, (freq, _, _) ->
+                bandGains[freq] = gains.getOrElse(idx) { 0 }
+            }
+        } else {
+            settings.bands.forEach { (f, g) -> bandGains[f] = g }
+        }
+    }
 
     val neonCyan = Color(0xFF00E5FF)
     val neonOrange = Color(0xFFFF9100)
@@ -110,7 +133,6 @@ fun EqualizerDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             // Drag handle pill
@@ -294,6 +316,8 @@ fun EqualizerDialog(
                                 } else {
                                     currentSettings.bands
                                 }
+                                bandGains.clear()
+                                bandGains.putAll(newBands)
                                 val updated = currentSettings.copy(enabled = true, preset = preset, bands = newBands)
                                 currentSettings = updated
                                 onApplySettings(updated)
@@ -334,6 +358,8 @@ fun EqualizerDialog(
                     modifier = Modifier
                         .clickable {
                             val flatBands = freqBands.associate { it.first to 0 }
+                            bandGains.clear()
+                            bandGains.putAll(flatBands)
                             val updated = currentSettings.copy(
                                 enabled = true,
                                 preset = EqPreset.FLAT,
@@ -358,18 +384,20 @@ fun EqualizerDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 14.dp, horizontal = 6.dp),
+                        .padding(vertical = 14.dp, horizontal = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     freqBands.forEachIndexed { idx, (freq, label, isAmber) ->
                         key(freq) {
-                            val gain = currentSettings.bands[freq] ?: 0
+                            val gain = bandGains[freq] ?: 0
                             val bandColor = if (isAmber) neonOrange else neonCyan
 
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 1.5.dp)
                             ) {
                                 // Top dB text (Click toggles only this single band)
                                 Text(
@@ -380,13 +408,12 @@ fun EqualizerDialog(
                                     maxLines = 1,
                                     modifier = Modifier.clickable {
                                         val targetGain = if (gain != 0) 0 else 12
-                                        val currentBands = currentSettings.bands.toMutableMap()
-                                        currentBands[freq] = targetGain
+                                        bandGains[freq] = targetGain
 
                                         val updated = currentSettings.copy(
                                             enabled = true,
                                             preset = EqPreset.CUSTOM,
-                                            bands = currentBands
+                                            bands = bandGains.toMap()
                                         )
                                         currentSettings = updated
                                         onApplySettings(updated)
@@ -400,13 +427,12 @@ fun EqualizerDialog(
                                     freq = freq,
                                     gain = gain,
                                     onGainChange = { newVal ->
-                                        val currentBands = currentSettings.bands.toMutableMap()
-                                        currentBands[freq] = newVal
+                                        bandGains[freq] = newVal
 
                                         val updated = currentSettings.copy(
                                             enabled = true,
                                             preset = EqPreset.CUSTOM,
-                                            bands = currentBands
+                                            bands = bandGains.toMap()
                                         )
                                         currentSettings = updated
                                         onApplySettings(updated)
@@ -545,6 +571,8 @@ private fun NeonGlowingEqFader(
     val thumbHeight = 14.dp
 
     var isDraggingThis by remember { mutableStateOf(false) }
+    val currentOnGainChange by rememberUpdatedState(onGainChange)
+    val currentOnTurnOn by rememberUpdatedState(onTurnOn)
 
     val animatedGain by animateFloatAsState(
         targetValue = gain.toFloat(),
@@ -556,12 +584,13 @@ private fun NeonGlowingEqFader(
         modifier = modifier
             .fillMaxWidth()
             .height(faderHeight)
-            .pointerInput(freq) {
+            .pointerInput(Unit) {
                 awaitEachGesture {
-                    val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = true)
+                    val down = awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = true)
+                    val activePointerId = down.id
                     isDraggingThis = true
                     down.consume()
-                    onTurnOn?.invoke()
+                    currentOnTurnOn?.invoke()
 
                     val hPx = size.height.toFloat()
                     val thumbHPx = thumbHeight.toPx()
@@ -571,15 +600,15 @@ private fun NeonGlowingEqFader(
                         val clampedY = (yPos - thumbHPx / 2f).coerceIn(0f, travel)
                         val fraction = 1f - (clampedY / travel) // 1.0f at top (+12), 0.0f at bottom (-12)
                         val newGain = ((fraction * 24f) - 12f).roundToInt().coerceIn(-12, 12)
-                        onGainChange(newGain)
+                        currentOnGainChange(newGain)
                     }
 
                     update(down.position.y)
 
                     try {
                         while (true) {
-                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            val event = awaitPointerEvent(pass = PointerEventPass.Main)
+                            val change = event.changes.firstOrNull { it.id == activePointerId } ?: break
                             if (!change.pressed) break
                             change.consume()
                             update(change.position.y)
@@ -701,7 +730,7 @@ private fun NeonGlowingEqFader(
  * Large Brushed Aluminum Metallic Rotary Knob matching Image 1:
  * - Concentric brushed metal radial gradient dial
  * - Surrounding illuminated neon arc gauge
- * - Draggable / rotatable to change percentage from 0% to 100%
+ * - Smooth vertical dragging and 360-degree circular turning from 0% to 100%
  */
 @Composable
 private fun MetallicStudioKnob(
@@ -716,6 +745,10 @@ private fun MetallicStudioKnob(
     val knobSize = 118.dp
     var isDragging by remember { mutableStateOf(false) }
 
+    val currentValue by rememberUpdatedState(value)
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val currentOnTurnOn by rememberUpdatedState(onTurnOn)
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
@@ -725,20 +758,22 @@ private fun MetallicStudioKnob(
                 .size(knobSize)
                 .pointerInput(Unit) {
                     awaitEachGesture {
-                        val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+                        val down = awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = true)
+                        val activePointerId = down.id
                         isDragging = true
                         down.consume()
-                        onTurnOn?.invoke()
+                        currentOnTurnOn?.invoke()
 
                         val centerX = size.width / 2f
                         val centerY = size.height / 2f
+                        val knobRadiusPx = (size.width / 2f - 4.dp.toPx()) * 0.72f
                         var lastPos = down.position
-                        var accum = value.toFloat()
+                        var accum = currentValue.toFloat()
 
                         try {
                             while (true) {
-                                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                val event = awaitPointerEvent(pass = PointerEventPass.Main)
+                                val change = event.changes.firstOrNull { it.id == activePointerId } ?: break
                                 if (!change.pressed) break
                                 change.consume()
 
@@ -746,29 +781,29 @@ private fun MetallicStudioKnob(
                                 val dy = currPos.y - lastPos.y
                                 val dx = currPos.x - lastPos.x
 
-                                // 1. Circular / angular delta around knob center (clockwise = positive)
-                                val prevAngle = kotlin.math.atan2(lastPos.y - centerY, lastPos.x - centerX)
-                                val currAngle = kotlin.math.atan2(currPos.y - centerY, currPos.x - centerX)
-                                var deltaAngle = currAngle - prevAngle
-                                if (deltaAngle > Math.PI) deltaAngle -= (2.0 * Math.PI).toFloat()
-                                else if (deltaAngle < -Math.PI) deltaAngle += (2.0 * Math.PI).toFloat()
-                                val deltaDeg = Math.toDegrees(deltaAngle.toDouble()).toFloat()
+                                val rx = currPos.x - centerX
+                                val ry = currPos.y - centerY
+                                val dist = kotlin.math.hypot(rx, ry)
 
-                                // 2. Linear displacement: dragging up (-dy) or right (+dx) increases
-                                val linearDelta = (-dy * 1.0f) + (dx * 0.35f)
+                                // 1. Clockwise tangential circular component
+                                val tangentialDelta = if (dist > 6f) {
+                                    (dx * (-ry / dist) + dy * (rx / dist))
+                                } else 0f
+                                val circularDelta = (tangentialDelta / (2 * Math.PI.toFloat() * dist.coerceAtLeast(knobRadiusPx * 0.5f))) * (360f / 270f) * 100f * 1.5f
 
-                                // 3. True rolling gesture:
-                                val r = kotlin.math.hypot(currPos.x - centerX, currPos.y - centerY)
-                                val isNearCenter = r < 18.dp.toPx()
+                                // 2. Vertical scroll component (up = increase, down = decrease)
+                                val verticalScrollDelta = (-dy / (size.height * 1.4f)) * 100f
 
-                                val delta = if (!isNearCenter && kotlin.math.abs(deltaDeg) >= 0.35f) {
-                                    (deltaDeg / 270f) * 100f * 1.45f
+                                val delta = if (kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.25f && kotlin.math.abs(dy) >= 1.5f) {
+                                    verticalScrollDelta
+                                } else if (kotlin.math.abs(circularDelta) >= 0.15f) {
+                                    circularDelta
                                 } else {
-                                    linearDelta
+                                    verticalScrollDelta
                                 }
 
                                 accum = (accum + delta).coerceIn(0f, 100f)
-                                onValueChange(accum.roundToInt())
+                                currentOnValueChange(accum.roundToInt())
 
                                 lastPos = currPos
                             }
@@ -787,7 +822,7 @@ private fun MetallicStudioKnob(
                 // Outer Scale Arc Range: 135 deg to 405 deg (270 deg sweep)
                 val startAngle = 135f
                 val sweepAngle = 270f
-                val currentFraction = (value / 100f).coerceIn(0f, 1f)
+                val currentFraction = (currentValue / 100f).coerceIn(0f, 1f)
 
                 // 1. Background Inactive Arc Track
                 drawArc(
@@ -801,7 +836,7 @@ private fun MetallicStudioKnob(
                 )
 
                 // 2. Active Glowing Neon Arc
-                if (currentFraction > 0.01f && enabled) {
+                if (currentFraction > 0.005f && enabled) {
                     // Outer soft glow
                     drawArc(
                         color = accentColor.copy(alpha = 0.35f),
@@ -882,7 +917,7 @@ private fun MetallicStudioKnob(
                     style = Stroke(width = 2.dp.toPx())
                 )
 
-                // 5. Radial Pointer Notch on the Dial Face
+                // 5. Radial Pointer Notch Needle on Dial Face (Direct trigonometric calculation)
                 val pointerAngleDeg = startAngle + sweepAngle * currentFraction
                 val pointerRad = Math.toRadians(pointerAngleDeg.toDouble())
                 val n1 = knobRadius * 0.32f
@@ -921,8 +956,6 @@ private fun MetallicStudioKnob(
                     style = Stroke(width = 1.dp.toPx())
                 )
             }
-
-            // Value text in center or under
         }
 
         Spacer(modifier = Modifier.height(6.dp))

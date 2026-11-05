@@ -26,7 +26,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -407,8 +409,12 @@ private fun PictureStyleRotaryKnob(
     activeColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val knobSize = 114.dp
+    val knobSize = 118.dp
     var isDragging by remember { mutableStateOf(false) }
+
+    val currentValue by rememberUpdatedState(value)
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val currentOnTurnOn by rememberUpdatedState(onTurnOn)
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -419,20 +425,22 @@ private fun PictureStyleRotaryKnob(
                 .size(knobSize)
                 .pointerInput(Unit) {
                     awaitEachGesture {
-                        val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+                        val down = awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = true)
+                        val activePointerId = down.id
                         isDragging = true
                         down.consume()
-                        onTurnOn?.invoke()
+                        currentOnTurnOn?.invoke()
 
                         val centerX = size.width / 2f
                         val centerY = size.height / 2f
+                        val knobRadiusPx = (size.width / 2f - 4.dp.toPx()) * 0.72f
                         var lastPos = down.position
-                        var accum = value.toFloat()
+                        var accum = currentValue.toFloat()
 
                         try {
                             while (true) {
-                                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                val event = awaitPointerEvent(pass = PointerEventPass.Main)
+                                val change = event.changes.firstOrNull { it.id == activePointerId } ?: break
                                 if (!change.pressed) break
                                 change.consume()
 
@@ -440,29 +448,29 @@ private fun PictureStyleRotaryKnob(
                                 val dy = currPos.y - lastPos.y
                                 val dx = currPos.x - lastPos.x
 
-                                // 1. Circular / angular delta around knob center (clockwise = positive)
-                                val prevAngle = kotlin.math.atan2(lastPos.y - centerY, lastPos.x - centerX)
-                                val currAngle = kotlin.math.atan2(currPos.y - centerY, currPos.x - centerX)
-                                var deltaAngle = currAngle - prevAngle
-                                if (deltaAngle > Math.PI) deltaAngle -= (2.0 * Math.PI).toFloat()
-                                else if (deltaAngle < -Math.PI) deltaAngle += (2.0 * Math.PI).toFloat()
-                                val deltaDeg = Math.toDegrees(deltaAngle.toDouble()).toFloat()
+                                val rx = currPos.x - centerX
+                                val ry = currPos.y - centerY
+                                val dist = kotlin.math.hypot(rx, ry)
 
-                                // 2. Linear displacement: dragging up (-dy) or right (+dx) increases
-                                val linearDelta = (-dy * 1.0f) + (dx * 0.35f)
+                                // 1. Clockwise tangential circular component
+                                val tangentialDelta = if (dist > 6f) {
+                                    (dx * (-ry / dist) + dy * (rx / dist))
+                                } else 0f
+                                val circularDelta = (tangentialDelta / (2 * Math.PI.toFloat() * dist.coerceAtLeast(knobRadiusPx * 0.5f))) * (360f / 270f) * 100f * 1.5f
 
-                                // 3. True rolling gesture:
-                                val r = kotlin.math.hypot(currPos.x - centerX, currPos.y - centerY)
-                                val isNearCenter = r < 18.dp.toPx()
+                                // 2. Vertical scroll component (up = increase, down = decrease)
+                                val verticalScrollDelta = (-dy / (size.height * 1.4f)) * 100f
 
-                                val delta = if (!isNearCenter && kotlin.math.abs(deltaDeg) >= 0.35f) {
-                                    (deltaDeg / 270f) * 100f * 1.45f
+                                val delta = if (kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.25f && kotlin.math.abs(dy) >= 1.5f) {
+                                    verticalScrollDelta
+                                } else if (kotlin.math.abs(circularDelta) >= 0.15f) {
+                                    circularDelta
                                 } else {
-                                    linearDelta
+                                    verticalScrollDelta
                                 }
 
                                 accum = (accum + delta).coerceIn(0f, 100f)
-                                onValueChange(accum.roundToInt())
+                                currentOnValueChange(accum.roundToInt())
 
                                 lastPos = currPos
                             }
@@ -476,62 +484,81 @@ private fun PictureStyleRotaryKnob(
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val center = Offset(size.width / 2f, size.height / 2f)
                 val outerRadius = size.width / 2f - 4.dp.toPx()
-                val knobRadius = outerRadius * 0.76f
+                val knobRadius = outerRadius * 0.72f
 
-                // Tick Dot Arc: from 135 deg to 405 deg (270 deg sweep)
+                // Outer Scale Arc Range: 135 deg to 405 deg (270 deg sweep)
                 val startAngle = 135f
                 val sweepAngle = 270f
-                val currentFraction = (value / 100f).coerceIn(0f, 1f)
-                val totalDots = 16
+                val currentFraction = (currentValue / 100f).coerceIn(0f, 1f)
 
-                // 1. Draw Surrounding Circular Dot Tick Marks (Exact match to Picture 1 & 2)
-                for (i in 0..totalDots) {
-                    val dotFraction = i.toFloat() / totalDots
-                    val angleDeg = startAngle + dotFraction * sweepAngle
-                    val angleRad = Math.toRadians(angleDeg.toDouble())
-                    val dotCenter = Offset(
-                        (center.x + outerRadius * cos(angleRad)).toFloat(),
-                        (center.y + outerRadius * sin(angleRad)).toFloat()
-                    )
-
-                    val isLit = isOn && dotFraction <= currentFraction
-                    if (isLit) {
-                        // Soft red glow behind active dot
-                        drawCircle(
-                            color = activeColor.copy(alpha = 0.35f),
-                            radius = 4.2.dp.toPx(),
-                            center = dotCenter
-                        )
-                        // Sharp red dot
-                        drawCircle(
-                            color = activeColor,
-                            radius = 2.8.dp.toPx(),
-                            center = dotCenter
-                        )
-                    } else {
-                        // Inactive dark gray dot
-                        drawCircle(
-                            color = Color(0xFF475569).copy(alpha = 0.65f),
-                            radius = 2.4.dp.toPx(),
-                            center = dotCenter
-                        )
-                    }
-                }
-
-                // 2. Large Dark Charcoal Knob Body with 3D drop shadow
-                drawCircle(
-                    color = Color.Black.copy(alpha = 0.55f),
-                    radius = knobRadius + 2.dp.toPx(),
-                    center = Offset(center.x, center.y + 2.dp.toPx())
+                // 1. Background Inactive Arc Track
+                drawArc(
+                    color = Color.White.copy(alpha = 0.10f),
+                    startAngle = startAngle,
+                    sweepAngle = sweepAngle,
+                    useCenter = false,
+                    topLeft = Offset(center.x - outerRadius, center.y - outerRadius),
+                    size = Size(outerRadius * 2, outerRadius * 2),
+                    style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
                 )
 
-                // Knob Body Radial Gradient (Dark slate / titanium)
+                // 2. Active Glowing Neon Arc
+                if (currentFraction > 0.005f && isOn) {
+                    // Outer soft glow
+                    drawArc(
+                        color = activeColor.copy(alpha = 0.35f),
+                        startAngle = startAngle,
+                        sweepAngle = sweepAngle * currentFraction,
+                        useCenter = false,
+                        topLeft = Offset(center.x - outerRadius, center.y - outerRadius),
+                        size = Size(outerRadius * 2, outerRadius * 2),
+                        style = Stroke(width = 9.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                    // Sharp neon line
+                    drawArc(
+                        color = activeColor,
+                        startAngle = startAngle,
+                        sweepAngle = sweepAngle * currentFraction,
+                        useCenter = false,
+                        topLeft = Offset(center.x - outerRadius, center.y - outerRadius),
+                        size = Size(outerRadius * 2, outerRadius * 2),
+                        style = Stroke(width = 4.5.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                }
+
+                // 3. Tick Marks Around Perimeter
+                val tickCount = 18
+                for (i in 0..tickCount) {
+                    val tAngle = startAngle + (i.toFloat() / tickCount) * sweepAngle
+                    val tRad = Math.toRadians(tAngle.toDouble())
+                    val r1 = outerRadius + 1.dp.toPx()
+                    val r2 = outerRadius + 4.dp.toPx()
+                    val p1 = Offset((center.x + r1 * cos(tRad)).toFloat(), (center.y + r1 * sin(tRad)).toFloat())
+                    val p2 = Offset((center.x + r2 * cos(tRad)).toFloat(), (center.y + r2 * sin(tRad)).toFloat())
+                    val isPastActive = (i.toFloat() / tickCount) <= currentFraction && isOn
+                    drawLine(
+                        color = if (isPastActive) activeColor.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.15f),
+                        start = p1,
+                        end = p2,
+                        strokeWidth = 1.2.dp.toPx()
+                    )
+                }
+
+                // 4. Large Brushed Concentric Metallic Dial Body
+                // Deep drop shadow
+                drawCircle(
+                    color = Color.Black.copy(alpha = 0.65f),
+                    radius = knobRadius + 3.dp.toPx(),
+                    center = center
+                )
+
+                // Concentric metallic gradients
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            Color(0xFF333A44),
-                            Color(0xFF242A32),
-                            Color(0xFF14181E)
+                            Color(0xFF94A3B8),
+                            Color(0xFF334155),
+                            Color(0xFF0F172A)
                         ),
                         center = center,
                         radius = knobRadius
@@ -540,98 +567,79 @@ private fun PictureStyleRotaryKnob(
                     center = center
                 )
 
-                // Beveled Outer Rim
+                // Metallic Beveled Rim
                 drawCircle(
-                    brush = Brush.linearGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.20f),
-                            Color.Black.copy(alpha = 0.45f)
+                    brush = Brush.sweepGradient(
+                        colors = listOf(
+                            Color(0xFFCBD5E1),
+                            Color(0xFF475569),
+                            Color(0xFFE2E8F0),
+                            Color(0xFF334155),
+                            Color(0xFFCBD5E1)
                         ),
-                        start = Offset(center.x - knobRadius, center.y - knobRadius),
-                        end = Offset(center.x + knobRadius, center.y + knobRadius)
+                        center = center
                     ),
                     radius = knobRadius,
                     center = center,
-                    style = Stroke(width = 1.5.dp.toPx())
+                    style = Stroke(width = 2.dp.toPx())
                 )
 
-                // 3. Ergonomic Dual-Oval Thumb Indents on Knob Surface (Exact match to Picture 1 & 2!)
-                val indentWidth = knobRadius * 0.90f
-                val indentHeight = knobRadius * 0.44f
-                val indentCorner = CornerRadius(indentHeight / 2f, indentHeight / 2f)
-
-                // Top Oval Indent
-                val topIndentCenterY = center.y - knobRadius * 0.30f
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        listOf(Color(0xFF12151A), Color(0xFF282F38)),
-                        startY = topIndentCenterY - indentHeight / 2f,
-                        endY = topIndentCenterY + indentHeight / 2f
-                    ),
-                    topLeft = Offset(center.x - indentWidth / 2f, topIndentCenterY - indentHeight / 2f),
-                    size = Size(indentWidth, indentHeight),
-                    cornerRadius = indentCorner
-                )
-
-                // Bottom Oval Indent
-                val bottomIndentCenterY = center.y + knobRadius * 0.30f
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        listOf(Color(0xFF12151A), Color(0xFF282F38)),
-                        startY = bottomIndentCenterY - indentHeight / 2f,
-                        endY = bottomIndentCenterY + indentHeight / 2f
-                    ),
-                    topLeft = Offset(center.x - indentWidth / 2f, bottomIndentCenterY - indentHeight / 2f),
-                    size = Size(indentWidth, indentHeight),
-                    cornerRadius = indentCorner
-                )
-
-                // 4. Indicator Dot on Dial
+                // 5. Radial Pointer Notch Needle on Dial Face (Direct trigonometric calculation)
                 val pointerAngleDeg = startAngle + sweepAngle * currentFraction
                 val pointerRad = Math.toRadians(pointerAngleDeg.toDouble())
-                val indicatorDist = knobRadius * 0.65f
-                val indicatorCenter = Offset(
-                    (center.x + indicatorDist * cos(pointerRad)).toFloat(),
-                    (center.y + indicatorDist * sin(pointerRad)).toFloat()
-                )
+                val n1 = knobRadius * 0.32f
+                val n2 = knobRadius * 0.88f
+                val notchStart = Offset((center.x + n1 * cos(pointerRad)).toFloat(), (center.y + n1 * sin(pointerRad)).toFloat())
+                val notchEnd = Offset((center.x + n2 * cos(pointerRad)).toFloat(), (center.y + n2 * sin(pointerRad)).toFloat())
 
+                // Glow behind notch
                 if (isOn) {
-                    // Glowing Red Indicator Dot
-                    drawCircle(
-                        color = activeColor.copy(alpha = 0.50f),
-                        radius = 5.dp.toPx(),
-                        center = indicatorCenter
-                    )
-                    drawCircle(
-                        color = activeColor,
-                        radius = 3.2.dp.toPx(),
-                        center = indicatorCenter
-                    )
-                } else {
-                    // Dark gray inactive indicator dot
-                    drawCircle(
-                        color = Color(0xFF64748B),
-                        radius = 2.8.dp.toPx(),
-                        center = indicatorCenter
+                    drawLine(
+                        color = activeColor.copy(alpha = 0.45f),
+                        start = notchStart,
+                        end = notchEnd,
+                        strokeWidth = 5.dp.toPx(),
+                        cap = StrokeCap.Round
                     )
                 }
+                drawLine(
+                    color = if (isOn) Color.White else Color(0xFF94A3B8),
+                    start = notchStart,
+                    end = notchEnd,
+                    strokeWidth = 2.8.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+
+                // Center Cap
+                drawCircle(
+                    color = Color(0xFF0F172A),
+                    radius = knobRadius * 0.22f,
+                    center = center
+                )
+                drawCircle(
+                    color = if (isOn) activeColor.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.2f),
+                    radius = knobRadius * 0.22f,
+                    center = center,
+                    style = Stroke(width = 1.dp.toPx())
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        // Title text below knob (Picture 1 & 2 design)
+        // Title text below knob (Exact match to Image: all-caps bold)
         Text(
-            text = title,
-            color = if (isOn) Color.White else Color(0xFF94A3B8),
-            fontSize = 12.5.sp,
-            fontWeight = if (isOn) FontWeight.Bold else FontWeight.Medium
+            text = title.uppercase(),
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 1.sp
         )
 
         Text(
-            text = if (isOn) "$value%" else "OFF",
-            color = if (isOn) activeColor else Color(0xFF64748B),
-            fontSize = 10.5.sp,
+            text = if (value == 0 || !isOn) "OFF" else if (value >= 100) "MAX" else "$value%",
+            color = if (value > 0 && isOn) activeColor else Color(0xFF94A3B8),
+            fontSize = 11.5.sp,
             fontWeight = FontWeight.Bold
         )
     }
