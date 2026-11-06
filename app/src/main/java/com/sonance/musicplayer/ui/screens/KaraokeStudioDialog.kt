@@ -91,8 +91,11 @@ fun KaraokeStudioDialog(
     val darkPanelBg = Color(0xFF070B13)
     val lightChassisBg = Color(0xFFDCE6EB)
 
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
     ModalBottomSheet(
         onDismissRequest = onClose,
+        sheetState = sheetState,
         containerColor = darkPanelBg,
         dragHandle = null,
         modifier = Modifier.testTag("karaoke_studio_dialog")

@@ -123,8 +123,11 @@ fun EqualizerDialog(
     val surfaceDark = Color(0xFF0B0F17)
     val cardDark = Color(0xFF111827)
 
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
     ModalBottomSheet(
         onDismissRequest = onClose,
+        sheetState = sheetState,
         containerColor = surfaceDark,
         dragHandle = null,
         modifier = Modifier.testTag("equalizer_dialog")
@@ -132,8 +135,9 @@ fun EqualizerDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             // Drag handle pill
             Box(
@@ -145,7 +149,7 @@ fun EqualizerDialog(
                     .background(Color.White.copy(alpha = 0.2f))
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // TOP LOSSLESS HEADER (Exact Image 1 Design)
             Row(
@@ -161,13 +165,13 @@ fun EqualizerDialog(
                         )
                     )
                     .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
-                    .padding(12.dp),
+                    .padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Album Art Card
                 Box(
                     modifier = Modifier
-                        .size(54.dp)
+                        .size(48.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(Color(0xFF1E293B))
                         .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(10.dp)),
@@ -185,14 +189,14 @@ fun EqualizerDialog(
                             imageVector = Icons.Default.MusicNote,
                             contentDescription = null,
                             tint = neonCyan,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                     // Glass reflection overlay
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(26.dp)
+                            .height(24.dp)
                             .align(Alignment.TopCenter)
                             .background(
                                 Brush.verticalGradient(
@@ -202,14 +206,14 @@ fun EqualizerDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
                 // Artist, Track and LOSSLESS Badge
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "ARTIST: ${(track?.artist ?: "ARCTIC VOIDS").uppercase()} | TRACK: ${(track?.title ?: "ECLIPSE (FLAC)").uppercase()}",
                         color = Color(0xFF94A3B8),
-                        fontSize = 9.5.sp,
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.5.sp,
                         maxLines = 1,
@@ -221,26 +225,26 @@ fun EqualizerDialog(
                     Text(
                         text = "LOSSLESS",
                         color = Color.White,
-                        fontSize = 17.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Black,
                         letterSpacing = 2.sp
                     )
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
 
                     // Green Pill Badge: FLAC | 24-bit/96kHz
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                         color = Color(0xFF10B981).copy(alpha = 0.14f),
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.65f))
                     ) {
                         Text(
                             text = "FLAC | 24-bit/96kHz",
                             color = Color(0xFF34D399),
-                            fontSize = 10.sp,
+                            fontSize = 9.5.sp,
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.6.sp,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
+                            letterSpacing = 0.5.sp,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                         )
                     }
                 }
@@ -253,7 +257,7 @@ fun EqualizerDialog(
                         onApplySettings(updated)
                     },
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .background(if (currentSettings.enabled) neonCyan.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.05f))
                         .border(
@@ -266,15 +270,15 @@ fun EqualizerDialog(
                         imageVector = Icons.Default.PowerSettingsNew,
                         contentDescription = "Toggle Equalizer",
                         tint = if (currentSettings.enabled) neonCyan else Color(0xFF64748B),
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(19.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(4.dp))
 
                 IconButton(
                     onClick = onClose,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(30.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
@@ -285,7 +289,7 @@ fun EqualizerDialog(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // PRESETS ROW
             Row(
@@ -322,19 +326,19 @@ fun EqualizerDialog(
                                 currentSettings = updated
                                 onApplySettings(updated)
                             }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .padding(horizontal = 11.dp, vertical = 5.dp)
                     ) {
                         Text(
                             text = preset.displayName,
                             color = if (isSelected) neonCyan else Color(0xFFCBD5E1),
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // 10-BAND GRAPHIC EQUALIZER FADERS SECTION (Image 1 Style)
             Row(
@@ -345,9 +349,9 @@ fun EqualizerDialog(
                 Text(
                     text = "FREQUENCY RESPONSE (-12dB to +12dB)",
                     color = Color(0xFF94A3B8),
-                    fontSize = 11.sp,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
+                    letterSpacing = 0.8.sp
                 )
 
                 Text(
@@ -368,11 +372,11 @@ fun EqualizerDialog(
                             currentSettings = updated
                             onApplySettings(updated)
                         }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .padding(horizontal = 6.dp, vertical = 3.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // Faders Card Container with Glowing Rails
             Surface(
@@ -384,7 +388,7 @@ fun EqualizerDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 14.dp, horizontal = 4.dp),
+                        .padding(vertical = 10.dp, horizontal = 2.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -397,13 +401,13 @@ fun EqualizerDialog(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
                                     .weight(1f)
-                                    .padding(horizontal = 1.5.dp)
+                                    .padding(horizontal = 1.dp)
                             ) {
                                 // Top dB text (Click toggles only this single band)
                                 Text(
                                     text = if (gain > 0) "+$gain" else "$gain",
                                     color = if (gain != 0 && currentSettings.enabled) bandColor else Color(0xFF64748B),
-                                    fontSize = 10.sp,
+                                    fontSize = 9.5.sp,
                                     fontWeight = FontWeight.Black,
                                     maxLines = 1,
                                     modifier = Modifier.clickable {
@@ -420,7 +424,7 @@ fun EqualizerDialog(
                                     }
                                 )
 
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
 
                                 // Neon Fader - Strictly moves only this individual line/band
                                 NeonGlowingEqFader(
@@ -449,13 +453,13 @@ fun EqualizerDialog(
                                     modifier = Modifier.testTag("eq_fader_$freq")
                                 )
 
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
 
                                 // Bottom Frequency Label (32, 64, 125, etc.)
                                 Text(
                                     text = label,
                                     color = if (gain != 0 && currentSettings.enabled) Color.White else Color(0xFF94A3B8),
-                                    fontSize = 9.5.sp,
+                                    fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center,
                                     maxLines = 1
@@ -466,19 +470,18 @@ fun EqualizerDialog(
                 }
             }
 
-            Spacer(modifier = Modifier.height(22.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // 2 BIG ROUND WORKING ROTARY KNOBS (Image 1 Style)
-            // "make it to display 2 big button and should working"
             Text(
                 text = "STUDIO ROTARY ENHANCERS",
                 color = Color(0xFF94A3B8),
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
+                letterSpacing = 0.8.sp
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -528,24 +531,26 @@ fun EqualizerDialog(
                 )
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Done Button
+            // Done / Apply Button (Always fully visible, never out of picture)
             Button(
                 onClick = onClose,
                 colors = ButtonDefaults.buttonColors(containerColor = neonCyan),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .height(46.dp),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text(
                     text = "Done",
                     color = Color.Black,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
+                    fontSize = 14.5.sp
                 )
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
         }
     }
 }
@@ -566,9 +571,9 @@ private fun NeonGlowingEqFader(
     neonColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val faderHeight = 155.dp
-    val thumbWidth = 24.dp
-    val thumbHeight = 14.dp
+    val faderHeight = 125.dp
+    val thumbWidth = 22.dp
+    val thumbHeight = 13.dp
 
     var isDraggingThis by remember { mutableStateOf(false) }
     val currentOnGainChange by rememberUpdatedState(onGainChange)
@@ -742,7 +747,7 @@ private fun MetallicStudioKnob(
     onTurnOn: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val knobSize = 118.dp
+    val knobSize = 100.dp
     var isDragging by remember { mutableStateOf(false) }
 
     val currentValue by rememberUpdatedState(value)
