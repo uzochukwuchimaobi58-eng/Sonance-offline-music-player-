@@ -384,13 +384,17 @@ class PlaybackManager(
     }
 
     fun playNext(track: Track) {
-        pendingPlayNextTrack = track
-        val current = _queue.value.toMutableList()
-        val currentIndex = _queueIndex.value
-        current.removeAll { it.id == track.id }
-        val insertAt = (currentIndex + 1).coerceAtMost(current.size)
-        current.add(insertAt, track)
-        _queue.value = current
+        try {
+            pendingPlayNextTrack = track
+            val current = ArrayList(_queue.value)
+            val currentIndex = _queueIndex.value
+            current.removeAll { it.id == track.id }
+            val insertAt = (currentIndex + 1).coerceIn(0, current.size)
+            current.add(insertAt, track)
+            _queue.value = current
+        } catch (t: Throwable) {
+            Log.w(tag, "playNext error: ${t.message}")
+        }
     }
 
     fun setQueue(newQueue: List<Track>, startIndex: Int = 0) {
@@ -586,7 +590,7 @@ class PlaybackManager(
                     mp.setOnErrorListener { _, what, extra ->
                         Log.e(tag, "MediaPlayer error: what=$what extra=$extra")
                         _isPlaying.value = false
-                        false
+                        true
                     }
 
                     mediaPlayer = mp
@@ -636,9 +640,12 @@ class PlaybackManager(
     fun togglePlayPause() {
         val mp = mediaPlayer
         if (mp != null) {
-            if (mp.isPlaying) {
+            val isPlaying = try { mp.isPlaying } catch (_: Throwable) { false }
+            if (isPlaying) {
                 pausedDueToTransientLoss = false
-                mp.pause()
+                try {
+                    mp.pause()
+                } catch (_: Throwable) {}
                 _isPlaying.value = false
                 _currentTrack.value?.let { track ->
                     repository?.saveLastPlaybackState(
@@ -650,8 +657,13 @@ class PlaybackManager(
                 }
             } else {
                 requestAudioFocus()
-                mp.start()
-                _isPlaying.value = true
+                try {
+                    mp.start()
+                    _isPlaying.value = true
+                } catch (t: Throwable) {
+                    Log.w(tag, "Failed to start player: ${t.message}")
+                    _currentTrack.value?.let { loadAndPlay(it, _currentPositionMs.value) }
+                }
             }
         } else {
             val track = _currentTrack.value ?: _queue.value.firstOrNull() ?: repository?.tracks?.value?.firstOrNull()
@@ -672,15 +684,22 @@ class PlaybackManager(
             pausedDueToTransientLoss = false
         }
         mediaPlayer?.let { mp ->
-            if (mp.isPlaying) {
+            val isPlaying = try { mp.isPlaying } catch (_: Throwable) { false }
+            if (isPlaying) {
                 if (playerSettings.playPauseFade && !fromTransientLoss) {
                     fadeVolume(1f, 0f, 250L) {
-                        mp.pause()
+                        try {
+                            mp.pause()
+                        } catch (_: Throwable) {}
                         _isPlaying.value = false
-                        mp.setVolume(1f, 1f)
+                        try {
+                            mp.setVolume(1f, 1f)
+                        } catch (_: Throwable) {}
                     }
                 } else {
-                    mp.pause()
+                    try {
+                        mp.pause()
+                    } catch (_: Throwable) {}
                     _isPlaying.value = false
                 }
             }
@@ -689,16 +708,27 @@ class PlaybackManager(
 
     fun resume() {
         mediaPlayer?.let { mp ->
-            if (!mp.isPlaying) {
+            val isPlaying = try { mp.isPlaying } catch (_: Throwable) { false }
+            if (!isPlaying) {
                 requestAudioFocus()
                 if (playerSettings.playPauseFade) {
-                    mp.setVolume(0f, 0f)
-                    mp.start()
-                    _isPlaying.value = true
-                    fadeVolume(0f, 1f, 250L)
+                    try {
+                        mp.setVolume(0f, 0f)
+                        mp.start()
+                        _isPlaying.value = true
+                        fadeVolume(0f, 1f, 250L)
+                    } catch (t: Throwable) {
+                        Log.w(tag, "Resume start error: ${t.message}")
+                        _currentTrack.value?.let { loadAndPlay(it, _currentPositionMs.value) }
+                    }
                 } else {
-                    mp.start()
-                    _isPlaying.value = true
+                    try {
+                        mp.start()
+                        _isPlaying.value = true
+                    } catch (t: Throwable) {
+                        Log.w(tag, "Resume start error: ${t.message}")
+                        _currentTrack.value?.let { loadAndPlay(it, _currentPositionMs.value) }
+                    }
                 }
             }
         }
@@ -789,7 +819,8 @@ class PlaybackManager(
         if (q.isEmpty()) return
 
         // If played more than 3 seconds and actively playing, restart current track
-        if (_currentPositionMs.value > 3000L && mediaPlayer?.isPlaying == true) {
+        val isActivelyPlaying = try { mediaPlayer?.isPlaying == true } catch (_: Throwable) { false }
+        if (_currentPositionMs.value > 3000L && isActivelyPlaying) {
             seekTo(0L)
             return
         }
@@ -803,8 +834,10 @@ class PlaybackManager(
 
     fun seekTo(positionMs: Long) {
         val clamped = positionMs.coerceIn(0L, _durationMs.value.coerceAtLeast(1000L))
-        mediaPlayer?.let {
-            it.seekTo(clamped.toInt())
+        try {
+            mediaPlayer?.seekTo(clamped.toInt())
+        } catch (t: Throwable) {
+            Log.w(tag, "seekTo safe catch: ${t.message}")
         }
         _currentPositionMs.value = clamped
         notificationManager.updateNotification(_currentTrack.value, _isPlaying.value, clamped, _durationMs.value)
@@ -846,30 +879,54 @@ class PlaybackManager(
         mediaPlayer?.let { applySpeedInternal(it, clamped) }
     }
 
+    private fun safeSetBassStrength(strength: Short) {
+        try {
+            bassBoost?.let { bb ->
+                if (bb.hasControl()) {
+                    bb.setStrength(strength)
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(tag, "BassBoost strength operation safely caught: ${t.message}")
+        }
+    }
+
+    private fun safeSetVirtualizerStrength(strength: Short) {
+        try {
+            virtualizer?.let { vz ->
+                if (vz.hasControl()) {
+                    vz.setStrength(strength)
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(tag, "Virtualizer strength operation safely caught: ${t.message}")
+        }
+    }
+
     fun setAudioEffect(effect: TrendingAudioEffect) {
         _activeEffect.value = effect
         when (effect) {
             TrendingAudioEffect.OFF -> {
                 setSpeed(1.0f)
-                bassBoost?.setStrength(currentEqSettings.bassBoost.toShort())
-                virtualizer?.setStrength(currentEqSettings.spatialReverb.toShort())
+                safeSetBassStrength(currentEqSettings.bassBoost.toShort())
+                safeSetVirtualizerStrength(currentEqSettings.spatialReverb.toShort())
             }
             TrendingAudioEffect.BASS_BOOST -> {
                 setSpeed(1.0f)
-                bassBoost?.setStrength(1000.toShort())
+                safeSetBassStrength(1000.toShort())
             }
             TrendingAudioEffect.SLOWED_REVERB -> {
                 setSpeed(0.85f)
-                virtualizer?.setStrength(800.toShort())
+                safeSetVirtualizerStrength(800.toShort())
             }
             TrendingAudioEffect.NIGHTCORE -> {
                 setSpeed(1.25f)
-                bassBoost?.setStrength(400.toShort())
+                safeSetBassStrength(400.toShort())
             }
             TrendingAudioEffect.HIFI_STUDIO -> {
                 setSpeed(1.0f)
-                bassBoost?.setStrength(300.toShort())
-                virtualizer?.setStrength(400.toShort())
+                safeSetBassStrength(300.toShort())
+                safeSetVirtualizerStrength(400.toShort())
             }
         }
     }
@@ -1197,26 +1254,32 @@ class PlaybackManager(
         progressJob?.cancel()
         progressJob = scope.launch {
             while (isActive) {
-                mediaPlayer?.let { mp ->
-                    if (_isPlaying.value && mp.isPlaying) {
-                        val pos = mp.currentPosition.toLong()
-                        _currentPositionMs.value = pos
-                        if ((_durationMs.value <= 0L || _durationMs.value < pos) && mp.duration > 0) {
-                            _durationMs.value = mp.duration.toLong()
-                        }
-                        val now = System.currentTimeMillis()
-                        if (now - lastSaveTime > 2000L) {
-                            lastSaveTime = now
-                            _currentTrack.value?.let { track ->
-                                repository?.saveLastPlaybackState(
-                                    track.id,
-                                    pos,
-                                    _queue.value.map { it.id },
-                                    _queueIndex.value
-                                )
+                try {
+                    mediaPlayer?.let { mp ->
+                        val isPlaying = try { mp.isPlaying } catch (_: Throwable) { false }
+                        if (_isPlaying.value && isPlaying) {
+                            val pos = try { mp.currentPosition.toLong() } catch (_: Throwable) { 0L }
+                            _currentPositionMs.value = pos
+                            val dur = try { mp.duration.toLong() } catch (_: Throwable) { 0L }
+                            if ((_durationMs.value <= 0L || _durationMs.value < pos) && dur > 0) {
+                                _durationMs.value = dur
+                            }
+                            val now = System.currentTimeMillis()
+                            if (now - lastSaveTime > 2000L) {
+                                lastSaveTime = now
+                                _currentTrack.value?.let { track ->
+                                    repository?.saveLastPlaybackState(
+                                        track.id,
+                                        pos,
+                                        _queue.value.map { it.id },
+                                        _queueIndex.value
+                                    )
+                                }
                             }
                         }
                     }
+                } catch (t: Throwable) {
+                    Log.w(tag, "Progress tracker safe catch: ${t.message}")
                 }
                 delay(200L)
             }

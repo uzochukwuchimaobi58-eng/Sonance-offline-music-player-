@@ -123,51 +123,81 @@ class BillingManager private constructor(private val context: Context) : Purchas
         }
     }
 
+    @Volatile
+    private var isConnecting = false
+    private val pendingConnectionCallbacks = mutableListOf<() -> Unit>()
+    private val connectionLock = Any()
+
     fun startConnection(onConnected: (() -> Unit)? = null) {
-        val client = billingClient ?: return
-        if (client.isReady) {
-            _isConnected.value = true
-            queryProductDetails()
-            queryPurchases()
-            onConnected?.invoke()
-            return
-        }
+        synchronized(connectionLock) {
+            val client = billingClient ?: return
+            if (client.isReady) {
+                _isConnected.value = true
+                onConnected?.invoke()
+                queryProductDetails()
+                queryPurchases()
+                return
+            }
 
-        // Verify network connection before connecting
-        if (!com.sonance.musicplayer.util.NetworkHelper.isNetworkAvailable(context)) {
-            Log.i(TAG, "Cannot connect BillingClient: No network connection available.")
-            _isConnected.value = false
-            _statusMessage.value = "Offline: Waiting for internet connection"
-            return
-        }
+            if (onConnected != null) {
+                pendingConnectionCallbacks.add(onConnected)
+            }
 
-        try {
-            client.startConnection(object : BillingClientStateListener {
-                override fun onBillingSetupFinished(billingResult: BillingResult) {
-                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                        Log.d(TAG, "Google Play Billing setup succeeded")
-                        _isConnected.value = true
-                        _statusMessage.value = "Connected to Google Play Billing"
-                        queryProductDetails()
-                        queryPurchases()
-                        onConnected?.invoke()
-                    } else {
-                        Log.w(TAG, "Google Play Billing setup failed: ${billingResult.responseCode}, ${billingResult.debugMessage}")
-                        _isConnected.value = false
-                        _statusMessage.value = "Google Play setup failed: ${billingResult.debugMessage.ifBlank { "Code ${billingResult.responseCode}" }}"
+            if (isConnecting) {
+                Log.d(TAG, "BillingClient is already connecting, queued callback")
+                return
+            }
+
+            // Verify network connection before connecting
+            if (!com.sonance.musicplayer.util.NetworkHelper.isNetworkAvailable(context)) {
+                Log.i(TAG, "Cannot connect BillingClient: No network connection available.")
+                _isConnected.value = false
+                _statusMessage.value = "Offline: Waiting for internet connection"
+                return
+            }
+
+            isConnecting = true
+            try {
+                client.startConnection(object : BillingClientStateListener {
+                    override fun onBillingSetupFinished(billingResult: BillingResult) {
+                        val callbacksToRun: List<() -> Unit>
+                        synchronized(connectionLock) {
+                            isConnecting = false
+                            callbacksToRun = ArrayList(pendingConnectionCallbacks)
+                            pendingConnectionCallbacks.clear()
+                        }
+                        if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                            Log.d(TAG, "Google Play Billing setup succeeded")
+                            _isConnected.value = true
+                            _statusMessage.value = "Connected to Google Play Billing"
+                            queryProductDetails()
+                            queryPurchases()
+                            callbacksToRun.forEach { runCatching { it.invoke() } }
+                        } else {
+                            Log.w(TAG, "Google Play Billing setup failed: ${billingResult.responseCode}, ${billingResult.debugMessage}")
+                            _isConnected.value = false
+                            _statusMessage.value = "Google Play setup failed: ${billingResult.debugMessage.ifBlank { "Code ${billingResult.responseCode}" }}"
+                        }
                     }
-                }
 
-                override fun onBillingServiceDisconnected() {
-                    Log.w(TAG, "Google Play Billing service disconnected")
-                    _isConnected.value = false
-                    _statusMessage.value = "Google Play Billing disconnected"
+                    override fun onBillingServiceDisconnected() {
+                        synchronized(connectionLock) {
+                            isConnecting = false
+                        }
+                        Log.w(TAG, "Google Play Billing service disconnected")
+                        _isConnected.value = false
+                        _statusMessage.value = "Google Play Billing disconnected"
+                    }
+                })
+            } catch (t: Throwable) {
+                Log.e(TAG, "Error connecting to BillingClient", t)
+                synchronized(connectionLock) {
+                    isConnecting = false
+                    pendingConnectionCallbacks.clear()
                 }
-            })
-        } catch (t: Throwable) {
-            Log.e(TAG, "Error connecting to BillingClient", t)
-            _isConnected.value = false
-            _statusMessage.value = "Billing connection error: ${t.message}"
+                _isConnected.value = false
+                _statusMessage.value = "Billing connection error: ${t.message}"
+            }
         }
     }
 
@@ -183,6 +213,8 @@ class BillingManager private constructor(private val context: Context) : Purchas
 
         coroutineScope.launch {
             try {
+                if (!client.isReady) return@launch
+
                 // 1. Query INAPP products (Lifetime)
                 val inAppList = INAPP_PRODUCT_IDS.distinct().map { id ->
                     QueryProductDetailsParams.Product.newBuilder()
@@ -194,15 +226,17 @@ class BillingManager private constructor(private val context: Context) : Purchas
                     .setProductList(inAppList)
                     .build()
 
-                client.queryProductDetailsAsync(inAppParams) { billingResult, queryProductDetailsResult ->
-                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                        val list = queryProductDetailsResult.productDetailsList ?: emptyList()
-                        val current = _products.value.toMutableMap()
-                        list.forEach { current[it.productId] = it }
-                        _products.value = current
-                        Log.d(TAG, "Queried ${list.size} INAPP products from Google Play: ${list.map { it.productId }}")
-                    } else {
-                        Log.w(TAG, "Failed querying INAPP products: ${billingResult.debugMessage}")
+                runCatching {
+                    client.queryProductDetailsAsync(inAppParams) { billingResult, queryProductDetailsResult ->
+                        if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                            val list = queryProductDetailsResult.productDetailsList ?: emptyList()
+                            val current = _products.value.toMutableMap()
+                            list.forEach { current[it.productId] = it }
+                            _products.value = current
+                            Log.d(TAG, "Queried ${list.size} INAPP products from Google Play: ${list.map { it.productId }}")
+                        } else {
+                            Log.w(TAG, "Failed querying INAPP products: ${billingResult.debugMessage}")
+                        }
                     }
                 }
 
@@ -217,15 +251,17 @@ class BillingManager private constructor(private val context: Context) : Purchas
                     .setProductList(subsList)
                     .build()
 
-                client.queryProductDetailsAsync(subsParams) { billingResult, queryProductDetailsResult ->
-                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                        val list = queryProductDetailsResult.productDetailsList ?: emptyList()
-                        val current = _products.value.toMutableMap()
-                        list.forEach { current[it.productId] = it }
-                        _products.value = current
-                        Log.d(TAG, "Queried ${list.size} SUBS products from Google Play: ${list.map { it.productId }}")
-                    } else {
-                        Log.w(TAG, "Failed querying SUBS products: ${billingResult.debugMessage}")
+                runCatching {
+                    client.queryProductDetailsAsync(subsParams) { billingResult, queryProductDetailsResult ->
+                        if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                            val list = queryProductDetailsResult.productDetailsList ?: emptyList()
+                            val current = _products.value.toMutableMap()
+                            list.forEach { current[it.productId] = it }
+                            _products.value = current
+                            Log.d(TAG, "Queried ${list.size} SUBS products from Google Play: ${list.map { it.productId }}")
+                        } else {
+                            Log.w(TAG, "Failed querying SUBS products: ${billingResult.debugMessage}")
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -303,6 +339,12 @@ class BillingManager private constructor(private val context: Context) : Purchas
 
     private fun launchBillingFlowWithProduct(activity: Activity, productDetails: ProductDetails) {
         val client = billingClient ?: return
+        if (!client.isReady) {
+            startConnection {
+                launchBillingFlowWithProduct(activity, productDetails)
+            }
+            return
+        }
         try {
             val productDetailsParamsBuilder = BillingFlowParams.ProductDetailsParams.newBuilder()
                 .setProductDetails(productDetails)
@@ -427,6 +469,10 @@ class BillingManager private constructor(private val context: Context) : Purchas
 
         coroutineScope.launch {
             try {
+                if (!client.isReady) {
+                    onComplete?.invoke(false, "Billing client not ready")
+                    return@launch
+                }
                 var foundActivePurchase = false
                 var activePlanName = "free"
 

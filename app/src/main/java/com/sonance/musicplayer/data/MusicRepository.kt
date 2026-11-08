@@ -309,6 +309,7 @@ class MusicRepository(private val context: Context) {
     val equalizerSettings: StateFlow<EqualizerSettings> = _equalizerSettings.asStateFlow()
 
     private val scanMutex = Mutex()
+    private var lastSuccessfulScanTime = 0L
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
@@ -746,6 +747,11 @@ class MusicRepository(private val context: Context) {
             return@withContext _tracks.value.size
         }
 
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastSuccessfulScanTime < 15_000L && _tracks.value.isNotEmpty()) {
+            return@withContext _tracks.value.size
+        }
+
         scanMutex.withLock {
             _isScanning.value = true
             _scanStatus.value = "Scanning storage for music..."
@@ -983,6 +989,7 @@ class MusicRepository(private val context: Context) {
                 _tracks.value = newTrackList
                 persistTracks(newTrackList)
                 _scanStatus.value = "Found ${newTrackList.size} songs"
+                lastSuccessfulScanTime = System.currentTimeMillis()
                 newTrackList.size
             } catch (e: Exception) {
                 Log.e("MusicRepository", "Error scanning music library: ${e.message}", e)

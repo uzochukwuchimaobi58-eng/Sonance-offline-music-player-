@@ -13,8 +13,8 @@ android {
         applicationId = "com.sonance.musicplayer"
         minSdk = 26
         targetSdk = 36
-        versionCode = 49
-        versionName = "2.1.9"
+        versionCode = 50
+        versionName = "2.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -79,6 +79,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)

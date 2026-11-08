@@ -1034,10 +1034,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private var lastResumeScanTime = 0L
+
     override fun onResume() {
         super.onResume()
-        lifecycleScope.launch {
-            repository.scanMediaStore()
+        val now = System.currentTimeMillis()
+        if (now - lastResumeScanTime > 30_000L) {
+            lastResumeScanTime = now
+            lifecycleScope.launch(Dispatchers.IO) {
+                repository.scanMediaStore()
+            }
         }
     }
 

@@ -37,6 +37,12 @@
 -keep class com.google.android.gms.ads.** { *; }
 -keep class com.android.billingclient.** { *; }
 
-# --- Preserve Firebase Crashlytics Source File mapping ---
+# --- Preserve AndroidX Fragment ---
+-keep class androidx.fragment.app.** { *; }
+-keepclassmembers class * extends androidx.fragment.app.Fragment {
+    <init>(...);
+}
+
+# --- Preserve Firebase & Play Console Source File mapping ---
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile

@@ -47,26 +47,30 @@ fun FrequencySpectrumVisualizer(
 ) {
     var mode by remember { mutableStateOf(initialMode) }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "spectrum_anim")
-    val phase by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2 * Math.PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "phase"
-    )
-
-    val beatPulse by infiniteTransition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(450, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "beat"
-    )
+    val (phase, beatPulse) = if (isPlaying) {
+        val infiniteTransition = rememberInfiniteTransition(label = "spectrum_anim")
+        val p by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = (2 * Math.PI).toFloat(),
+            animationSpec = infiniteRepeatable(
+                animation = tween(1800, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "phase"
+        )
+        val b by infiniteTransition.animateFloat(
+            initialValue = 0.85f,
+            targetValue = 1.15f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(450, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "beat"
+        )
+        Pair(p, b)
+    } else {
+        Pair(0f, 1f)
+    }
 
     Column(
         modifier = modifier
